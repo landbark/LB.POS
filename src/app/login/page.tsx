@@ -18,7 +18,7 @@ export default function LoginPage() {
     const supabase = createClient()
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
-      options: { redirectTo: `${window.location.origin}/pos` },
+      options: { redirectTo: `${window.location.origin}/auth/callback` },
     })
     if (error) {
       toast.error('เข้าสู่ระบบด้วย Google ไม่สำเร็จ')
