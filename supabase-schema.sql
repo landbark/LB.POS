@@ -10,18 +10,37 @@ CREATE TABLE profiles (
 );
 
 -- Auto-create profile on signup
-CREATE OR REPLACE FUNCTION handle_new_user()
-RETURNS TRIGGER AS $$
+-- ต้องระบุ public. เต็มๆ + SET search_path เพราะ auth service เรียกด้วย search_path ที่มองไม่เห็น public
+CREATE OR REPLACE FUNCTION public.handle_new_user()
+RETURNS TRIGGER
+SECURITY DEFINER
+SET search_path = public
+AS $$
 BEGIN
-  INSERT INTO profiles (id, role, name)
-  VALUES (NEW.id, 'cashier', COALESCE(NEW.raw_user_meta_data->>'name', NEW.email));
+  INSERT INTO public.profiles (id, role, name)
+  VALUES (
+    NEW.id,
+    'cashier',
+    COALESCE(NEW.raw_user_meta_data->>'full_name', NEW.raw_user_meta_data->>'name', NEW.email, 'User')
+  )
+  ON CONFLICT (id) DO NOTHING;
+  RETURN NEW;
+EXCEPTION WHEN OTHERS THEN
   RETURN NEW;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$ LANGUAGE plpgsql;
 
 CREATE TRIGGER on_auth_user_created
   AFTER INSERT ON auth.users
-  FOR EACH ROW EXECUTE FUNCTION handle_new_user();
+  FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
+
+-- helper เช็ค admin — SECURITY DEFINER ข้าม RLS กัน infinite recursion ใน policy ของ profiles
+CREATE OR REPLACE FUNCTION public.is_admin()
+RETURNS boolean
+SECURITY DEFINER SET search_path = public
+LANGUAGE sql AS $$
+  SELECT EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'admin');
+$$;
 
 -- Categories
 CREATE TABLE categories (
@@ -173,8 +192,9 @@ CREATE POLICY "admin manage promotions" ON promotions FOR ALL TO authenticated
 CREATE POLICY "admin manage points_config" ON points_config FOR ALL TO authenticated
   USING (EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'admin'));
 
+-- ห้ามใช้ subquery ที่ query profiles ตรงๆ ใน policy ของ profiles (จะ infinite recursion) — ใช้ is_admin() แทน
 CREATE POLICY "admin manage profiles" ON profiles FOR ALL TO authenticated
-  USING (EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'admin'));
+  USING (public.is_admin());
 
 -- Indexes
 CREATE INDEX idx_products_barcode ON products(barcode) WHERE barcode IS NOT NULL;
