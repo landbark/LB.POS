@@ -1,0 +1,271 @@
+'use client'
+
+import { useState } from 'react'
+import { createClient } from '@/lib/supabase/client'
+import { X } from 'lucide-react'
+import toast from 'react-hot-toast'
+import type { CartItem, Customer, PointsConfig, PaymentMethod } from '@/lib/types'
+
+interface Props {
+  cart: CartItem[]
+  subtotal: number
+  totalDiscount: number
+  total: number
+  customer: Customer | null
+  pointsConfig: PointsConfig | null
+  cashierId: string
+  onClose: () => void
+  onSuccess: () => void
+}
+
+const PAYMENT_LABELS: Record<PaymentMethod, string> = {
+  cash: '💵 เงินสด',
+  transfer: '📲 โอนเงิน',
+  card: '💳 บัตรเครดิต',
+  qr: '📷 QR Code',
+}
+
+export default function PaymentModal({
+  cart, subtotal, totalDiscount, total, customer, pointsConfig, cashierId, onClose, onSuccess,
+}: Props) {
+  const [method, setMethod] = useState<PaymentMethod>('cash')
+  const [cashReceived, setCashReceived] = useState('')
+  const [usePoints, setUsePoints] = useState(0)
+  const [loading, setLoading] = useState(false)
+
+  const maxRedeemablePoints = customer && pointsConfig
+    ? Math.min(customer.points, Math.floor(total / pointsConfig.redeem_value) * pointsConfig.redeem_points)
+    : 0
+  const pointsDiscount = pointsConfig && usePoints > 0
+    ? (usePoints / pointsConfig.redeem_points) * pointsConfig.redeem_value
+    : 0
+  const finalTotal = Math.max(0, total - pointsDiscount)
+
+  const change = method === 'cash' && cashReceived
+    ? parseFloat(cashReceived) - finalTotal
+    : 0
+
+  const earnedPoints = pointsConfig && finalTotal > 0
+    ? Math.floor(finalTotal / pointsConfig.spend_amount) * pointsConfig.earn_points
+    : 0
+
+  async function handleConfirm() {
+    if (method === 'cash' && parseFloat(cashReceived || '0') < finalTotal) {
+      toast.error('รับเงินไม่พอ')
+      return
+    }
+
+    setLoading(true)
+    const supabase = createClient()
+
+    // Generate transaction number
+    const txNumber = `TXN${Date.now()}`
+
+    // Create transaction
+    const { data: tx, error: txError } = await supabase
+      .from('transactions')
+      .insert({
+        transaction_number: txNumber,
+        cashier_id: cashierId,
+        customer_id: customer?.id ?? null,
+        subtotal,
+        discount: totalDiscount + pointsDiscount,
+        total: finalTotal,
+        payment_method: method,
+        cash_received: method === 'cash' ? parseFloat(cashReceived) : null,
+        change_given: method === 'cash' ? Math.max(0, change) : null,
+        points_earned: earnedPoints,
+        points_used: usePoints,
+      })
+      .select('id')
+      .single()
+
+    if (txError || !tx) {
+      toast.error('เกิดข้อผิดพลาด: ' + txError?.message)
+      setLoading(false)
+      return
+    }
+
+    // Insert transaction items + deduct stock (FEFO)
+    const itemInserts = cart.map((item) => ({
+      transaction_id: tx.id,
+      product_id: item.product.id,
+      product_lot_id: item.lot_id,
+      quantity: item.quantity,
+      unit_price: item.unit_price,
+      discount: item.discount,
+      subtotal: item.subtotal,
+    }))
+
+    await supabase.from('transaction_items').insert(itemInserts)
+
+    // Deduct stock from lots (FEFO)
+    for (const item of cart) {
+      let remaining = item.quantity
+      const lots = (item.product.product_lots ?? [])
+        .filter((l: any) => l.quantity > 0)
+        .sort((a: any, b: any) => {
+          if (!a.expiry_date) return 1
+          if (!b.expiry_date) return -1
+          return a.expiry_date.localeCompare(b.expiry_date)
+        })
+
+      for (const lot of lots) {
+        if (remaining <= 0) break
+        const deduct = Math.min(remaining, (lot as any).quantity)
+        await supabase
+          .from('product_lots')
+          .update({ quantity: (lot as any).quantity - deduct })
+          .eq('id', (lot as any).id)
+        remaining -= deduct
+      }
+    }
+
+    // Update customer points
+    if (customer) {
+      await supabase
+        .from('customers')
+        .update({
+          points: customer.points + earnedPoints - usePoints,
+          total_spent: customer.total_spent + finalTotal,
+        })
+        .eq('id', customer.id)
+    }
+
+    setLoading(false)
+    onSuccess()
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-2xl w-full max-w-sm shadow-2xl">
+        <div className="flex items-center justify-between p-4 border-b border-gray-100">
+          <h2 className="font-bold text-gray-900">ชำระเงิน</h2>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
+            <X size={20} />
+          </button>
+        </div>
+
+        <div className="p-4 space-y-4">
+          {/* Payment Method */}
+          <div>
+            <p className="text-sm font-medium text-gray-700 mb-2">วิธีชำระเงิน</p>
+            <div className="grid grid-cols-2 gap-2">
+              {(Object.keys(PAYMENT_LABELS) as PaymentMethod[]).map((m) => (
+                <button
+                  key={m}
+                  onClick={() => setMethod(m)}
+                  className={`py-2.5 rounded-lg text-sm font-medium border-2 transition-colors ${
+                    method === m
+                      ? 'border-blue-500 bg-blue-50 text-blue-700'
+                      : 'border-gray-200 text-gray-600 hover:border-gray-300'
+                  }`}
+                >
+                  {PAYMENT_LABELS[m]}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Cash input */}
+          {method === 'cash' && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">รับเงิน</label>
+              <input
+                type="number"
+                value={cashReceived}
+                onChange={(e) => setCashReceived(e.target.value)}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-lg font-bold focus:outline-none focus:ring-2 focus:ring-blue-500"
+                placeholder="0"
+                min={finalTotal}
+                step="0.01"
+              />
+              <div className="flex gap-2 mt-2">
+                {[finalTotal, Math.ceil(finalTotal / 100) * 100, Math.ceil(finalTotal / 500) * 500, 1000].filter(
+                  (v, i, arr) => arr.indexOf(v) === i && v >= finalTotal
+                ).slice(0, 4).map((val) => (
+                  <button
+                    key={val}
+                    onClick={() => setCashReceived(val.toString())}
+                    className="flex-1 text-xs py-1.5 bg-gray-100 hover:bg-gray-200 rounded-lg font-medium text-gray-700"
+                  >
+                    {val}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Points */}
+          {customer && pointsConfig && customer.points > 0 && (
+            <div className="bg-blue-50 rounded-lg p-3">
+              <div className="flex justify-between items-center">
+                <div>
+                  <p className="text-sm font-medium text-gray-900">ใช้แต้ม</p>
+                  <p className="text-xs text-gray-500">คงเหลือ {customer.points} แต้ม</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setUsePoints(Math.max(0, usePoints - pointsConfig.redeem_points))}
+                    className="w-7 h-7 flex items-center justify-center bg-white rounded-full border border-gray-200 text-gray-600 text-sm"
+                  >
+                    −
+                  </button>
+                  <span className="text-sm font-bold w-10 text-center">{usePoints}</span>
+                  <button
+                    onClick={() => setUsePoints(Math.min(maxRedeemablePoints, usePoints + pointsConfig.redeem_points))}
+                    className="w-7 h-7 flex items-center justify-center bg-white rounded-full border border-gray-200 text-gray-600 text-sm"
+                  >
+                    +
+                  </button>
+                </div>
+              </div>
+              {usePoints > 0 && (
+                <p className="text-xs text-green-600 mt-1">ลด ฿{pointsDiscount.toFixed(2)}</p>
+              )}
+            </div>
+          )}
+
+          {/* Summary */}
+          <div className="bg-gray-50 rounded-lg p-3 space-y-1.5">
+            <div className="flex justify-between text-sm text-gray-500">
+              <span>ยอดรวม</span>
+              <span>฿{total.toFixed(2)}</span>
+            </div>
+            {pointsDiscount > 0 && (
+              <div className="flex justify-between text-sm text-green-600">
+                <span>ลดด้วยแต้ม ({usePoints} แต้ม)</span>
+                <span>-฿{pointsDiscount.toFixed(2)}</span>
+              </div>
+            )}
+            <div className="flex justify-between font-bold text-base text-gray-900 pt-1 border-t border-gray-200">
+              <span>ยอดที่ต้องชำระ</span>
+              <span>฿{finalTotal.toFixed(2)}</span>
+            </div>
+            {method === 'cash' && cashReceived && change >= 0 && (
+              <div className="flex justify-between text-sm text-blue-600 font-medium">
+                <span>เงินทอน</span>
+                <span>฿{change.toFixed(2)}</span>
+              </div>
+            )}
+            {earnedPoints > 0 && (
+              <div className="text-xs text-purple-600 pt-1">
+                ได้รับ {earnedPoints} แต้ม
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="p-4 border-t border-gray-100">
+          <button
+            onClick={handleConfirm}
+            disabled={loading || (method === 'cash' && (!cashReceived || parseFloat(cashReceived) < finalTotal))}
+            className="w-full bg-green-600 hover:bg-green-700 disabled:opacity-40 disabled:cursor-not-allowed text-white font-bold py-3 rounded-xl text-base transition-colors"
+          >
+            {loading ? 'กำลังบันทึก...' : '✓ ยืนยันชำระเงิน'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}

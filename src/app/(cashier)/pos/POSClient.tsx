@@ -1,0 +1,387 @@
+'use client'
+
+import { useState, useCallback } from 'react'
+import { createClient } from '@/lib/supabase/client'
+import { Search, X, Plus, Minus, ShoppingCart, User } from 'lucide-react'
+import toast from 'react-hot-toast'
+import type { Product, CartItem, Promotion, PointsConfig, Customer, PaymentMethod } from '@/lib/types'
+import PaymentModal from './PaymentModal'
+
+interface Props {
+  products: Product[]
+  promotions: Promotion[]
+  pointsConfig: PointsConfig | null
+  cashierId: string
+}
+
+export default function POSClient({ products, promotions, pointsConfig, cashierId }: Props) {
+  const [search, setSearch] = useState('')
+  const [cart, setCart] = useState<CartItem[]>([])
+  const [customer, setCustomer] = useState<Customer | null>(null)
+  const [customerPhone, setCustomerPhone] = useState('')
+  const [showPayment, setShowPayment] = useState(false)
+  const [categoryFilter, setCategoryFilter] = useState('')
+
+  // Get unique categories from products
+  const categories = Array.from(
+    new Map(
+      products
+        .filter((p) => p.categories)
+        .map((p) => [(p.categories as any).name, (p.categories as any).name])
+    ).values()
+  )
+
+  const filtered = products.filter((p) => {
+    const matchSearch =
+      !search ||
+      p.name.toLowerCase().includes(search.toLowerCase()) ||
+      (p.barcode && p.barcode.includes(search))
+    const matchCategory = !categoryFilter || (p.categories as any)?.name === categoryFilter
+    const hasStock = (p.product_lots ?? []).reduce((s: number, l: any) => s + l.quantity, 0) > 0
+    return matchSearch && matchCategory && hasStock
+  })
+
+  function getProductStock(product: Product): number {
+    return (product.product_lots ?? []).reduce((s: number, l: any) => s + l.quantity, 0)
+  }
+
+  // Pick the lot with the earliest expiry (FEFO) with stock
+  function getBestLot(product: Product): string | null {
+    const lots = (product.product_lots ?? [])
+      .filter((l: any) => l.quantity > 0)
+      .sort((a: any, b: any) => {
+        if (!a.expiry_date) return 1
+        if (!b.expiry_date) return -1
+        return a.expiry_date.localeCompare(b.expiry_date)
+      })
+    return lots[0]?.id ?? null
+  }
+
+  function applyPromotion(product: Product, quantity: number): number {
+    let discount = 0
+
+    for (const promo of promotions) {
+      const applies =
+        promo.apply_to === 'all' ||
+        (promo.apply_to === 'product' && promo.product_id === product.id) ||
+        (promo.apply_to === 'category' && promo.category_id === (product as any).category_id)
+
+      if (!applies) continue
+
+      if (promo.type === 'percent_discount' && promo.discount_percent) {
+        discount = (product.price * quantity * promo.discount_percent) / 100
+      } else if (
+        promo.type === 'buy_x_get_y' &&
+        promo.buy_quantity &&
+        promo.get_quantity
+      ) {
+        const sets = Math.floor(quantity / promo.buy_quantity)
+        const freeQty = Math.min(sets * promo.get_quantity, quantity - sets * promo.buy_quantity)
+        discount = freeQty * product.price
+      }
+    }
+
+    return discount
+  }
+
+  function addToCart(product: Product) {
+    const existing = cart.findIndex((c) => c.product.id === product.id)
+    if (existing >= 0) {
+      const newCart = [...cart]
+      const item = newCart[existing]
+      const newQty = item.quantity + 1
+      const discount = applyPromotion(product, newQty)
+      newCart[existing] = {
+        ...item,
+        quantity: newQty,
+        discount,
+        subtotal: product.price * newQty - discount,
+      }
+      setCart(newCart)
+    } else {
+      const lot_id = getBestLot(product)
+      const discount = applyPromotion(product, 1)
+      setCart([
+        ...cart,
+        {
+          product,
+          quantity: 1,
+          unit_price: product.price,
+          discount,
+          subtotal: product.price - discount,
+          lot_id,
+        },
+      ])
+    }
+  }
+
+  function changeQty(index: number, delta: number) {
+    const newCart = [...cart]
+    const item = newCart[index]
+    const newQty = item.quantity + delta
+    if (newQty <= 0) {
+      newCart.splice(index, 1)
+    } else {
+      const maxStock = getProductStock(item.product)
+      if (newQty > maxStock) {
+        toast.error(`สต็อคคงเหลือ ${maxStock} ${item.product.unit}`)
+        return
+      }
+      const discount = applyPromotion(item.product, newQty)
+      newCart[index] = {
+        ...item,
+        quantity: newQty,
+        discount,
+        subtotal: item.unit_price * newQty - discount,
+      }
+    }
+    setCart(newCart)
+  }
+
+  async function searchCustomer() {
+    if (!customerPhone) return
+    const supabase = createClient()
+    const { data } = await supabase
+      .from('customers')
+      .select('*')
+      .eq('phone', customerPhone)
+      .single()
+
+    if (data) {
+      setCustomer(data)
+      toast.success(`พบลูกค้า: ${data.name} (${data.points} แต้ม)`)
+    } else {
+      toast.error('ไม่พบลูกค้า')
+    }
+  }
+
+  const subtotal = cart.reduce((s, item) => s + item.product.price * item.quantity, 0)
+  const totalDiscount = cart.reduce((s, item) => s + item.discount, 0)
+  const total = subtotal - totalDiscount
+
+  return (
+    <div className="flex h-[calc(100vh-56px)]">
+      {/* Left: Product Grid */}
+      <div className="flex-1 flex flex-col bg-gray-50 overflow-hidden">
+        {/* Search + Filter */}
+        <div className="p-4 bg-white border-b border-gray-200 space-y-2">
+          <div className="relative">
+            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="ค้นหาสินค้า หรือสแกนบาร์โค้ด..."
+              className="w-full pl-9 pr-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+          <div className="flex gap-2 overflow-x-auto pb-0.5">
+            <button
+              onClick={() => setCategoryFilter('')}
+              className={`shrink-0 text-xs px-3 py-1.5 rounded-full font-medium transition-colors ${
+                !categoryFilter ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+              }`}
+            >
+              ทั้งหมด
+            </button>
+            {categories.map((cat) => (
+              <button
+                key={cat}
+                onClick={() => setCategoryFilter(cat === categoryFilter ? '' : cat)}
+                className={`shrink-0 text-xs px-3 py-1.5 rounded-full font-medium transition-colors ${
+                  cat === categoryFilter ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                }`}
+              >
+                {cat}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Product Grid */}
+        <div className="flex-1 overflow-y-auto p-4">
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
+            {filtered.map((product) => {
+              const stock = getProductStock(product)
+              const inCart = cart.find((c) => c.product.id === product.id)
+              return (
+                <button
+                  key={product.id}
+                  onClick={() => addToCart(product)}
+                  className={`bg-white rounded-xl p-3 text-left border-2 transition-all hover:shadow-md active:scale-95 ${
+                    inCart ? 'border-blue-500' : 'border-transparent'
+                  }`}
+                >
+                  <div className="w-full aspect-square bg-gray-100 rounded-lg mb-2 flex items-center justify-center text-3xl">
+                    🐾
+                  </div>
+                  <p className="text-xs font-medium text-gray-900 line-clamp-2 leading-tight mb-1">
+                    {product.name}
+                  </p>
+                  <p className="text-sm font-bold text-blue-600">
+                    ฿{product.price.toLocaleString('th-TH', { minimumFractionDigits: 2 })}
+                  </p>
+                  <p className="text-xs text-gray-400 mt-0.5">คงเหลือ {stock}</p>
+                </button>
+              )
+            })}
+            {filtered.length === 0 && (
+              <div className="col-span-full text-center py-12 text-gray-400 text-sm">
+                ไม่พบสินค้า
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Right: Cart */}
+      <div className="w-80 bg-white border-l border-gray-200 flex flex-col">
+        {/* Customer */}
+        <div className="p-3 border-b border-gray-100">
+          <div className="flex gap-2">
+            <div className="relative flex-1">
+              <User size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
+              <input
+                type="tel"
+                value={customerPhone}
+                onChange={(e) => setCustomerPhone(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && searchCustomer()}
+                placeholder="เบอร์โทรลูกค้า"
+                className="w-full pl-8 pr-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+            <button
+              onClick={searchCustomer}
+              className="px-3 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg text-xs font-medium text-gray-700 transition-colors"
+            >
+              ค้นหา
+            </button>
+          </div>
+          {customer && (
+            <div className="mt-2 flex items-center justify-between bg-blue-50 rounded-lg px-3 py-2">
+              <div>
+                <p className="text-sm font-medium text-gray-900">{customer.name}</p>
+                <p className="text-xs text-blue-600">{customer.points} แต้ม</p>
+              </div>
+              <button
+                onClick={() => { setCustomer(null); setCustomerPhone('') }}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <X size={14} />
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* Cart Items */}
+        <div className="flex-1 overflow-y-auto">
+          {cart.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-full text-gray-300">
+              <ShoppingCart size={40} />
+              <p className="text-sm mt-2">ยังไม่มีสินค้า</p>
+            </div>
+          ) : (
+            <div className="divide-y divide-gray-50">
+              {cart.map((item, i) => (
+                <div key={item.product.id} className="px-3 py-2.5">
+                  <div className="flex justify-between items-start gap-2">
+                    <p className="text-sm font-medium text-gray-900 flex-1 leading-tight">
+                      {item.product.name}
+                    </p>
+                    <button
+                      onClick={() => changeQty(i, -item.quantity)}
+                      className="text-gray-300 hover:text-red-500 shrink-0"
+                    >
+                      <X size={14} />
+                    </button>
+                  </div>
+                  <div className="flex items-center justify-between mt-1.5">
+                    <div className="flex items-center gap-1">
+                      <button
+                        onClick={() => changeQty(i, -1)}
+                        className="w-6 h-6 flex items-center justify-center border border-gray-200 rounded text-gray-600 hover:bg-gray-100"
+                      >
+                        <Minus size={12} />
+                      </button>
+                      <span className="w-8 text-center text-sm font-medium">{item.quantity}</span>
+                      <button
+                        onClick={() => changeQty(i, 1)}
+                        className="w-6 h-6 flex items-center justify-center border border-gray-200 rounded text-gray-600 hover:bg-gray-100"
+                      >
+                        <Plus size={12} />
+                      </button>
+                    </div>
+                    <div className="text-right">
+                      {item.discount > 0 && (
+                        <p className="text-xs text-green-600">-฿{item.discount.toFixed(2)}</p>
+                      )}
+                      <p className="text-sm font-semibold text-gray-900">
+                        ฿{item.subtotal.toFixed(2)}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Summary + Checkout */}
+        <div className="border-t border-gray-100 p-3 space-y-2">
+          <div className="flex justify-between text-sm text-gray-500">
+            <span>ราคาก่อนลด</span>
+            <span>฿{subtotal.toFixed(2)}</span>
+          </div>
+          {totalDiscount > 0 && (
+            <div className="flex justify-between text-sm text-green-600">
+              <span>ส่วนลดรวม</span>
+              <span>-฿{totalDiscount.toFixed(2)}</span>
+            </div>
+          )}
+          <div className="flex justify-between font-bold text-lg text-gray-900">
+            <span>รวม</span>
+            <span>฿{total.toFixed(2)}</span>
+          </div>
+
+          <button
+            disabled={cart.length === 0}
+            onClick={() => setShowPayment(true)}
+            className="w-full bg-blue-600 hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold py-3 rounded-xl text-base transition-colors"
+          >
+            ชำระเงิน
+          </button>
+
+          {cart.length > 0 && (
+            <button
+              onClick={() => setCart([])}
+              className="w-full text-sm text-gray-400 hover:text-red-500 py-1 transition-colors"
+            >
+              ล้างตะกร้า
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Payment Modal */}
+      {showPayment && (
+        <PaymentModal
+          cart={cart}
+          subtotal={subtotal}
+          totalDiscount={totalDiscount}
+          total={total}
+          customer={customer}
+          pointsConfig={pointsConfig}
+          cashierId={cashierId}
+          onClose={() => setShowPayment(false)}
+          onSuccess={() => {
+            setCart([])
+            setCustomer(null)
+            setCustomerPhone('')
+            setShowPayment(false)
+            toast.success('บันทึกการขายแล้ว')
+          }}
+        />
+      )}
+    </div>
+  )
+}
