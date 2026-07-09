@@ -186,6 +186,24 @@ export default function POSClient({ products, promotions, pointsConfig, cashierI
     }
   }
 
+  // Enter ในช่องค้นหา: บาร์โค้ดตรงเป๊ะ หรือผลค้นหาเหลือตัวเดียว → เข้าตะกร้าทันที (รองรับเครื่องยิงบาร์โค้ด)
+  function handleSearchEnter() {
+    const q = search.trim()
+    if (!q) return
+    const exact = products.find(
+      (p) =>
+        p.barcode === q &&
+        (p.product_lots ?? []).reduce((s: number, l: any) => s + l.quantity, 0) > 0
+    )
+    const target = exact ?? (filtered.length === 1 ? filtered[0] : null)
+    if (target) {
+      addToCart(target)
+      setSearch('')
+    } else if (filtered.length === 0) {
+      toast.error('ไม่พบสินค้า')
+    }
+  }
+
   const subtotal = cart.reduce((s, item) => s + item.product.price * item.quantity, 0)
   const totalDiscount = cart.reduce((s, item) => s + item.discount, 0)
   const total = subtotal - totalDiscount
@@ -202,6 +220,7 @@ export default function POSClient({ products, promotions, pointsConfig, cashierI
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleSearchEnter() } }}
               placeholder="ค้นหาสินค้า หรือสแกนบาร์โค้ด..."
               className="w-full pl-9 pr-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
