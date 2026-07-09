@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { Search, X, Plus, Minus, ShoppingCart, User } from 'lucide-react'
 import toast from 'react-hot-toast'
@@ -21,6 +21,26 @@ export default function POSClient({ products, promotions, pointsConfig, cashierI
   const [customerPhone, setCustomerPhone] = useState('')
   const [showPayment, setShowPayment] = useState(false)
   const [categoryFilter, setCategoryFilter] = useState('')
+  const searchRef = useRef<HTMLInputElement>(null)
+
+  // ยิงบาร์โค้ด/พิมพ์จากที่ไหนก็ได้ในหน้าขาย — เด้ง focus เข้าช่องค้นหาให้อัตโนมัติ
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if (showPayment) return // อย่าแย่ง focus ตอน modal ชำระเงินเปิดอยู่
+      const t = e.target as HTMLElement
+      if (
+        t.tagName === 'INPUT' ||
+        t.tagName === 'TEXTAREA' ||
+        t.tagName === 'SELECT' ||
+        t.isContentEditable
+      ) return
+      if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        searchRef.current?.focus()
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [showPayment])
 
   // Get unique categories from products
   const categories = Array.from(
@@ -217,6 +237,7 @@ export default function POSClient({ products, promotions, pointsConfig, cashierI
           <div className="relative">
             <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
             <input
+              ref={searchRef}
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
