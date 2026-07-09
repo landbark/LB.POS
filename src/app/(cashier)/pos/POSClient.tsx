@@ -85,11 +85,16 @@ export default function POSClient({ products, promotions, pointsConfig, cashierI
   }
 
   function addToCart(product: Product) {
+    const maxStock = getProductStock(product)
     const existing = cart.findIndex((c) => c.product.id === product.id)
     if (existing >= 0) {
       const newCart = [...cart]
       const item = newCart[existing]
       const newQty = item.quantity + 1
+      if (newQty > maxStock) {
+        toast.error(`สต็อคคงเหลือ ${maxStock} ${product.unit}`)
+        return
+      }
       const discount = applyPromotion(product, newQty)
       newCart[existing] = {
         ...item,
@@ -122,10 +127,13 @@ export default function POSClient({ products, promotions, pointsConfig, cashierI
     if (newQty <= 0) {
       newCart.splice(index, 1)
     } else {
-      const maxStock = getProductStock(item.product)
-      if (newQty > maxStock) {
-        toast.error(`สต็อคคงเหลือ ${maxStock} ${item.product.unit}`)
-        return
+      // เช็คสต็อคเฉพาะตอนเพิ่ม — การลดต้องทำได้เสมอ
+      if (delta > 0) {
+        const maxStock = getProductStock(item.product)
+        if (newQty > maxStock) {
+          toast.error(`สต็อคคงเหลือ ${maxStock} ${item.product.unit}`)
+          return
+        }
       }
       const discount = applyPromotion(item.product, newQty)
       newCart[index] = {
@@ -134,6 +142,29 @@ export default function POSClient({ products, promotions, pointsConfig, cashierI
         discount,
         subtotal: item.unit_price * newQty - discount,
       }
+    }
+    setCart(newCart)
+  }
+
+  // พิมพ์จำนวนตรงๆ ในตะกร้า — clamp ไม่ให้เกินสต็อคและไม่ต่ำกว่า 1
+  function setQty(index: number, raw: string) {
+    if (raw === '') return
+    let n = parseInt(raw)
+    if (isNaN(n)) return
+    const item = cart[index]
+    const maxStock = getProductStock(item.product)
+    if (n > maxStock) {
+      toast.error(`สต็อคคงเหลือ ${maxStock} ${item.product.unit}`)
+      n = maxStock
+    }
+    if (n < 1) n = 1
+    const discount = applyPromotion(item.product, n)
+    const newCart = [...cart]
+    newCart[index] = {
+      ...item,
+      quantity: n,
+      discount,
+      subtotal: item.unit_price * n - discount,
     }
     setCart(newCart)
   }
@@ -303,7 +334,13 @@ export default function POSClient({ products, promotions, pointsConfig, cashierI
                       >
                         <Minus size={12} />
                       </button>
-                      <span className="w-8 text-center text-sm font-medium">{item.quantity}</span>
+                      <input
+                        type="number"
+                        min={1}
+                        value={item.quantity}
+                        onChange={(e) => setQty(i, e.target.value)}
+                        className="w-12 text-center text-sm font-medium border border-gray-200 rounded py-0.5 focus:outline-none focus:ring-1 focus:ring-blue-400 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                      />
                       <button
                         onClick={() => changeQty(i, 1)}
                         className="w-6 h-6 flex items-center justify-center border border-gray-200 rounded text-gray-600 hover:bg-gray-100"

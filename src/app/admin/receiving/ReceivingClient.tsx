@@ -275,8 +275,8 @@ export default function ReceivingClient({ suppliers, products, purchases }: Prop
           </div>
         </div>
 
-        {/* รายการสินค้า */}
-        <div className="overflow-x-auto">
+        {/* รายการสินค้า — ห้ามใส่ overflow-x-auto ที่นี่ เพราะจะ clip dropdown ของ ProductPicker */}
+        <div>
           <table className="w-full">
             <thead>
               <tr className="text-xs font-medium text-gray-500 uppercase">
