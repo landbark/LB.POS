@@ -13,6 +13,12 @@ export interface Category {
   created_at: string
 }
 
+export interface Unit {
+  id: string
+  name: string
+  created_at: string
+}
+
 export interface Product {
   id: string
   name: string

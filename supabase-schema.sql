@@ -49,6 +49,13 @@ CREATE TABLE categories (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- Units (หน่วยสินค้า — admin เพิ่มได้จากฟอร์มสินค้า)
+CREATE TABLE units (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name TEXT NOT NULL UNIQUE,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
 -- Products
 CREATE TABLE products (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -150,6 +157,7 @@ CREATE TABLE transaction_items (
 -- RLS Policies
 ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE categories ENABLE ROW LEVEL SECURITY;
+ALTER TABLE units ENABLE ROW LEVEL SECURITY;
 ALTER TABLE products ENABLE ROW LEVEL SECURITY;
 ALTER TABLE product_lots ENABLE ROW LEVEL SECURITY;
 ALTER TABLE customers ENABLE ROW LEVEL SECURITY;
@@ -161,6 +169,9 @@ ALTER TABLE transaction_items ENABLE ROW LEVEL SECURITY;
 -- All authenticated users can read everything they need
 CREATE POLICY "auth read profiles" ON profiles FOR SELECT TO authenticated USING (true);
 CREATE POLICY "auth read categories" ON categories FOR SELECT TO authenticated USING (true);
+CREATE POLICY "auth read units" ON units FOR SELECT TO authenticated USING (true);
+CREATE POLICY "admin manage units" ON units FOR ALL TO authenticated
+  USING (public.is_admin());
 CREATE POLICY "auth read products" ON products FOR SELECT TO authenticated USING (true);
 CREATE POLICY "auth read product_lots" ON product_lots FOR SELECT TO authenticated USING (true);
 CREATE POLICY "auth read customers" ON customers FOR ALL TO authenticated USING (true);
@@ -212,3 +223,7 @@ INSERT INTO categories (name) VALUES
   ('อุปกรณ์'),
   ('ยา / วิตามิน'),
   ('กรูมมิ่ง');
+
+-- Sample units
+INSERT INTO units (name) VALUES
+  ('ชิ้น'),('ถุง'),('กระป๋อง'),('กล่อง'),('แพ็ค'),('ขวด'),('ซอง'),('กิโลกรัม');

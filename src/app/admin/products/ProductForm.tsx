@@ -3,15 +3,17 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import { Plus } from 'lucide-react'
 import toast from 'react-hot-toast'
-import type { Category, Product } from '@/lib/types'
+import type { Category, Product, Unit } from '@/lib/types'
 
 interface Props {
   categories: Category[]
+  units: Unit[]
   product?: Product
 }
 
-export default function ProductForm({ categories, product }: Props) {
+export default function ProductForm({ categories, units, product }: Props) {
   const router = useRouter()
   const [loading, setLoading] = useState(false)
   const [form, setForm] = useState({
@@ -20,12 +22,59 @@ export default function ProductForm({ categories, product }: Props) {
     category_id: product?.category_id ?? '',
     price: product?.price?.toString() ?? '',
     cost: product?.cost?.toString() ?? '',
-    unit: product?.unit ?? 'ชิ้น',
+    unit: product?.unit ?? (units[0]?.name ?? 'ชิ้น'),
     min_stock: product?.min_stock?.toString() ?? '5',
   })
 
+  const [unitList, setUnitList] = useState(units)
+  const [catList, setCatList] = useState(categories)
+  const [addingUnit, setAddingUnit] = useState(false)
+  const [addingCat, setAddingCat] = useState(false)
+  const [newUnit, setNewUnit] = useState('')
+  const [newCat, setNewCat] = useState('')
+
   function set(key: string, value: string) {
     setForm((prev) => ({ ...prev, [key]: value }))
+  }
+
+  async function addUnit() {
+    const name = newUnit.trim()
+    if (!name) return
+    const supabase = createClient()
+    const { data, error } = await supabase
+      .from('units')
+      .insert({ name })
+      .select()
+      .single()
+    if (error) {
+      toast.error(error.code === '23505' ? 'มีหน่วยนี้อยู่แล้ว' : 'เพิ่มหน่วยไม่สำเร็จ')
+      return
+    }
+    setUnitList([...unitList, data])
+    set('unit', data.name)
+    setNewUnit('')
+    setAddingUnit(false)
+    toast.success(`เพิ่มหน่วย "${data.name}" แล้ว`)
+  }
+
+  async function addCategory() {
+    const name = newCat.trim()
+    if (!name) return
+    const supabase = createClient()
+    const { data, error } = await supabase
+      .from('categories')
+      .insert({ name })
+      .select()
+      .single()
+    if (error) {
+      toast.error(error.code === '23505' ? 'มีหมวดหมู่นี้อยู่แล้ว' : 'เพิ่มหมวดหมู่ไม่สำเร็จ')
+      return
+    }
+    setCatList([...catList, data])
+    set('category_id', data.id)
+    setNewCat('')
+    setAddingCat(false)
+    toast.success(`เพิ่มหมวดหมู่ "${data.name}" แล้ว`)
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -60,6 +109,11 @@ export default function ProductForm({ categories, product }: Props) {
 
   const inputClass = 'w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500'
   const labelClass = 'block text-sm font-medium text-gray-700 mb-1'
+  const addBtnClass = 'shrink-0 flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700 font-medium'
+  const inlineAddClass = 'flex gap-2 mt-2'
+  const inlineInputClass = 'flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500'
+  const inlineSaveClass = 'px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-medium'
+  const inlineCancelClass = 'px-3 py-2 border border-gray-300 rounded-lg text-xs text-gray-600'
 
   return (
     <form onSubmit={handleSubmit} className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 max-w-xl">
@@ -88,30 +142,76 @@ export default function ProductForm({ categories, product }: Props) {
             />
           </div>
           <div>
-            <label className={labelClass}>หน่วย</label>
-            <input
-              type="text"
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-sm font-medium text-gray-700">หน่วย *</label>
+              <button type="button" onClick={() => setAddingUnit(!addingUnit)} className={addBtnClass}>
+                <Plus size={12} /> เพิ่มหน่วย
+              </button>
+            </div>
+            <select
               required
               value={form.unit}
               onChange={(e) => set('unit', e.target.value)}
               className={inputClass}
-              placeholder="ชิ้น / ถุง / กระป๋อง"
-            />
+            >
+              {/* กันค่า unit เดิมของสินค้าที่ไม่อยู่ในตาราง units หาย */}
+              {form.unit && !unitList.some((u) => u.name === form.unit) && (
+                <option value={form.unit}>{form.unit}</option>
+              )}
+              {unitList.map((u) => (
+                <option key={u.id} value={u.name}>{u.name}</option>
+              ))}
+            </select>
+            {addingUnit && (
+              <div className={inlineAddClass}>
+                <input
+                  type="text"
+                  value={newUnit}
+                  onChange={(e) => setNewUnit(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addUnit() } }}
+                  className={inlineInputClass}
+                  placeholder="เช่น กระสอบ"
+                  autoFocus
+                />
+                <button type="button" onClick={addUnit} className={inlineSaveClass}>บันทึก</button>
+                <button type="button" onClick={() => { setAddingUnit(false); setNewUnit('') }} className={inlineCancelClass}>ยกเลิก</button>
+              </div>
+            )}
           </div>
         </div>
 
         <div>
-          <label className={labelClass}>หมวดหมู่</label>
+          <div className="flex items-center justify-between mb-1">
+            <label className="text-sm font-medium text-gray-700">หมวดหมู่</label>
+            <button type="button" onClick={() => setAddingCat(!addingCat)} className={addBtnClass}>
+              <Plus size={12} /> เพิ่มหมวดหมู่
+            </button>
+          </div>
           <select
             value={form.category_id}
             onChange={(e) => set('category_id', e.target.value)}
             className={inputClass}
           >
             <option value="">— ไม่ระบุ —</option>
-            {categories.map((c) => (
+            {catList.map((c) => (
               <option key={c.id} value={c.id}>{c.name}</option>
             ))}
           </select>
+          {addingCat && (
+            <div className={inlineAddClass}>
+              <input
+                type="text"
+                value={newCat}
+                onChange={(e) => setNewCat(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addCategory() } }}
+                className={inlineInputClass}
+                placeholder="เช่น อาหารเสริม"
+                autoFocus
+              />
+              <button type="button" onClick={addCategory} className={inlineSaveClass}>บันทึก</button>
+              <button type="button" onClick={() => { setAddingCat(false); setNewCat('') }} className={inlineCancelClass}>ยกเลิก</button>
+            </div>
+          )}
         </div>
 
         <div className="grid grid-cols-2 gap-4">
