@@ -5,7 +5,7 @@ export default async function ReceivingPage() {
   const supabase = await createClient()
   const [{ data: suppliers }, { data: products }, { data: purchases }] = await Promise.all([
     supabase.from('suppliers').select('*').order('name'),
-    supabase.from('products').select('id, name, sku, unit, cost, supplier_id').eq('active', true).order('name'),
+    supabase.from('products').select('id, name, sku, barcode, unit, cost, supplier_id').eq('active', true).order('name'),
     supabase
       .from('purchases')
       .select('*, suppliers(name), purchase_items(id)')

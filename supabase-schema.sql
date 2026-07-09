@@ -88,6 +88,7 @@ CREATE TABLE product_lots (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   product_id UUID NOT NULL REFERENCES products(id) ON DELETE CASCADE,
   lot_number TEXT,
+  supplier_lot_number TEXT,
   expiry_date DATE,
   quantity INT NOT NULL DEFAULT 0 CHECK (quantity >= 0),
   initial_quantity INT NOT NULL,
@@ -171,6 +172,7 @@ CREATE TABLE purchase_items (
   quantity INT NOT NULL CHECK (quantity > 0),
   unit_cost NUMERIC(10,2) NOT NULL DEFAULT 0,
   lot_number TEXT,
+  supplier_lot_number TEXT,
   expiry_date DATE,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );

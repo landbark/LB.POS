@@ -66,6 +66,7 @@ export interface PurchaseItem {
   quantity: number
   unit_cost: number
   lot_number: string | null
+  supplier_lot_number: string | null
   expiry_date: string | null
   created_at: string
   products?: Product
@@ -75,6 +76,7 @@ export interface ProductLot {
   id: string
   product_id: string
   lot_number: string | null
+  supplier_lot_number: string | null
   expiry_date: string | null
   quantity: number
   initial_quantity: number

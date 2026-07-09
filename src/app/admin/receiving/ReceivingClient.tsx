@@ -11,6 +11,7 @@ interface ProductOption {
   id: string
   name: string
   sku: string | null
+  barcode: string | null
   unit: string
   cost: number | null
   supplier_id: string | null
@@ -31,10 +32,107 @@ interface ItemRow {
   quantity: string
   unit_cost: string
   lot_number: string
+  supplier_lot: string
   expiry_date: string
 }
 
-const emptyItem: ItemRow = { product_id: '', quantity: '', unit_cost: '', lot_number: '', expiry_date: '' }
+// LOT ระบบ: LOT + วันที่(2) เดือน(2) ปีค.ศ.(4) ของวันที่ทำรายการ
+function defaultLot(): string {
+  const d = new Date()
+  const dd = String(d.getDate()).padStart(2, '0')
+  const mm = String(d.getMonth() + 1).padStart(2, '0')
+  const yyyy = d.getFullYear()
+  return `LOT${dd}${mm}${yyyy}`
+}
+
+function newItem(): ItemRow {
+  return { product_id: '', quantity: '', unit_cost: '', lot_number: defaultLot(), supplier_lot: '', expiry_date: '' }
+}
+
+const inputClass = 'w-full border border-gray-300 rounded-lg px-2.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500'
+
+// ช่องเลือกสินค้าแบบพิมพ์ค้นหา (ชื่อ / SKU / บาร์โค้ด)
+function ProductPicker({
+  products,
+  value,
+  onChange,
+  supplierId,
+}: {
+  products: ProductOption[]
+  value: string
+  onChange: (id: string) => void
+  supplierId: string
+}) {
+  const selected = products.find((p) => p.id === value)
+  const [query, setQuery] = useState('')
+  const [open, setOpen] = useState(false)
+
+  const q = query.trim().toLowerCase()
+  const matches = (q
+    ? products.filter(
+        (p) =>
+          p.name.toLowerCase().includes(q) ||
+          (p.sku ?? '').toLowerCase().includes(q) ||
+          (p.barcode ?? '').includes(q)
+      )
+    : products
+  ).slice(0, 8)
+
+  function pick(p: ProductOption) {
+    onChange(p.id)
+    setOpen(false)
+    setQuery('')
+  }
+
+  return (
+    <div className="relative">
+      <input
+        type="text"
+        value={open ? query : selected?.name ?? ''}
+        onFocus={() => { setOpen(true); setQuery('') }}
+        onChange={(e) => { setQuery(e.target.value); setOpen(true) }}
+        onBlur={() => setTimeout(() => setOpen(false), 150)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault()
+            if (matches[0]) pick(matches[0])
+          }
+          if (e.key === 'Escape') setOpen(false)
+        }}
+        placeholder="พิมพ์ชื่อ / SKU / บาร์โค้ด..."
+        className={inputClass}
+      />
+      {open && (
+        <div className="absolute z-20 top-full left-0 right-0 bg-white border border-gray-200 rounded-lg shadow-lg mt-1 max-h-64 overflow-y-auto">
+          {matches.length === 0 && (
+            <p className="px-3 py-2.5 text-sm text-gray-400">ไม่พบสินค้า</p>
+          )}
+          {matches.map((p) => (
+            <button
+              type="button"
+              key={p.id}
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => pick(p)}
+              className="w-full text-left px-3 py-2 hover:bg-blue-50 border-b border-gray-50 last:border-0"
+            >
+              <p className="text-sm text-gray-900">
+                {p.name}
+                {supplierId && p.supplier_id === supplierId && (
+                  <span className="text-yellow-500 ml-1">★</span>
+                )}
+              </p>
+              {(p.sku || p.barcode) && (
+                <p className="text-xs text-gray-400 font-mono">
+                  {[p.sku, p.barcode].filter(Boolean).join(' · ')}
+                </p>
+              )}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
 
 interface Props {
   suppliers: Supplier[]
@@ -46,10 +144,10 @@ export default function ReceivingClient({ suppliers, products, purchases }: Prop
   const router = useRouter()
   const [supplierId, setSupplierId] = useState('')
   const [notes, setNotes] = useState('')
-  const [items, setItems] = useState<ItemRow[]>([{ ...emptyItem }])
+  const [items, setItems] = useState<ItemRow[]>([newItem()])
   const [loading, setLoading] = useState(false)
 
-  // ถ้าเลือกซัพพลายเออร์ กรองสินค้าให้เห็นของเจ้านั้นก่อน (แต่ยังเลือกตัวอื่นได้)
+  // สินค้าของซัพพลายเออร์ที่เลือกขึ้นก่อนในผลค้นหา
   const sortedProducts = supplierId
     ? [...products].sort((a, b) => {
         const aMatch = a.supplier_id === supplierId ? 0 : 1
@@ -61,7 +159,6 @@ export default function ReceivingClient({ suppliers, products, purchases }: Prop
   function setItem(index: number, key: keyof ItemRow, value: string) {
     const next = [...items]
     next[index] = { ...next[index], [key]: value }
-    // เลือกสินค้าแล้ว prefill ทุนจากราคาทุนสินค้า
     if (key === 'product_id') {
       const p = products.find((x) => x.id === value)
       if (p?.cost != null && !next[index].unit_cost) {
@@ -72,12 +169,12 @@ export default function ReceivingClient({ suppliers, products, purchases }: Prop
   }
 
   function addRow() {
-    setItems([...items, { ...emptyItem }])
+    setItems([...items, newItem()])
   }
 
   function removeRow(index: number) {
     if (items.length === 1) {
-      setItems([{ ...emptyItem }])
+      setItems([newItem()])
       return
     }
     setItems(items.filter((_, i) => i !== index))
@@ -121,6 +218,7 @@ export default function ReceivingClient({ suppliers, products, purchases }: Prop
         quantity: parseInt(it.quantity),
         unit_cost: parseFloat(it.unit_cost) || 0,
         lot_number: it.lot_number.trim() || null,
+        supplier_lot_number: it.supplier_lot.trim() || null,
         expiry_date: it.expiry_date || null,
       }))
     )
@@ -136,6 +234,7 @@ export default function ReceivingClient({ suppliers, products, purchases }: Prop
       validItems.map((it) => ({
         product_id: it.product_id,
         lot_number: it.lot_number.trim() || null,
+        supplier_lot_number: it.supplier_lot.trim() || null,
         expiry_date: it.expiry_date || null,
         quantity: parseInt(it.quantity),
         initial_quantity: parseInt(it.quantity),
@@ -151,11 +250,9 @@ export default function ReceivingClient({ suppliers, products, purchases }: Prop
     toast.success(`นำเข้าสินค้า ${validItems.length} รายการแล้ว สต็อคเพิ่มเรียบร้อย`)
     setSupplierId('')
     setNotes('')
-    setItems([{ ...emptyItem }])
+    setItems([newItem()])
     router.refresh()
   }
-
-  const inputClass = 'w-full border border-gray-300 rounded-lg px-2.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500'
 
   return (
     <div>
@@ -183,10 +280,11 @@ export default function ReceivingClient({ suppliers, products, purchases }: Prop
           <table className="w-full">
             <thead>
               <tr className="text-xs font-medium text-gray-500 uppercase">
-                <th className="text-left pb-2 pr-2 min-w-48">สินค้า</th>
+                <th className="text-left pb-2 pr-2 min-w-56">สินค้า</th>
                 <th className="text-left pb-2 pr-2 w-20">จำนวน</th>
                 <th className="text-left pb-2 pr-2 w-24">ทุน/หน่วย</th>
-                <th className="text-left pb-2 pr-2 w-28">Lot</th>
+                <th className="text-left pb-2 pr-2 w-32">LOT (ระบบ)</th>
+                <th className="text-left pb-2 pr-2 w-32">LOT บริษัท</th>
                 <th className="text-left pb-2 pr-2 w-36">วันหมดอายุ</th>
                 <th className="text-right pb-2 w-24">รวม</th>
                 <th className="pb-2 w-8"></th>
@@ -198,14 +296,12 @@ export default function ReceivingClient({ suppliers, products, purchases }: Prop
                 return (
                   <tr key={i}>
                     <td className="pr-2 py-1.5">
-                      <select value={it.product_id} onChange={(e) => setItem(i, 'product_id', e.target.value)} className={inputClass}>
-                        <option value="">— เลือกสินค้า —</option>
-                        {sortedProducts.map((p) => (
-                          <option key={p.id} value={p.id}>
-                            {p.sku ? `[${p.sku}] ` : ''}{p.name}{supplierId && p.supplier_id === supplierId ? ' ★' : ''}
-                          </option>
-                        ))}
-                      </select>
+                      <ProductPicker
+                        products={sortedProducts}
+                        value={it.product_id}
+                        onChange={(id) => setItem(i, 'product_id', id)}
+                        supplierId={supplierId}
+                      />
                     </td>
                     <td className="pr-2 py-1.5">
                       <input type="number" min="1" value={it.quantity} onChange={(e) => setItem(i, 'quantity', e.target.value)} className={inputClass} placeholder="0" />
@@ -214,7 +310,10 @@ export default function ReceivingClient({ suppliers, products, purchases }: Prop
                       <input type="number" min="0" step="0.01" value={it.unit_cost} onChange={(e) => setItem(i, 'unit_cost', e.target.value)} className={inputClass} placeholder="0.00" />
                     </td>
                     <td className="pr-2 py-1.5">
-                      <input type="text" value={it.lot_number} onChange={(e) => setItem(i, 'lot_number', e.target.value)} className={inputClass} placeholder="LOT-001" />
+                      <input type="text" value={it.lot_number} onChange={(e) => setItem(i, 'lot_number', e.target.value)} className={inputClass} />
+                    </td>
+                    <td className="pr-2 py-1.5">
+                      <input type="text" value={it.supplier_lot} onChange={(e) => setItem(i, 'supplier_lot', e.target.value)} className={inputClass} placeholder="lot จากบริษัท (ถ้ามี)" />
                     </td>
                     <td className="pr-2 py-1.5">
                       <input type="date" value={it.expiry_date} onChange={(e) => setItem(i, 'expiry_date', e.target.value)} className={inputClass} />
