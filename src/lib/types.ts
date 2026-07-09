@@ -22,8 +22,10 @@ export interface Unit {
 export interface Product {
   id: string
   name: string
+  sku: string | null
   barcode: string | null
   category_id: string | null
+  supplier_id: string | null
   price: number
   cost: number | null
   unit: string
@@ -32,7 +34,41 @@ export interface Product {
   active: boolean
   created_at: string
   categories?: Category
+  suppliers?: Supplier
   product_lots?: ProductLot[]
+}
+
+export interface Supplier {
+  id: string
+  name: string
+  contact_name: string | null
+  phone: string | null
+  notes: string | null
+  created_at: string
+}
+
+export interface Purchase {
+  id: string
+  purchase_number: string
+  supplier_id: string | null
+  total_cost: number
+  notes: string | null
+  created_by: string | null
+  created_at: string
+  suppliers?: Supplier
+  purchase_items?: PurchaseItem[]
+}
+
+export interface PurchaseItem {
+  id: string
+  purchase_id: string
+  product_id: string | null
+  quantity: number
+  unit_cost: number
+  lot_number: string | null
+  expiry_date: string | null
+  created_at: string
+  products?: Product
 }
 
 export interface ProductLot {

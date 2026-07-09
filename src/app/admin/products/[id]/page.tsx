@@ -11,7 +11,7 @@ export default async function EditProductPage({
   const { id } = await params
   const supabase = await createClient()
 
-  const [{ data: product }, { data: categories }, { data: units }] = await Promise.all([
+  const [{ data: product }, { data: categories }, { data: units }, { data: suppliers }] = await Promise.all([
     supabase
       .from('products')
       .select('*, product_lots(*)')
@@ -19,6 +19,7 @@ export default async function EditProductPage({
       .single(),
     supabase.from('categories').select('*').order('name'),
     supabase.from('units').select('*').order('name'),
+    supabase.from('suppliers').select('*').order('name'),
   ])
 
   if (!product) notFound()
@@ -27,7 +28,7 @@ export default async function EditProductPage({
     <div>
       <h1 className="text-2xl font-bold text-gray-900 mb-6">แก้ไขสินค้า</h1>
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <ProductForm categories={categories ?? []} units={units ?? []} product={product} />
+        <ProductForm categories={categories ?? []} units={units ?? []} suppliers={suppliers ?? []} product={product} />
         <LotManager productId={id} lots={product.product_lots ?? []} unit={product.unit} />
       </div>
     </div>

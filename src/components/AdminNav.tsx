@@ -6,7 +6,9 @@ import { createClient } from '@/lib/supabase/client'
 import {
   LayoutDashboard,
   Package,
+  PackagePlus,
   Layers,
+  Truck,
   BarChart2,
   Settings,
   LogOut,
@@ -18,6 +20,8 @@ const navItems = [
   { href: '/pos', label: 'หน้าขาย', icon: ShoppingCart },
   { href: '/admin/products', label: 'สินค้า', icon: Package },
   { href: '/admin/inventory', label: 'สต็อค', icon: Layers },
+  { href: '/admin/receiving', label: 'นำเข้าสินค้า', icon: PackagePlus },
+  { href: '/admin/suppliers', label: 'ซัพพลายเออร์', icon: Truck },
   { href: '/admin/reports', label: 'รายงาน', icon: BarChart2 },
   { href: '/admin/settings', label: 'ตั้งค่า', icon: Settings },
 ]

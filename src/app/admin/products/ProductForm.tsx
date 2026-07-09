@@ -5,21 +5,24 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Plus } from 'lucide-react'
 import toast from 'react-hot-toast'
-import type { Category, Product, Unit } from '@/lib/types'
+import type { Category, Product, Supplier, Unit } from '@/lib/types'
 
 interface Props {
   categories: Category[]
   units: Unit[]
+  suppliers: Supplier[]
   product?: Product
 }
 
-export default function ProductForm({ categories, units, product }: Props) {
+export default function ProductForm({ categories, units, suppliers, product }: Props) {
   const router = useRouter()
   const [loading, setLoading] = useState(false)
   const [form, setForm] = useState({
     name: product?.name ?? '',
+    sku: product?.sku ?? '',
     barcode: product?.barcode ?? '',
     category_id: product?.category_id ?? '',
+    supplier_id: product?.supplier_id ?? '',
     price: product?.price?.toString() ?? '',
     cost: product?.cost?.toString() ?? '',
     unit: product?.unit ?? (units[0]?.name ?? 'ชิ้น'),
@@ -84,8 +87,10 @@ export default function ProductForm({ categories, units, product }: Props) {
     const supabase = createClient()
     const payload = {
       name: form.name,
+      sku: form.sku.trim() || null,
       barcode: form.barcode || null,
       category_id: form.category_id || null,
+      supplier_id: form.supplier_id || null,
       price: parseFloat(form.price),
       cost: form.cost ? parseFloat(form.cost) : null,
       unit: form.unit,
@@ -97,7 +102,11 @@ export default function ProductForm({ categories, units, product }: Props) {
       : await supabase.from('products').insert(payload)
 
     if (error) {
-      toast.error('เกิดข้อผิดพลาด: ' + error.message)
+      toast.error(
+        error.code === '23505'
+          ? 'SKU หรือบาร์โค้ดนี้มีอยู่แล้ว กรุณาใช้ค่าอื่น'
+          : 'เกิดข้อผิดพลาด: ' + error.message
+      )
       setLoading(false)
       return
     }
@@ -132,6 +141,16 @@ export default function ProductForm({ categories, units, product }: Props) {
 
         <div className="grid grid-cols-2 gap-4">
           <div>
+            <label className={labelClass}>SKU (รหัสสินค้า — ห้ามซ้ำ)</label>
+            <input
+              type="text"
+              value={form.sku}
+              onChange={(e) => set('sku', e.target.value)}
+              className={inputClass}
+              placeholder="เช่น LB-CAT-001"
+            />
+          </div>
+          <div>
             <label className={labelClass}>บาร์โค้ด</label>
             <input
               type="text"
@@ -141,6 +160,9 @@ export default function ProductForm({ categories, units, product }: Props) {
               placeholder="8850xxxxxxx"
             />
           </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-4">
           <div>
             <div className="flex items-center justify-between mb-1">
               <label className="text-sm font-medium text-gray-700">หน่วย *</label>
@@ -177,6 +199,19 @@ export default function ProductForm({ categories, units, product }: Props) {
                 <button type="button" onClick={() => { setAddingUnit(false); setNewUnit('') }} className={inlineCancelClass}>ยกเลิก</button>
               </div>
             )}
+          </div>
+          <div>
+            <label className={labelClass}>ซัพพลายเออร์</label>
+            <select
+              value={form.supplier_id}
+              onChange={(e) => set('supplier_id', e.target.value)}
+              className={inputClass}
+            >
+              <option value="">— ไม่ระบุ —</option>
+              {suppliers.map((s) => (
+                <option key={s.id} value={s.id}>{s.name}</option>
+              ))}
+            </select>
           </div>
         </div>
 
