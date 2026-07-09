@@ -8,7 +8,7 @@ export default async function InventoryPage() {
 
   const { data: lots } = await supabase
     .from('product_lots')
-    .select('*, products(name, unit, min_stock, active)')
+    .select('*, products(name, sku, unit, min_stock, active)')
     .gt('quantity', 0)
     .order('expiry_date', { ascending: true, nullsFirst: false })
 
@@ -27,6 +27,7 @@ export default async function InventoryPage() {
     return (
       <tr className="hover:bg-gray-50">
         <td className="px-4 py-3 text-sm font-medium text-gray-900">{p?.name}</td>
+        <td className="px-4 py-3 text-sm text-gray-500 font-mono">{p?.sku || '—'}</td>
         <td className="px-4 py-3 text-sm text-gray-500 font-mono">{lot.lot_number || '—'}</td>
         <td className="px-4 py-3 text-sm">
           {lot.expiry_date ? (
@@ -70,6 +71,7 @@ export default async function InventoryPage() {
           <thead className="bg-gray-50 border-b border-gray-100">
             <tr>
               <th className="text-left text-xs font-medium text-gray-500 uppercase px-4 py-3">สินค้า</th>
+              <th className="text-left text-xs font-medium text-gray-500 uppercase px-4 py-3">SKU</th>
               <th className="text-left text-xs font-medium text-gray-500 uppercase px-4 py-3">Lot</th>
               <th className="text-left text-xs font-medium text-gray-500 uppercase px-4 py-3">วันหมดอายุ</th>
               <th className="text-right text-xs font-medium text-gray-500 uppercase px-4 py-3">คงเหลือ</th>
@@ -81,7 +83,7 @@ export default async function InventoryPage() {
             {normal.map((lot) => <LotRow key={lot.id} lot={lot} />)}
             {activeLots.length === 0 && (
               <tr>
-                <td colSpan={4} className="px-4 py-10 text-center text-sm text-gray-400">
+                <td colSpan={5} className="px-4 py-10 text-center text-sm text-gray-400">
                   ยังไม่มีสต็อค
                 </td>
               </tr>

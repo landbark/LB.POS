@@ -21,16 +21,14 @@ export default function CashierNav({ userName, isAdmin }: { userName: string; is
       <span className="text-sm" style={{ color: '#7A6A5A' }}>|</span>
       <span className="text-sm" style={{ color: '#D4A87A' }}>{userName}</span>
       <div className="ml-auto flex items-center gap-2">
-        {isAdmin && (
-          <Link
-            href="/admin/dashboard"
-            className="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded transition-colors"
-            style={{ color: '#D4A87A' }}
-          >
-            <Settings size={15} />
-            Admin
-          </Link>
-        )}
+        <Link
+          href={isAdmin ? '/admin/dashboard' : '/admin/products'}
+          className="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded transition-colors"
+          style={{ color: '#D4A87A' }}
+        >
+          <Settings size={15} />
+          จัดการร้าน
+        </Link>
         <button
           onClick={handleLogout}
           className="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded transition-colors"

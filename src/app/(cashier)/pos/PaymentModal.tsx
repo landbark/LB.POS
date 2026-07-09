@@ -58,30 +58,45 @@ export default function PaymentModal({
     setLoading(true)
     const supabase = createClient()
 
-    // Generate transaction number
-    const txNumber = `TXN${Date.now()}`
+    // เลขที่ RCxxyyzzzzbbbb จาก DB function — ถ้าชนกัน (ขายพร้อมกัน 2 เครื่อง) ลองใหม่อีกรอบ
+    let tx: { id: string } | null = null
+    let lastError: string | undefined
+    for (let attempt = 0; attempt < 2 && !tx; attempt++) {
+      const { data: txNumber, error: numError } = await supabase.rpc('next_transaction_number')
+      if (numError || !txNumber) {
+        toast.error('สร้างเลขที่รายการไม่สำเร็จ: ' + numError?.message)
+        setLoading(false)
+        return
+      }
 
-    // Create transaction
-    const { data: tx, error: txError } = await supabase
-      .from('transactions')
-      .insert({
-        transaction_number: txNumber,
-        cashier_id: cashierId,
-        customer_id: customer?.id ?? null,
-        subtotal,
-        discount: totalDiscount + pointsDiscount,
-        total: finalTotal,
-        payment_method: method,
-        cash_received: method === 'cash' ? parseFloat(cashReceived) : null,
-        change_given: method === 'cash' ? Math.max(0, change) : null,
-        points_earned: earnedPoints,
-        points_used: usePoints,
-      })
-      .select('id')
-      .single()
+      const { data, error: txError } = await supabase
+        .from('transactions')
+        .insert({
+          transaction_number: txNumber,
+          cashier_id: cashierId,
+          customer_id: customer?.id ?? null,
+          subtotal,
+          discount: totalDiscount + pointsDiscount,
+          total: finalTotal,
+          payment_method: method,
+          cash_received: method === 'cash' ? parseFloat(cashReceived) : null,
+          change_given: method === 'cash' ? Math.max(0, change) : null,
+          points_earned: earnedPoints,
+          points_used: usePoints,
+        })
+        .select('id')
+        .single()
 
-    if (txError || !tx) {
-      toast.error('เกิดข้อผิดพลาด: ' + txError?.message)
+      if (data) {
+        tx = data
+      } else {
+        lastError = txError?.message
+        if (txError?.code !== '23505') break
+      }
+    }
+
+    if (!tx) {
+      toast.error('เกิดข้อผิดพลาด: ' + lastError)
       setLoading(false)
       return
     }

@@ -36,8 +36,9 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(new URL('/pos', request.url))
   }
 
-  // Admin-only routes
-  if (user && pathname.startsWith('/admin')) {
+  // เฉพาะ admin: ภาพรวม / รายงาน / ตั้งค่า — หน้าอื่นใต้ /admin cashier เข้าได้
+  const adminOnlyPaths = ['/admin/dashboard', '/admin/reports', '/admin/settings']
+  if (user && adminOnlyPaths.some((p) => pathname.startsWith(p))) {
     const { data: profile } = await supabase
       .from('profiles')
       .select('role')

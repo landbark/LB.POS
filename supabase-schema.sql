@@ -42,6 +42,23 @@ LANGUAGE sql AS $$
   SELECT EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'admin');
 $$;
 
+-- เลขที่รายการขาย RC + วันเดือนปีค.ศ. (เวลาไทย) + ลำดับ 4 หลัก รีเซ็ตรายวัน
+CREATE OR REPLACE FUNCTION public.next_transaction_number()
+RETURNS text
+SECURITY DEFINER SET search_path = public
+LANGUAGE plpgsql AS $$
+DECLARE
+  prefix text := 'RC' || to_char(now() AT TIME ZONE 'Asia/Bangkok', 'DDMMYYYY');
+  seq int;
+BEGIN
+  SELECT COALESCE(MAX(SUBSTRING(transaction_number FROM 11)::int), 0) + 1
+  INTO seq
+  FROM transactions
+  WHERE transaction_number LIKE prefix || '%';
+  RETURN prefix || LPAD(seq::text, 4, '0');
+END;
+$$;
+
 -- Categories
 CREATE TABLE categories (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -208,15 +225,11 @@ ALTER TABLE transaction_items ENABLE ROW LEVEL SECURITY;
 -- All authenticated users can read everything they need
 CREATE POLICY "auth read profiles" ON profiles FOR SELECT TO authenticated USING (true);
 CREATE POLICY "auth read categories" ON categories FOR SELECT TO authenticated USING (true);
-CREATE POLICY "auth read units" ON units FOR SELECT TO authenticated USING (true);
-CREATE POLICY "admin manage units" ON units FOR ALL TO authenticated
-  USING (public.is_admin());
-CREATE POLICY "auth read suppliers" ON suppliers FOR SELECT TO authenticated USING (true);
-CREATE POLICY "admin manage suppliers" ON suppliers FOR ALL TO authenticated USING (public.is_admin());
-CREATE POLICY "auth read purchases" ON purchases FOR SELECT TO authenticated USING (true);
-CREATE POLICY "admin manage purchases" ON purchases FOR ALL TO authenticated USING (public.is_admin());
-CREATE POLICY "auth read purchase_items" ON purchase_items FOR SELECT TO authenticated USING (true);
-CREATE POLICY "admin manage purchase_items" ON purchase_items FOR ALL TO authenticated USING (public.is_admin());
+-- cashier ใช้งานสินค้า/สต็อค/นำเข้า/ซัพพลายเออร์ได้เต็ม (จำกัดเฉพาะเมนู admin ใน proxy.ts)
+CREATE POLICY "auth manage units" ON units FOR ALL TO authenticated USING (true);
+CREATE POLICY "auth manage suppliers" ON suppliers FOR ALL TO authenticated USING (true);
+CREATE POLICY "auth manage purchases" ON purchases FOR ALL TO authenticated USING (true);
+CREATE POLICY "auth manage purchase_items" ON purchase_items FOR ALL TO authenticated USING (true);
 CREATE POLICY "auth read products" ON products FOR SELECT TO authenticated USING (true);
 CREATE POLICY "auth read product_lots" ON product_lots FOR SELECT TO authenticated USING (true);
 CREATE POLICY "auth read customers" ON customers FOR ALL TO authenticated USING (true);
@@ -226,22 +239,13 @@ CREATE POLICY "auth manage transactions" ON transactions FOR ALL TO authenticate
 CREATE POLICY "auth manage transaction_items" ON transaction_items FOR ALL TO authenticated USING (true);
 CREATE POLICY "auth update product_lots" ON product_lots FOR UPDATE TO authenticated USING (true);
 
--- Admin-only writes
-CREATE POLICY "admin manage categories" ON categories FOR ALL TO authenticated
-  USING (EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'admin'));
+CREATE POLICY "auth manage categories" ON categories FOR ALL TO authenticated USING (true);
+CREATE POLICY "auth insert products" ON products FOR INSERT TO authenticated WITH CHECK (true);
+CREATE POLICY "auth update products" ON products FOR UPDATE TO authenticated USING (true);
+CREATE POLICY "auth insert lots" ON product_lots FOR INSERT TO authenticated WITH CHECK (true);
+CREATE POLICY "auth delete lots" ON product_lots FOR DELETE TO authenticated USING (true);
 
-CREATE POLICY "admin manage products" ON products FOR INSERT TO authenticated
-  WITH CHECK (EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'admin'));
-
-CREATE POLICY "admin update products" ON products FOR UPDATE TO authenticated
-  USING (EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'admin'));
-
-CREATE POLICY "admin manage lots" ON product_lots FOR INSERT TO authenticated
-  WITH CHECK (EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'admin'));
-
-CREATE POLICY "admin delete lots" ON product_lots FOR DELETE TO authenticated
-  USING (EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'admin'));
-
+-- Admin-only writes (เรื่องเงิน/สิทธิ์)
 CREATE POLICY "admin manage promotions" ON promotions FOR ALL TO authenticated
   USING (EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'admin'));
 

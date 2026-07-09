@@ -1,5 +1,4 @@
 import { redirect } from 'next/navigation'
-import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
 import AdminNav from '@/components/AdminNav'
 
@@ -15,11 +14,12 @@ export default async function AdminLayout({ children }: { children: React.ReactN
     .eq('id', user.id)
     .single()
 
-  if (profile?.role !== 'admin') redirect('/pos')
+  if (!profile) redirect('/pos')
+  // cashier เข้าได้บางหน้า (สินค้า/สต็อค/นำเข้า/ซัพพลายเออร์) — หน้าเฉพาะ admin ถูกกันที่ proxy.ts
 
   return (
     <div className="min-h-screen flex">
-      <AdminNav userName={profile.name} />
+      <AdminNav userName={profile.name} role={profile.role} />
       <main className="flex-1 ml-56 p-6">{children}</main>
     </div>
   )

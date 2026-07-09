@@ -16,17 +16,17 @@ import {
 } from 'lucide-react'
 
 const navItems = [
-  { href: '/admin/dashboard', label: 'ภาพรวม', icon: LayoutDashboard },
-  { href: '/pos', label: 'หน้าขาย', icon: ShoppingCart },
-  { href: '/admin/products', label: 'สินค้า', icon: Package },
-  { href: '/admin/inventory', label: 'สต็อค', icon: Layers },
-  { href: '/admin/receiving', label: 'นำเข้าสินค้า', icon: PackagePlus },
-  { href: '/admin/suppliers', label: 'ซัพพลายเออร์', icon: Truck },
-  { href: '/admin/reports', label: 'รายงาน', icon: BarChart2 },
-  { href: '/admin/settings', label: 'ตั้งค่า', icon: Settings },
+  { href: '/admin/dashboard', label: 'ภาพรวม', icon: LayoutDashboard, adminOnly: true },
+  { href: '/pos', label: 'หน้าขาย', icon: ShoppingCart, adminOnly: false },
+  { href: '/admin/products', label: 'สินค้า', icon: Package, adminOnly: false },
+  { href: '/admin/inventory', label: 'สต็อค', icon: Layers, adminOnly: false },
+  { href: '/admin/receiving', label: 'นำเข้าสินค้า', icon: PackagePlus, adminOnly: false },
+  { href: '/admin/suppliers', label: 'ซัพพลายเออร์', icon: Truck, adminOnly: false },
+  { href: '/admin/reports', label: 'รายงาน', icon: BarChart2, adminOnly: true },
+  { href: '/admin/settings', label: 'ตั้งค่า', icon: Settings, adminOnly: true },
 ]
 
-export default function AdminNav({ userName }: { userName: string }) {
+export default function AdminNav({ userName, role }: { userName: string; role: string }) {
   const pathname = usePathname()
   const router = useRouter()
 
@@ -45,7 +45,7 @@ export default function AdminNav({ userName }: { userName: string }) {
       </div>
 
       <nav className="flex-1 py-4 space-y-0.5 px-2">
-        {navItems.map(({ href, label, icon: Icon }) => {
+        {navItems.filter((item) => role === 'admin' || !item.adminOnly).map(({ href, label, icon: Icon }) => {
           const active = (pathname.startsWith(href) && href !== '/pos') || pathname === href
           return (
             <Link
