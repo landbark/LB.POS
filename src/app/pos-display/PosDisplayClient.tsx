@@ -36,7 +36,13 @@ function PointsCard({ customer }: { customer: DisplayCustomer }) {
   )
 }
 
-export default function PosDisplayClient({ storeName, logoUrl }: { storeName: string; logoUrl: string | null }) {
+interface Props {
+  storeName: string
+  logoUrl: string | null
+  paymentQrUrl: string | null
+}
+
+export default function PosDisplayClient({ storeName, logoUrl, paymentQrUrl }: Props) {
   const [msg, setMsg] = useState<PosDisplayMessage | null>(null)
   const [fullscreen, setFullscreen] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
@@ -61,9 +67,10 @@ export default function PosDisplayClient({ storeName, logoUrl }: { storeName: st
     }
   }
 
+  // ถ้าร้านอัปโหลดรูป QR static ไว้ (เช่น QR ของ K SHOP) ใช้รูปนั้นก่อน — ไม่งั้นค่อย fallback ไปสร้าง QR แบบใส่ยอดอัตโนมัติจาก PromptPay ID
   let qrPayload: string | null = null
   let qrError = false
-  if (msg?.stage === 'payment' && msg.method === 'transfer' && msg.promptpayId) {
+  if (msg?.stage === 'payment' && msg.method === 'transfer' && !paymentQrUrl && msg.promptpayId) {
     try {
       qrPayload = generatePayload(msg.promptpayId, { amount: msg.total > 0 ? msg.total : undefined })
     } catch {
@@ -136,7 +143,13 @@ export default function PosDisplayClient({ storeName, logoUrl }: { storeName: st
           <div className="w-full max-w-3xl grid grid-cols-2 gap-8 items-center">
             <div className="flex flex-col items-center">
               {msg.method === 'transfer' ? (
-                qrPayload ? (
+                paymentQrUrl ? (
+                  <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 flex flex-col items-center">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={paymentQrUrl} alt="QR รับเงิน" className="w-60 h-60 object-contain" />
+                    <p className="text-xs text-gray-400 mt-3">สแกนแล้วพิมพ์ยอด ฿{money(msg.total)} เอง</p>
+                  </div>
+                ) : qrPayload ? (
                   <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 flex flex-col items-center">
                     <QRCodeSVG value={qrPayload} size={240} />
                     <p className="text-xs text-gray-400 mt-3">สแกนจ่ายผ่านแอปธนาคาร (PromptPay)</p>
@@ -144,7 +157,7 @@ export default function PosDisplayClient({ storeName, logoUrl }: { storeName: st
                 ) : (
                   <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-8 text-center max-w-xs">
                     <p className="text-gray-400 text-sm">
-                      {qrError ? 'สร้าง QR ไม่สำเร็จ กรุณาตรวจสอบ PromptPay ID' : 'ยังไม่ได้ตั้งค่า PromptPay ID ในหน้าตั้งค่าร้าน'}
+                      {qrError ? 'สร้าง QR ไม่สำเร็จ กรุณาตรวจสอบ PromptPay ID' : 'ยังไม่ได้ตั้งค่า QR รับเงินในหน้าตั้งค่าร้าน'}
                     </p>
                   </div>
                 )

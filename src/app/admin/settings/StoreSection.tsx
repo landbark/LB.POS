@@ -1,9 +1,9 @@
 'use client'
 
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { Store } from 'lucide-react'
+import { Store, QrCode, Trash2 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import ImageInput from '@/components/ImageInput'
 import type { StoreSettings } from '@/lib/types'
@@ -20,6 +20,27 @@ export default function StoreSection({ config }: { config: StoreSettings | null 
   })
   const [logoBlob, setLogoBlob] = useState<Blob | null>(null)
   const [logoPreview, setLogoPreview] = useState<string | null>(config?.logo_url ?? null)
+
+  // QR รับเงิน static (เช่น QR ของ K SHOP) — อัปโหลดตรงๆ ไม่ผ่าน crop/บีบอัด กันสแกนไม่ติด
+  const qrFileRef = useRef<HTMLInputElement>(null)
+  const [qrFile, setQrFile] = useState<File | null>(null)
+  const [qrPreview, setQrPreview] = useState<string | null>(config?.payment_qr_url ?? null)
+
+  function handleQrSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file) return
+    if (!file.type.startsWith('image/')) {
+      toast.error('กรุณาเลือกไฟล์รูปภาพ')
+      return
+    }
+    if (file.size > 3 * 1024 * 1024) {
+      toast.error('ไฟล์ใหญ่เกินไป (เกิน 3MB)')
+      return
+    }
+    setQrFile(file)
+    setQrPreview(URL.createObjectURL(file))
+  }
 
   function set(key: string, value: string) {
     setForm((prev) => ({ ...prev, [key]: value }))
@@ -55,6 +76,31 @@ export default function StoreSection({ config }: { config: StoreSettings | null 
       }).catch(() => {})
     }
 
+    // อัปโหลด QR รับเงินใหม่ (ถ้ามี) ก่อนบันทึก
+    let qrUrl = config.payment_qr_url
+    if (qrFile) {
+      const fd = new FormData()
+      fd.append('file', qrFile)
+      const res = await fetch('/api/store-payment-qr', { method: 'POST', body: fd })
+      const data = await res.json()
+      if (!res.ok) {
+        toast.error('อัปโหลด QR ไม่สำเร็จ: ' + (data.error ?? ''))
+        setLoading(false)
+        return
+      }
+      qrUrl = data.url
+    } else if (!qrPreview) {
+      qrUrl = null
+    }
+
+    if (config.payment_qr_url && qrUrl !== config.payment_qr_url) {
+      fetch('/api/store-payment-qr', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: config.payment_qr_url }),
+      }).catch(() => {})
+    }
+
     const supabase = createClient()
     const { error } = await supabase
       .from('store_settings')
@@ -64,6 +110,7 @@ export default function StoreSection({ config }: { config: StoreSettings | null 
         phone: form.phone.trim() || null,
         tax_id: form.tax_id.trim() || null,
         promptpay_id: form.promptpay_id.trim() || null,
+        payment_qr_url: qrUrl,
         logo_url: logoUrl,
         updated_at: new Date().toISOString(),
       })
@@ -76,6 +123,7 @@ export default function StoreSection({ config }: { config: StoreSettings | null 
     }
     toast.success('บันทึกข้อมูลร้านแล้ว')
     setLogoBlob(null)
+    setQrFile(null)
     router.refresh()
   }
 
@@ -142,13 +190,52 @@ export default function StoreSection({ config }: { config: StoreSettings | null 
         </div>
 
         <div>
-          <label className={labelClass}>PromptPay ID</label>
+          <label className={labelClass}>PromptPay ID (ไม่บังคับ)</label>
           <input
             type="text" value={form.promptpay_id}
             onChange={(e) => set('promptpay_id', e.target.value)}
             className={inputClass} placeholder="เบอร์โทรหรือเลขบัตรประชาชนที่ผูก PromptPay"
           />
-          <p className="text-xs text-gray-400 mt-1">ใช้สร้าง QR รับเงินที่จอลูกค้าตอนขาย (จอสอง)</p>
+          <p className="text-xs text-gray-400 mt-1">
+            ใช้สร้าง QR รับเงินอัตโนมัติที่จอลูกค้า (จอสอง) — ถ้าอัปโหลดรูป QR ด้านล่างไว้แล้ว ระบบจะใช้รูปนั้นก่อน
+          </p>
+        </div>
+
+        <div>
+          <label className={labelClass}>รูป QR รับเงิน (จอสอง)</label>
+          <div className="flex items-center gap-3">
+            {qrPreview ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={qrPreview} alt="QR รับเงิน" className="w-20 h-20 rounded-lg object-contain border border-gray-200 bg-white" />
+            ) : (
+              <div className="w-20 h-20 rounded-lg border-2 border-dashed border-gray-200 flex items-center justify-center text-gray-300">
+                <QrCode size={24} />
+              </div>
+            )}
+            <div className="flex flex-col gap-2">
+              <button
+                type="button"
+                onClick={() => qrFileRef.current?.click()}
+                className="text-sm text-blue-600 hover:text-blue-700 font-medium text-left"
+              >
+                {qrPreview ? 'เปลี่ยนรูป' : 'เลือกรูป'}
+              </button>
+              {qrPreview && (
+                <button
+                  type="button"
+                  onClick={() => { setQrFile(null); setQrPreview(null) }}
+                  className="flex items-center gap-1 text-sm text-red-500 hover:text-red-600"
+                >
+                  <Trash2 size={13} /> ลบรูป
+                </button>
+              )}
+            </div>
+            <input ref={qrFileRef} type="file" accept="image/*" onChange={handleQrSelect} className="hidden" />
+          </div>
+          <p className="text-xs text-gray-400 mt-1">
+            เช่น QR รับเงิน static ของ K SHOP / ธนาคาร — อัปโหลดรูปต้นฉบับตรงๆ ไม่ผ่านการย่อ/บีบอัด กันสแกนไม่ติด
+            (QR แบบนี้ไม่มียอดเงินฝังไว้ ลูกค้าต้องพิมพ์ยอดเองตอนสแกน จอสองจะโชว์ยอดตัวใหญ่กำกับให้)
+          </p>
         </div>
 
         <button

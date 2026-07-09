@@ -102,6 +102,7 @@ export interface StoreSettings {
   tax_id: string | null
   logo_url: string | null
   promptpay_id: string | null
+  payment_qr_url: string | null
   updated_at: string
 }
 

@@ -149,6 +149,7 @@ CREATE TABLE store_settings (
   tax_id TEXT,
   logo_url TEXT,
   promptpay_id TEXT,
+  payment_qr_url TEXT,
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
