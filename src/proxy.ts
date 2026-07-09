@@ -36,16 +36,25 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(new URL('/pos', request.url))
   }
 
-  // เฉพาะ admin: ภาพรวม / รายงาน / ตั้งค่า — หน้าอื่นใต้ /admin cashier เข้าได้
-  const adminOnlyPaths = ['/admin/dashboard', '/admin/reports', '/admin/settings']
-  if (user && adminOnlyPaths.some((p) => pathname.startsWith(p))) {
+  if (user && pathname !== '/login' && !pathname.startsWith('/auth')) {
+    // select('*') กันพังช่วงก่อนรัน migration (คอลัมน์ active อาจยังไม่มี)
     const { data: profile } = await supabase
       .from('profiles')
-      .select('role')
+      .select('*')
       .eq('id', user.id)
       .single()
 
-    if (profile?.role !== 'admin') {
+    // ไม่อยู่ใน whitelist พนักงาน → กันเข้าระบบ
+    if (profile?.active === false && pathname !== '/no-access') {
+      return NextResponse.redirect(new URL('/no-access', request.url))
+    }
+    if (profile?.active !== false && pathname === '/no-access') {
+      return NextResponse.redirect(new URL('/pos', request.url))
+    }
+
+    // เฉพาะ admin: ภาพรวม / รายงาน / ตั้งค่า — หน้าอื่นใต้ /admin cashier เข้าได้
+    const adminOnlyPaths = ['/admin/dashboard', '/admin/reports', '/admin/settings']
+    if (adminOnlyPaths.some((p) => pathname.startsWith(p)) && profile?.role !== 'admin') {
       return NextResponse.redirect(new URL('/pos', request.url))
     }
   }

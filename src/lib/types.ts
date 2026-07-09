@@ -4,7 +4,21 @@ export interface Profile {
   id: string
   role: Role
   name: string
+  email: string | null
+  active: boolean
   created_at: string
+}
+
+// Whitelist อีเมลพนักงานที่อนุญาตให้เข้าระบบ
+export interface StaffEmail {
+  id: string
+  email: string
+  name: string
+  role: Role
+  created_at: string
+  // สถานะจาก auth (join ตอนแสดงผลในหน้าตั้งค่า)
+  user_id?: string | null
+  has_password?: boolean
 }
 
 export interface Category {

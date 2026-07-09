@@ -283,8 +283,18 @@ export default function POSClient({ products, promotions, pointsConfig, cashierI
                     inCart ? 'border-blue-500' : 'border-transparent'
                   }`}
                 >
-                  <div className="w-full aspect-square bg-gray-100 rounded-lg mb-2 flex items-center justify-center text-3xl">
-                    🐾
+                  <div className="w-full aspect-square bg-gray-100 rounded-lg mb-2 flex items-center justify-center text-3xl overflow-hidden">
+                    {product.image_url ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={product.image_url}
+                        alt={product.name}
+                        loading="lazy"
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      '🐾'
+                    )}
                   </div>
                   <p className="text-xs font-medium text-gray-900 line-clamp-2 leading-tight mb-1">
                     {product.name}

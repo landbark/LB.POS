@@ -53,8 +53,25 @@ export default async function ProductsPage() {
               return (
                 <tr key={product.id} className="hover:bg-gray-50">
                   <td className="px-4 py-3">
-                    <p className="text-sm font-medium text-gray-900">{product.name}</p>
-                    <p className="text-xs text-gray-500">{product.unit}</p>
+                    <div className="flex items-center gap-3">
+                      {product.image_url ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={product.image_url}
+                          alt={product.name}
+                          loading="lazy"
+                          className="w-10 h-10 rounded-lg object-cover border border-gray-100 shrink-0"
+                        />
+                      ) : (
+                        <div className="w-10 h-10 rounded-lg bg-gray-100 flex items-center justify-center text-base shrink-0">
+                          🐾
+                        </div>
+                      )}
+                      <div>
+                        <p className="text-sm font-medium text-gray-900">{product.name}</p>
+                        <p className="text-xs text-gray-500">{product.unit}</p>
+                      </div>
+                    </div>
                   </td>
                   <td className="px-4 py-3 text-sm text-gray-600 font-mono">
                     {product.sku || '—'}

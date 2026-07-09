@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 import { Plus } from 'lucide-react'
 import toast from 'react-hot-toast'
 import type { Category, Product, Supplier, Unit } from '@/lib/types'
+import ProductImageInput from './ProductImageInput'
 
 interface Props {
   categories: Category[]
@@ -28,6 +29,10 @@ export default function ProductForm({ categories, units, suppliers, product }: P
     unit: product?.unit ?? (units[0]?.name ?? 'ชิ้น'),
     min_stock: product?.min_stock?.toString() ?? '5',
   })
+
+  // รูปใหม่ที่ crop/บีบอัดแล้วรออัปโหลด; preview = URL เดิมหรือ object URL ของรูปใหม่
+  const [imageBlob, setImageBlob] = useState<Blob | null>(null)
+  const [imagePreview, setImagePreview] = useState<string | null>(product?.image_url ?? null)
 
   const [unitList, setUnitList] = useState(units)
   const [catList, setCatList] = useState(categories)
@@ -84,9 +89,36 @@ export default function ProductForm({ categories, units, suppliers, product }: P
     e.preventDefault()
     setLoading(true)
 
+    // อัปโหลดรูปใหม่ (ถ้ามี) ก่อนบันทึกสินค้า
+    let imageUrl = product?.image_url ?? null
+    if (imageBlob) {
+      const fd = new FormData()
+      fd.append('file', new File([imageBlob], 'product', { type: imageBlob.type }))
+      const res = await fetch('/api/product-image', { method: 'POST', body: fd })
+      const data = await res.json()
+      if (!res.ok) {
+        toast.error('อัปโหลดรูปไม่สำเร็จ: ' + (data.error ?? ''))
+        setLoading(false)
+        return
+      }
+      imageUrl = data.url
+    } else if (!imagePreview) {
+      imageUrl = null
+    }
+
+    // ลบไฟล์รูปเดิมออกจาก storage ถ้าถูกเปลี่ยนหรือลบ (ไม่ต้องรอผล)
+    if (product?.image_url && imageUrl !== product.image_url) {
+      fetch('/api/product-image', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: product.image_url }),
+      }).catch(() => {})
+    }
+
     const supabase = createClient()
     const payload = {
       name: form.name,
+      image_url: imageUrl,
       sku: form.sku.trim() || null,
       barcode: form.barcode || null,
       category_id: form.category_id || null,
@@ -127,6 +159,14 @@ export default function ProductForm({ categories, units, suppliers, product }: P
   return (
     <form onSubmit={handleSubmit} className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 max-w-xl">
       <div className="space-y-4">
+        <ProductImageInput
+          preview={imagePreview}
+          onChange={(blob, previewUrl) => {
+            setImageBlob(blob)
+            setImagePreview(previewUrl)
+          }}
+        />
+
         <div>
           <label className={labelClass}>ชื่อสินค้า *</label>
           <input

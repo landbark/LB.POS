@@ -6,22 +6,39 @@ CREATE TABLE profiles (
   id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
   role TEXT NOT NULL CHECK (role IN ('admin', 'cashier')),
   name TEXT NOT NULL,
+  email TEXT,
+  active BOOLEAN NOT NULL DEFAULT true,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Auto-create profile on signup
+-- Staff whitelist — อีเมลที่ admin อนุญาตให้เข้าระบบ (Google หรือรหัสผ่านที่ admin ตั้งให้)
+CREATE TABLE staff_emails (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  email TEXT NOT NULL UNIQUE,
+  name TEXT NOT NULL,
+  role TEXT NOT NULL DEFAULT 'cashier' CHECK (role IN ('admin', 'cashier')),
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Auto-create profile on signup — เช็ค whitelist; ไม่อยู่ใน whitelist → active = false (proxy กันเข้าระบบ)
 -- ต้องระบุ public. เต็มๆ + SET search_path เพราะ auth service เรียกด้วย search_path ที่มองไม่เห็น public
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS TRIGGER
 SECURITY DEFINER
 SET search_path = public
 AS $$
+DECLARE
+  staff RECORD;
 BEGIN
-  INSERT INTO public.profiles (id, role, name)
+  SELECT * INTO staff FROM public.staff_emails WHERE lower(email) = lower(NEW.email);
+
+  INSERT INTO public.profiles (id, role, name, email, active)
   VALUES (
     NEW.id,
-    'cashier',
-    COALESCE(NEW.raw_user_meta_data->>'full_name', NEW.raw_user_meta_data->>'name', NEW.email, 'User')
+    COALESCE(staff.role, 'cashier'),
+    COALESCE(staff.name, NEW.raw_user_meta_data->>'full_name', NEW.raw_user_meta_data->>'name', NEW.email, 'User'),
+    NEW.email,
+    staff.id IS NOT NULL
   )
   ON CONFLICT (id) DO NOTHING;
   RETURN NEW;
@@ -254,6 +271,10 @@ CREATE POLICY "admin manage points_config" ON points_config FOR ALL TO authentic
 
 -- ห้ามใช้ subquery ที่ query profiles ตรงๆ ใน policy ของ profiles (จะ infinite recursion) — ใช้ is_admin() แทน
 CREATE POLICY "admin manage profiles" ON profiles FOR ALL TO authenticated
+  USING (public.is_admin());
+
+ALTER TABLE staff_emails ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "admin manage staff_emails" ON staff_emails FOR ALL TO authenticated
   USING (public.is_admin());
 
 -- Indexes
