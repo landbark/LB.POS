@@ -19,6 +19,8 @@ export default function POSClient({ products, promotions, pointsConfig, cashierI
   const [cart, setCart] = useState<CartItem[]>([])
   const [customer, setCustomer] = useState<Customer | null>(null)
   const [customerPhone, setCustomerPhone] = useState('')
+  const [showAddCustomer, setShowAddCustomer] = useState(false)
+  const [newCustomerName, setNewCustomerName] = useState('')
   const [showPayment, setShowPayment] = useState(false)
   const [categoryFilter, setCategoryFilter] = useState('')
   const searchRef = useRef<HTMLInputElement>(null)
@@ -200,10 +202,35 @@ export default function POSClient({ products, promotions, pointsConfig, cashierI
 
     if (data) {
       setCustomer(data)
+      setShowAddCustomer(false)
       toast.success(`พบลูกค้า: ${data.name} (${data.points} แต้ม)`)
     } else {
-      toast.error('ไม่พบลูกค้า')
+      toast.error('ไม่พบลูกค้า — เพิ่มใหม่ได้เลย')
+      setShowAddCustomer(true)
+      setNewCustomerName('')
     }
+  }
+
+  async function addCustomer() {
+    if (!newCustomerName.trim()) {
+      toast.error('กรุณาใส่ชื่อลูกค้า')
+      return
+    }
+    const supabase = createClient()
+    const { data, error } = await supabase
+      .from('customers')
+      .insert({ name: newCustomerName.trim(), phone: customerPhone })
+      .select('*')
+      .single()
+
+    if (error || !data) {
+      toast.error(error?.code === '23505' ? 'เบอร์นี้มีลูกค้าอยู่แล้ว' : 'เพิ่มลูกค้าไม่สำเร็จ')
+      return
+    }
+    setCustomer(data)
+    setShowAddCustomer(false)
+    setNewCustomerName('')
+    toast.success('เพิ่มลูกค้าใหม่แล้ว')
   }
 
   // Enter ในช่องค้นหา: บาร์โค้ดตรงเป๊ะ หรือผลค้นหาเหลือตัวเดียว → เข้าตะกร้าทันที (รองรับเครื่องยิงบาร์โค้ด)
@@ -345,11 +372,33 @@ export default function POSClient({ products, promotions, pointsConfig, cashierI
                 <p className="text-xs text-blue-600">{customer.points} แต้ม</p>
               </div>
               <button
-                onClick={() => { setCustomer(null); setCustomerPhone('') }}
+                onClick={() => { setCustomer(null); setCustomerPhone(''); setShowAddCustomer(false) }}
                 className="text-gray-400 hover:text-gray-600"
               >
                 <X size={14} />
               </button>
+            </div>
+          )}
+          {!customer && showAddCustomer && (
+            <div className="mt-2 bg-orange-50 rounded-lg p-2.5 space-y-2">
+              <p className="text-xs text-orange-700">ไม่พบลูกค้าเบอร์ {customerPhone} — เพิ่มลูกค้าใหม่?</p>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={newCustomerName}
+                  onChange={(e) => setNewCustomerName(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && addCustomer()}
+                  placeholder="ชื่อลูกค้า"
+                  className="flex-1 px-2.5 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  autoFocus
+                />
+                <button
+                  onClick={addCustomer}
+                  className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-medium"
+                >
+                  บันทึก
+                </button>
+              </div>
             </div>
           )}
         </div>
@@ -464,6 +513,7 @@ export default function POSClient({ products, promotions, pointsConfig, cashierI
             setCart([])
             setCustomer(null)
             setCustomerPhone('')
+            setShowAddCustomer(false)
             setShowPayment(false)
             toast.success('บันทึกการขายแล้ว')
           }}

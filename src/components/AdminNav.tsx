@@ -14,6 +14,7 @@ import {
   LogOut,
   ShoppingCart,
   FileText,
+  Users,
 } from 'lucide-react'
 
 const navItems = [
@@ -23,6 +24,7 @@ const navItems = [
   { href: '/admin/inventory', label: 'สต็อค', icon: Layers, adminOnly: false },
   { href: '/admin/receiving', label: 'นำเข้าสินค้า', icon: PackagePlus, adminOnly: false },
   { href: '/admin/suppliers', label: 'ซัพพลายเออร์', icon: Truck, adminOnly: false },
+  { href: '/admin/customers', label: 'ลูกค้า', icon: Users, adminOnly: false },
   { href: '/admin/documents', label: 'เอกสาร', icon: FileText, adminOnly: false },
   { href: '/admin/reports', label: 'รายงาน', icon: BarChart2, adminOnly: true },
   { href: '/admin/settings', label: 'ตั้งค่า', icon: Settings, adminOnly: true },
