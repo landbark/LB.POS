@@ -18,11 +18,11 @@ interface Props {
   onSuccess: () => void
 }
 
-const PAYMENT_LABELS: Record<PaymentMethod, string> = {
+// qr ตัดออกจากตัวเลือก — ถือเป็นการโอนเงินแบบเดียวกับ transfer (ยังรองรับอ่านรายการเก่าที่บันทึกเป็น qr ไว้ที่อื่น)
+const PAYMENT_LABELS: Record<Exclude<PaymentMethod, 'qr'>, string> = {
   cash: '💵 เงินสด',
   transfer: '📲 โอนเงิน',
   card: '💳 บัตรเครดิต',
-  qr: '📷 QR Code',
 }
 
 export default function PaymentModal({
@@ -219,7 +219,7 @@ export default function PaymentModal({
           <div>
             <p className="text-sm font-medium text-gray-700 mb-2">วิธีชำระเงิน</p>
             <div className="grid grid-cols-2 gap-2">
-              {(Object.keys(PAYMENT_LABELS) as PaymentMethod[]).map((m) => (
+              {(Object.keys(PAYMENT_LABELS) as Exclude<PaymentMethod, 'qr'>[]).map((m) => (
                 <button
                   key={m}
                   onClick={() => setMethod(m)}

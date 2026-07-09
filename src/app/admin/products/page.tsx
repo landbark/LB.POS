@@ -2,30 +2,43 @@ import { createClient } from '@/lib/supabase/server'
 import Link from 'next/link'
 import { Plus } from 'lucide-react'
 import ProductRow from './ProductRow'
+import BulkImportButton from './BulkImportButton'
 
 export default async function ProductsPage() {
   const supabase = await createClient()
 
-  const { data: products } = await supabase
-    .from('products')
-    .select(`
-      *,
-      categories(name),
-      product_lots(id, lot_number, expiry_date, quantity)
-    `)
-    .order('name')
+  const [{ data: products }, { data: categories }, { data: units }, { data: suppliers }] = await Promise.all([
+    supabase
+      .from('products')
+      .select(`
+        *,
+        categories(name),
+        product_lots(id, lot_number, expiry_date, quantity)
+      `)
+      .order('name'),
+    supabase.from('categories').select('*').order('name'),
+    supabase.from('units').select('*').order('name'),
+    supabase.from('suppliers').select('id, name').order('name'),
+  ])
 
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-bold text-gray-900">สินค้า</h1>
-        <Link
-          href="/admin/products/new"
-          className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
-        >
-          <Plus size={16} />
-          เพิ่มสินค้า
-        </Link>
+        <div className="flex items-center gap-2">
+          <BulkImportButton
+            categories={categories ?? []}
+            units={units ?? []}
+            suppliers={suppliers ?? []}
+          />
+          <Link
+            href="/admin/products/new"
+            className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
+          >
+            <Plus size={16} />
+            เพิ่มสินค้า
+          </Link>
+        </div>
       </div>
 
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
