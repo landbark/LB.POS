@@ -58,7 +58,7 @@ export default function LoginPage() {
             />
           </div>
           <p className="text-sm font-medium" style={{ color: '#D4A87A' }}>
-            ระบบจัดการร้านค้า
+            LANDBARK POS
           </p>
         </div>
 
