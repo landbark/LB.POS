@@ -10,7 +10,7 @@ interface PurchaseDoc {
   notes: string | null
   status: 'pending' | 'received'
   created_at: string
-  suppliers: { name: string; contact_name: string | null; phone: string | null } | null
+  suppliers: { name: string; contact_name: string | null; phone: string | null; address: string | null } | null
   purchase_items: {
     quantity: number
     unit_cost: number
@@ -79,6 +79,7 @@ export default function PurchasePrintView({ purchase, store }: { purchase: Purch
             <div>
               <p className="text-gray-500 mb-0.5">ผู้จำหน่าย</p>
               <p className="font-medium">{purchase.suppliers?.name ?? '—'}</p>
+              {purchase.suppliers?.address && <p className="text-gray-600 whitespace-pre-line">{purchase.suppliers.address}</p>}
               {purchase.suppliers?.contact_name && <p className="text-gray-600">ติดต่อ {purchase.suppliers.contact_name}</p>}
               {purchase.suppliers?.phone && <p className="text-gray-600">โทร {purchase.suppliers.phone}</p>}
             </div>

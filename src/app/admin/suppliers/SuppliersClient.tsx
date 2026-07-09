@@ -7,7 +7,7 @@ import { Plus, Edit, Trash2, X, Check } from 'lucide-react'
 import toast from 'react-hot-toast'
 import type { Supplier } from '@/lib/types'
 
-const emptyForm = { name: '', contact_name: '', phone: '', notes: '' }
+const emptyForm = { name: '', contact_name: '', phone: '', address: '', notes: '' }
 
 export default function SuppliersClient({ suppliers }: { suppliers: Supplier[] }) {
   const router = useRouter()
@@ -27,6 +27,7 @@ export default function SuppliersClient({ suppliers }: { suppliers: Supplier[] }
       name: s.name,
       contact_name: s.contact_name ?? '',
       phone: s.phone ?? '',
+      address: s.address ?? '',
       notes: s.notes ?? '',
     })
   }
@@ -48,6 +49,7 @@ export default function SuppliersClient({ suppliers }: { suppliers: Supplier[] }
       name: form.name.trim(),
       contact_name: form.contact_name.trim() || null,
       phone: form.phone.trim() || null,
+      address: form.address.trim() || null,
       notes: form.notes.trim() || null,
     }
 
@@ -98,6 +100,10 @@ export default function SuppliersClient({ suppliers }: { suppliers: Supplier[] }
           <label className="block text-xs font-medium text-gray-600 mb-1">หมายเหตุ</label>
           <input type="text" value={form.notes} onChange={(e) => set('notes', e.target.value)} className={inputClass} placeholder="เช่น ส่งทุกวันจันทร์" />
         </div>
+        <div className="sm:col-span-2">
+          <label className="block text-xs font-medium text-gray-600 mb-1">ที่อยู่ (ใช้ขึ้นหัวใบสั่งซื้อ)</label>
+          <textarea value={form.address} onChange={(e) => set('address', e.target.value)} className={inputClass} rows={2} placeholder="เลขที่ ถนน ตำบล/แขวง อำเภอ/เขต จังหวัด รหัสไปรษณีย์" />
+        </div>
       </div>
       <div className="flex gap-2 mt-3">
         <button onClick={save} disabled={loading} className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-sm font-medium px-4 py-2 rounded-lg">
@@ -142,7 +148,10 @@ export default function SuppliersClient({ suppliers }: { suppliers: Supplier[] }
                 </tr>
               ) : (
                 <tr key={s.id} className="hover:bg-gray-50">
-                  <td className="px-4 py-3 text-sm font-medium text-gray-900">{s.name}</td>
+                  <td className="px-4 py-3">
+                    <p className="text-sm font-medium text-gray-900">{s.name}</p>
+                    {s.address && <p className="text-xs text-gray-400 mt-0.5 line-clamp-1">{s.address}</p>}
+                  </td>
                   <td className="px-4 py-3 text-sm text-gray-600">{s.contact_name || '—'}</td>
                   <td className="px-4 py-3 text-sm text-gray-600">{s.phone || '—'}</td>
                   <td className="px-4 py-3 text-sm text-gray-500">{s.notes || '—'}</td>

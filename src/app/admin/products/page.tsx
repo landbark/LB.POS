@@ -1,7 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import Link from 'next/link'
-import { Plus, Edit } from 'lucide-react'
-import DeleteProductButton from './DeleteProductButton'
+import { Plus } from 'lucide-react'
+import ProductRow from './ProductRow'
 
 export default async function ProductsPage() {
   const supabase = await createClient()
@@ -11,7 +11,7 @@ export default async function ProductsPage() {
     .select(`
       *,
       categories(name),
-      product_lots(quantity)
+      product_lots(id, lot_number, expiry_date, quantity)
     `)
     .order('name')
 
@@ -43,76 +43,9 @@ export default async function ProductsPage() {
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-50">
-            {products?.map((product) => {
-              const totalStock = product.product_lots?.reduce(
-                (sum: number, lot: any) => sum + (lot.quantity ?? 0),
-                0
-              ) ?? 0
-              const lowStock = totalStock <= product.min_stock
-
-              return (
-                <tr key={product.id} className="hover:bg-gray-50">
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-3">
-                      {product.image_url ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                          src={product.image_url}
-                          alt={product.name}
-                          loading="lazy"
-                          className="w-10 h-10 rounded-lg object-cover border border-gray-100 shrink-0"
-                        />
-                      ) : (
-                        <div className="w-10 h-10 rounded-lg bg-gray-100 flex items-center justify-center text-base shrink-0">
-                          🐾
-                        </div>
-                      )}
-                      <div>
-                        <p className="text-sm font-medium text-gray-900">{product.name}</p>
-                        <p className="text-xs text-gray-500">{product.unit}</p>
-                      </div>
-                    </div>
-                  </td>
-                  <td className="px-4 py-3 text-sm text-gray-600 font-mono">
-                    {product.sku || '—'}
-                  </td>
-                  <td className="px-4 py-3 text-sm text-gray-600 font-mono">
-                    {product.barcode || '—'}
-                  </td>
-                  <td className="px-4 py-3 text-sm text-gray-600">
-                    {(product.categories as any)?.name || '—'}
-                  </td>
-                  <td className="px-4 py-3 text-sm text-right font-medium text-gray-900">
-                    ฿{product.price.toLocaleString('th-TH', { minimumFractionDigits: 2 })}
-                  </td>
-                  <td className="px-4 py-3 text-sm text-right">
-                    <span className={lowStock ? 'text-red-600 font-semibold' : 'text-gray-700'}>
-                      {totalStock} {product.unit}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 text-center">
-                    <span className={`inline-flex text-xs px-2 py-0.5 rounded-full font-medium ${
-                      product.active
-                        ? 'bg-green-100 text-green-700'
-                        : 'bg-gray-100 text-gray-500'
-                    }`}>
-                      {product.active ? 'ใช้งาน' : 'ปิด'}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-2 justify-end">
-                      <Link
-                        href={`/admin/products/${product.id}`}
-                        className="p-1.5 text-gray-400 hover:text-blue-600 rounded"
-                      >
-                        <Edit size={15} />
-                      </Link>
-                      <DeleteProductButton id={product.id} name={product.name} />
-                    </div>
-                  </td>
-                </tr>
-              )
-            })}
+            {products?.map((product) => (
+              <ProductRow key={product.id} product={product as never} />
+            ))}
             {(!products || products.length === 0) && (
               <tr>
                 <td colSpan={8} className="px-4 py-10 text-center text-sm text-gray-400">

@@ -96,6 +96,7 @@ CREATE TABLE suppliers (
   name TEXT NOT NULL UNIQUE,
   contact_name TEXT,
   phone TEXT,
+  address TEXT,
   notes TEXT,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );

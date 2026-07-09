@@ -20,7 +20,7 @@ export default async function DashboardPage() {
       .lt('quantity', 5)
       .gt('quantity', 0),
     supabase.from('product_lots')
-      .select('expiry_date, products(name)')
+      .select('expiry_date, quantity, products(name, unit)')
       .gte('expiry_date', today)
       .lte('expiry_date', new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0])
       .gt('quantity', 0),
@@ -86,7 +86,10 @@ export default async function DashboardPage() {
           <div className="space-y-2">
             {expiringSoon.map((lot, i) => (
               <div key={i} className="flex justify-between text-sm">
-                <span className="text-gray-700">{(lot.products as any)?.name}</span>
+                <span className="text-gray-700">
+                  {(lot.products as any)?.name}
+                  <span className="text-gray-400"> · เหลือ {lot.quantity} {(lot.products as any)?.unit}</span>
+                </span>
                 <span className="text-red-600 font-medium">
                   หมดอายุ {new Date(lot.expiry_date!).toLocaleDateString('th-TH')}
                 </span>

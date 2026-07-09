@@ -11,7 +11,7 @@ export default async function PurchasePrintPage({ params }: { params: Promise<{ 
       .from('purchases')
       .select(`
         id, purchase_number, notes, status, created_at,
-        suppliers(name, contact_name, phone),
+        suppliers(name, contact_name, phone, address),
         purchase_items(quantity, unit_cost, products(name, sku, unit))
       `)
       .eq('id', id)

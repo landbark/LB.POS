@@ -23,6 +23,10 @@ export default function LotManager({ productId, lots, unit, userId }: Props) {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editQty, setEditQty] = useState('')
   const [editReason, setEditReason] = useState('')
+  // แก้ไขยอดรวมทั้งหมด (ส่วนต่างจะลง/ตัดที่ lot ใกล้หมดอายุที่สุด)
+  const [editingTotal, setEditingTotal] = useState(false)
+  const [totalQty, setTotalQty] = useState('')
+  const [totalReason, setTotalReason] = useState('')
 
   async function addLot(e: React.FormEvent) {
     e.preventDefault()
@@ -91,17 +95,9 @@ export default function LotManager({ productId, lots, unit, userId }: Props) {
     setEditReason('')
   }
 
-  async function saveEdit(lot: ProductLot) {
-    const newQty = parseInt(editQty)
-    if (isNaN(newQty) || newQty < 0) {
-      toast.error('จำนวนไม่ถูกต้อง')
-      return
-    }
+  async function adjustLotQuantity(lot: ProductLot, newQty: number, reason: string) {
     const diff = newQty - lot.quantity
-    if (diff === 0) {
-      setEditingId(null)
-      return
-    }
+    if (diff === 0) return true
 
     setLoading(true)
     const supabase = createClient()
@@ -110,7 +106,7 @@ export default function LotManager({ productId, lots, unit, userId }: Props) {
     if (error) {
       toast.error('ปรับสต็อคไม่สำเร็จ: ' + error.message)
       setLoading(false)
-      return
+      return false
     }
 
     await supabase.from('stock_movements').insert({
@@ -118,13 +114,68 @@ export default function LotManager({ productId, lots, unit, userId }: Props) {
       product_lot_id: lot.id,
       type: diff > 0 ? 'adjust_in' : 'adjust_out',
       quantity: Math.abs(diff),
-      reason: editReason.trim() || null,
+      reason: reason.trim() || null,
       created_by: userId || null,
     })
 
+    setLoading(false)
+    return true
+  }
+
+  async function saveEdit(lot: ProductLot) {
+    const newQty = parseInt(editQty)
+    if (isNaN(newQty) || newQty < 0) {
+      toast.error('จำนวนไม่ถูกต้อง')
+      return
+    }
+    const ok = await adjustLotQuantity(lot, newQty, editReason)
+    if (!ok) return
     toast.success('ปรับสต็อคแล้ว')
     setEditingId(null)
-    setLoading(false)
+    router.refresh()
+  }
+
+  // เลือก lot ที่ใกล้หมดอายุที่สุดเป็นเป้าหมายของการปรับยอดรวม (ไม่มีวันหมดอายุ = ไปอยู่ท้ายสุด)
+  const fefoLot = [...lots].sort((a, b) => {
+    if (!a.expiry_date && !b.expiry_date) return 0
+    if (!a.expiry_date) return 1
+    if (!b.expiry_date) return -1
+    return a.expiry_date.localeCompare(b.expiry_date)
+  })[0]
+
+  const totalStock = lots.reduce((sum, l) => sum + l.quantity, 0)
+
+  function startEditTotal() {
+    setEditingTotal(true)
+    setTotalQty(totalStock.toString())
+    setTotalReason('')
+  }
+
+  async function saveTotalEdit() {
+    const newTotal = parseInt(totalQty)
+    if (isNaN(newTotal) || newTotal < 0) {
+      toast.error('จำนวนไม่ถูกต้อง')
+      return
+    }
+    const diff = newTotal - totalStock
+    if (diff === 0) {
+      setEditingTotal(false)
+      return
+    }
+    if (!fefoLot) {
+      toast.error('ยังไม่มี lot ให้ปรับ — กด "เพิ่ม lot" ก่อน')
+      return
+    }
+    const newLotQty = fefoLot.quantity + diff
+    if (newLotQty < 0) {
+      toast.error(`ลดได้ไม่เกิน ${fefoLot.quantity} (จำนวนใน lot ใกล้หมดอายุที่สุด) — ปรับทีละ lot แทน`)
+      return
+    }
+
+    const ok = await adjustLotQuantity(fefoLot, newLotQty, totalReason)
+    if (!ok) return
+    toast.success('ปรับสต็อคแล้ว')
+    setEditingTotal(false)
     router.refresh()
   }
 
@@ -142,6 +193,63 @@ export default function LotManager({ productId, lots, unit, userId }: Props) {
           <Plus size={15} />
           เพิ่ม lot
         </button>
+      </div>
+
+      <div className="bg-gray-50 rounded-lg p-3 mb-4">
+        {!editingTotal ? (
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs text-gray-500">ยอดรวมทั้งหมด</p>
+              <p className="text-lg font-bold text-gray-900">{totalStock} {unit}</p>
+            </div>
+            <button
+              onClick={startEditTotal}
+              className="flex items-center gap-1.5 text-sm text-blue-600 hover:text-blue-700 font-medium"
+            >
+              <Pencil size={14} />
+              ปรับยอด
+            </button>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            <div className="flex items-center gap-2">
+              <label className="text-xs text-gray-500 shrink-0">ยอดรวมใหม่</label>
+              <input
+                type="number"
+                min="0"
+                value={totalQty}
+                onChange={(e) => setTotalQty(e.target.value)}
+                className={inputClass}
+                autoFocus
+              />
+            </div>
+            <input
+              type="text"
+              value={totalReason}
+              onChange={(e) => setTotalReason(e.target.value)}
+              className={inputClass}
+              placeholder="เหตุผล เช่น นับสต็อคใหม่ / สินค้าเสียหาย (ไม่บังคับ)"
+            />
+            <p className="text-xs text-gray-400">
+              ส่วนต่างจะลง/ตัดที่ lot ใกล้หมดอายุที่สุด{fefoLot?.lot_number ? ` (${fefoLot.lot_number})` : ''}
+            </p>
+            <div className="flex gap-2">
+              <button
+                onClick={saveTotalEdit}
+                disabled={loading}
+                className="flex-1 bg-blue-600 text-white text-sm py-1.5 rounded font-medium disabled:opacity-50"
+              >
+                บันทึก
+              </button>
+              <button
+                onClick={() => setEditingTotal(false)}
+                className="px-3 py-1.5 border border-gray-300 rounded text-sm text-gray-600"
+              >
+                ยกเลิก
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {showForm && (
@@ -203,8 +311,10 @@ export default function LotManager({ productId, lots, unit, userId }: Props) {
           <p className="text-sm text-gray-400 text-center py-4">ยังไม่มี lot</p>
         )}
         {lots.map((lot) => {
-          const isExpired = lot.expiry_date && lot.expiry_date < today
-          const isExpiringSoon = lot.expiry_date && lot.expiry_date >= today &&
+          // สินค้าขายหมดแล้ว (quantity = 0) ไม่ต้องเตือนเรื่องวันหมดอายุ
+          const soldOut = lot.quantity === 0
+          const isExpired = !soldOut && lot.expiry_date && lot.expiry_date < today
+          const isExpiringSoon = !soldOut && lot.expiry_date && lot.expiry_date >= today &&
             lot.expiry_date <= new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
           const isEditing = editingId === lot.id
 

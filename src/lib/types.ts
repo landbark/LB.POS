@@ -57,6 +57,7 @@ export interface Supplier {
   name: string
   contact_name: string | null
   phone: string | null
+  address: string | null
   notes: string | null
   created_at: string
 }
