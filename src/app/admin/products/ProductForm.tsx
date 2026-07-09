@@ -6,7 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 import { Plus } from 'lucide-react'
 import toast from 'react-hot-toast'
 import type { Category, Product, Supplier, Unit } from '@/lib/types'
-import ProductImageInput from './ProductImageInput'
+import ImageInput from '@/components/ImageInput'
 
 interface Props {
   categories: Category[]
@@ -159,7 +159,9 @@ export default function ProductForm({ categories, units, suppliers, product }: P
   return (
     <form onSubmit={handleSubmit} className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 max-w-xl">
       <div className="space-y-4">
-        <ProductImageInput
+        <ImageInput
+          label="รูปสินค้า"
+          hint="รูปจะถูก crop สี่เหลี่ยมจัตุรัสและย่อขนาดอัตโนมัติ"
           preview={imagePreview}
           onChange={(blob, previewUrl) => {
             setImageBlob(blob)

@@ -139,6 +139,19 @@ CREATE TABLE customers (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- ข้อมูลร้าน (singleton) — ใส่หัวเอกสาร (ใบเสร็จ/ใบสั่งซื้อ)
+CREATE TABLE store_settings (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name TEXT NOT NULL DEFAULT 'LANDBARK',
+  address TEXT,
+  phone TEXT,
+  tax_id TEXT,
+  logo_url TEXT,
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+INSERT INTO store_settings (name) VALUES ('LANDBARK');
+
 -- Points configuration
 CREATE TABLE points_config (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -188,13 +201,18 @@ CREATE TABLE transactions (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Purchases (ใบนำเข้า / สั่งซื้อ)
+-- Purchases (ใบสั่งซื้อ → รับสินค้า 2 ขั้นตอน)
+-- pending = สร้างใบสั่งซื้อแล้ว ยังไม่รู้ล็อต/วันหมดอายุ/ยังไม่เพิ่มสต็อค
+-- received = พนักงานกดรับสินค้าแล้ว (ใส่ล็อต/วันหมดอายุ ตอนนี้ + เพิ่มสต็อคจริง)
 CREATE TABLE purchases (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   purchase_number TEXT NOT NULL UNIQUE,
   supplier_id UUID REFERENCES suppliers(id) ON DELETE SET NULL,
   total_cost NUMERIC(12,2) NOT NULL DEFAULT 0,
   notes TEXT,
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'received')),
+  received_at TIMESTAMPTZ,
+  received_by UUID REFERENCES profiles(id) ON DELETE SET NULL,
   created_by UUID REFERENCES profiles(id) ON DELETE SET NULL,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -204,6 +222,7 @@ CREATE TABLE purchase_items (
   purchase_id UUID NOT NULL REFERENCES purchases(id) ON DELETE CASCADE,
   product_id UUID REFERENCES products(id) ON DELETE SET NULL,
   quantity INT NOT NULL CHECK (quantity > 0),
+  received_quantity INT,
   unit_cost NUMERIC(10,2) NOT NULL DEFAULT 0,
   lot_number TEXT,
   supplier_lot_number TEXT,
@@ -234,6 +253,7 @@ ALTER TABLE purchase_items ENABLE ROW LEVEL SECURITY;
 ALTER TABLE products ENABLE ROW LEVEL SECURITY;
 ALTER TABLE product_lots ENABLE ROW LEVEL SECURITY;
 ALTER TABLE customers ENABLE ROW LEVEL SECURITY;
+ALTER TABLE store_settings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE points_config ENABLE ROW LEVEL SECURITY;
 ALTER TABLE promotions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE transactions ENABLE ROW LEVEL SECURITY;
@@ -250,6 +270,7 @@ CREATE POLICY "auth manage purchase_items" ON purchase_items FOR ALL TO authenti
 CREATE POLICY "auth read products" ON products FOR SELECT TO authenticated USING (true);
 CREATE POLICY "auth read product_lots" ON product_lots FOR SELECT TO authenticated USING (true);
 CREATE POLICY "auth read customers" ON customers FOR ALL TO authenticated USING (true);
+CREATE POLICY "auth read store_settings" ON store_settings FOR SELECT TO authenticated USING (true);
 CREATE POLICY "auth read points_config" ON points_config FOR SELECT TO authenticated USING (true);
 CREATE POLICY "auth read promotions" ON promotions FOR SELECT TO authenticated USING (true);
 CREATE POLICY "auth manage transactions" ON transactions FOR ALL TO authenticated USING (true);
@@ -268,6 +289,9 @@ CREATE POLICY "admin manage promotions" ON promotions FOR ALL TO authenticated
 
 CREATE POLICY "admin manage points_config" ON points_config FOR ALL TO authenticated
   USING (EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'admin'));
+
+CREATE POLICY "admin manage store_settings" ON store_settings FOR ALL TO authenticated
+  USING (public.is_admin());
 
 -- ห้ามใช้ subquery ที่ query profiles ตรงๆ ใน policy ของ profiles (จะ infinite recursion) — ใช้ is_admin() แทน
 CREATE POLICY "admin manage profiles" ON profiles FOR ALL TO authenticated

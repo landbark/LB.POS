@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { X } from 'lucide-react'
+import { X, CheckCircle2, Printer } from 'lucide-react'
 import toast from 'react-hot-toast'
 import type { CartItem, Customer, PointsConfig, PaymentMethod } from '@/lib/types'
 
@@ -32,6 +32,12 @@ export default function PaymentModal({
   const [cashReceived, setCashReceived] = useState('')
   const [usePoints, setUsePoints] = useState(0)
   const [loading, setLoading] = useState(false)
+  // หลังบันทึกสำเร็จ เปลี่ยนเป็นหน้าเลือก เสร็จสิ้น/พิมพ์ใบเสร็จ แทนที่จะปิด modal ทันที
+  const [completedTxId, setCompletedTxId] = useState<string | null>(null)
+
+  function openReceipt() {
+    if (completedTxId) window.open(`/print/receipt/${completedTxId}`, '_blank')
+  }
 
   const maxRedeemablePoints = customer && pointsConfig
     ? Math.min(customer.points, Math.floor(total / pointsConfig.redeem_value) * pointsConfig.redeem_points)
@@ -148,7 +154,46 @@ export default function PaymentModal({
     }
 
     setLoading(false)
-    onSuccess()
+    setCompletedTxId(tx.id)
+  }
+
+  if (completedTxId) {
+    return (
+      <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+        <div className="bg-white rounded-2xl w-full max-w-sm shadow-2xl p-6 text-center">
+          <CheckCircle2 size={48} className="mx-auto text-green-500 mb-3" />
+          <h2 className="text-lg font-bold text-gray-900 mb-1">ชำระเงินสำเร็จ</h2>
+          <p className="text-2xl font-bold text-gray-900 mb-1">฿{finalTotal.toFixed(2)}</p>
+          {method === 'cash' && change > 0 && (
+            <p className="text-sm text-blue-600 mb-4">เงินทอน ฿{change.toFixed(2)}</p>
+          )}
+          {!(method === 'cash' && change > 0) && <div className="mb-4" />}
+
+          <div className="space-y-2">
+            <button
+              onClick={() => { openReceipt(); onSuccess() }}
+              className="w-full flex items-center justify-center gap-2 bg-green-600 hover:bg-green-700 text-white font-bold py-3 rounded-xl text-base transition-colors"
+            >
+              <Printer size={18} />
+              เสร็จสิ้นพร้อมพิมพ์ใบเสร็จ
+            </button>
+            <button
+              onClick={openReceipt}
+              className="w-full flex items-center justify-center gap-2 border-2 border-gray-200 hover:border-gray-300 text-gray-700 font-medium py-2.5 rounded-xl text-sm transition-colors"
+            >
+              <Printer size={16} />
+              พิมพ์ใบเสร็จ
+            </button>
+            <button
+              onClick={onSuccess}
+              className="w-full text-gray-400 hover:text-gray-600 font-medium py-2 text-sm transition-colors"
+            >
+              เสร็จสิ้น (ไม่พิมพ์)
+            </button>
+          </div>
+        </div>
+      </div>
+    )
   }
 
   return (

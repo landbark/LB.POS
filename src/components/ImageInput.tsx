@@ -6,6 +6,8 @@ import { ImagePlus, Trash2 } from 'lucide-react'
 import toast from 'react-hot-toast'
 
 interface Props {
+  label?: string
+  hint?: string
   // preview ปัจจุบัน (URL เดิมจาก storage หรือ object URL ของรูปใหม่)
   preview: string | null
   onChange: (blob: Blob | null, previewUrl: string | null) => void
@@ -40,7 +42,7 @@ async function cropAndCompress(imageSrc: string, area: Area): Promise<Blob> {
   return blob
 }
 
-export default function ProductImageInput({ preview, onChange }: Props) {
+export default function ImageInput({ label = 'รูปภาพ', hint, preview, onChange }: Props) {
   const fileRef = useRef<HTMLInputElement>(null)
   // รูปต้นฉบับที่กำลัง crop (data URL) — null = modal ปิด
   const [cropSrc, setCropSrc] = useState<string | null>(null)
@@ -82,13 +84,13 @@ export default function ProductImageInput({ preview, onChange }: Props) {
 
   return (
     <div>
-      <label className="block text-sm font-medium text-gray-700 mb-1">รูปสินค้า</label>
+      <label className="block text-sm font-medium text-gray-700 mb-1">{label}</label>
       <div className="flex items-center gap-3">
         {preview ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
             src={preview}
-            alt="รูปสินค้า"
+            alt={label}
             className="w-20 h-20 rounded-lg object-cover border border-gray-200"
           />
         ) : (
@@ -116,13 +118,13 @@ export default function ProductImageInput({ preview, onChange }: Props) {
         </div>
         <input ref={fileRef} type="file" accept="image/*" onChange={handleSelectFile} className="hidden" />
       </div>
-      <p className="text-xs text-gray-400 mt-1">รูปจะถูก crop สี่เหลี่ยมจัตุรัสและย่อขนาดอัตโนมัติ</p>
+      {hint && <p className="text-xs text-gray-400 mt-1">{hint}</p>}
 
       {/* modal crop รูป */}
       {cropSrc && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
           <div className="bg-white rounded-xl shadow-xl p-4 w-full max-w-md mx-4">
-            <h3 className="text-base font-semibold text-gray-900 mb-3">จัดตำแหน่งรูปสินค้า</h3>
+            <h3 className="text-base font-semibold text-gray-900 mb-3">จัดตำแหน่งรูป</h3>
             <div className="relative w-full h-72 bg-gray-900 rounded-lg overflow-hidden">
               <Cropper
                 image={cropSrc}

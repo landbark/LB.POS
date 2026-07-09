@@ -3,6 +3,7 @@ import PasswordSection from './PasswordSection'
 import StaffSection from './StaffSection'
 import NameListSection from './NameListSection'
 import PointsSection from './PointsSection'
+import StoreSection from './StoreSection'
 
 export default async function SettingsPage() {
   const supabase = await createClient()
@@ -13,12 +14,14 @@ export default async function SettingsPage() {
     { data: units },
     { data: categories },
     { data: pointsConfig },
+    { data: storeConfig },
   ] = await Promise.all([
     supabase.from('staff_emails').select('*').order('created_at'),
     supabase.from('profiles').select('*'),
     supabase.from('units').select('*').order('name'),
     supabase.from('categories').select('*').order('name'),
     supabase.from('points_config').select('*').limit(1).single(),
+    supabase.from('store_settings').select('*').limit(1).single(),
   ])
 
   // จับคู่ whitelist กับโปรไฟล์ที่เคยล็อกอิน เพื่อโชว์สถานะ
@@ -32,6 +35,8 @@ export default async function SettingsPage() {
       <h1 className="text-2xl font-bold text-gray-900 mb-6">ตั้งค่า</h1>
 
       <div className="space-y-6">
+        <StoreSection config={storeConfig} />
+
         <StaffSection staff={staffWithStatus} migrated={staff !== null} />
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">

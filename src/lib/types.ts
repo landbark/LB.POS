@@ -61,12 +61,17 @@ export interface Supplier {
   created_at: string
 }
 
+export type PurchaseStatus = 'pending' | 'received'
+
 export interface Purchase {
   id: string
   purchase_number: string
   supplier_id: string | null
   total_cost: number
   notes: string | null
+  status: PurchaseStatus
+  received_at: string | null
+  received_by: string | null
   created_by: string | null
   created_at: string
   suppliers?: Supplier
@@ -78,12 +83,24 @@ export interface PurchaseItem {
   purchase_id: string
   product_id: string | null
   quantity: number
+  received_quantity: number | null
   unit_cost: number
   lot_number: string | null
   supplier_lot_number: string | null
   expiry_date: string | null
   created_at: string
   products?: Product
+}
+
+// ข้อมูลร้าน (singleton) — ใส่หัวเอกสาร (ใบเสร็จ/ใบสั่งซื้อ)
+export interface StoreSettings {
+  id: string
+  name: string
+  address: string | null
+  phone: string | null
+  tax_id: string | null
+  logo_url: string | null
+  updated_at: string
 }
 
 export interface ProductLot {
