@@ -83,24 +83,40 @@ export default function ReceiveClient({ purchase, receivedBy }: { purchase: Rece
     const toReceive = rows.filter((r) => (parseInt(r.receivedQty) || 0) > 0)
 
     if (toReceive.length > 0) {
-      const { error: lotErr } = await supabase.from('product_lots').insert(
-        toReceive.map((r) => {
-          const item = purchase.purchase_items.find((pi) => pi.id === r.itemId)!
-          const qty = parseInt(r.receivedQty)
-          return {
-            product_id: item.product_id,
-            lot_number: r.lotNumber.trim() || null,
-            supplier_lot_number: r.supplierLot.trim() || null,
-            expiry_date: r.expiryDate || null,
-            quantity: qty,
-            initial_quantity: qty,
-          }
-        })
-      )
+      const { data: newLots, error: lotErr } = await supabase
+        .from('product_lots')
+        .insert(
+          toReceive.map((r) => {
+            const item = purchase.purchase_items.find((pi) => pi.id === r.itemId)!
+            const qty = parseInt(r.receivedQty)
+            return {
+              product_id: item.product_id,
+              lot_number: r.lotNumber.trim() || null,
+              supplier_lot_number: r.supplierLot.trim() || null,
+              expiry_date: r.expiryDate || null,
+              quantity: qty,
+              initial_quantity: qty,
+            }
+          })
+        )
+        .select('id, product_id, quantity')
       if (lotErr) {
         toast.error('เพิ่มสต็อคไม่สำเร็จ: ' + lotErr.message)
         setLoading(false)
         return
+      }
+
+      if (newLots) {
+        await supabase.from('stock_movements').insert(
+          newLots.map((lot) => ({
+            product_id: lot.product_id,
+            product_lot_id: lot.id,
+            type: 'receive' as const,
+            quantity: lot.quantity,
+            reason: purchase.purchase_number,
+            created_by: receivedBy || null,
+          }))
+        )
       }
     }
 

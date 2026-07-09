@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { notFound } from 'next/navigation'
 import ProductForm from '../ProductForm'
 import LotManager from './LotManager'
+import StockHistory from './StockHistory'
 
 export default async function EditProductPage({
   params,
@@ -10,8 +11,9 @@ export default async function EditProductPage({
 }) {
   const { id } = await params
   const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
 
-  const [{ data: product }, { data: categories }, { data: units }, { data: suppliers }] = await Promise.all([
+  const [{ data: product }, { data: categories }, { data: units }, { data: suppliers }, { data: movements }] = await Promise.all([
     supabase
       .from('products')
       .select('*, product_lots(*)')
@@ -20,6 +22,12 @@ export default async function EditProductPage({
     supabase.from('categories').select('*').order('name'),
     supabase.from('units').select('*').order('name'),
     supabase.from('suppliers').select('*').order('name'),
+    supabase
+      .from('stock_movements')
+      .select('*, profiles(name)')
+      .eq('product_id', id)
+      .order('created_at', { ascending: false })
+      .limit(50),
   ])
 
   if (!product) notFound()
@@ -29,7 +37,10 @@ export default async function EditProductPage({
       <h1 className="text-2xl font-bold text-gray-900 mb-6">แก้ไขสินค้า</h1>
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <ProductForm categories={categories ?? []} units={units ?? []} suppliers={suppliers ?? []} product={product} />
-        <LotManager productId={id} lots={product.product_lots ?? []} unit={product.unit} />
+        <LotManager productId={id} lots={product.product_lots ?? []} unit={product.unit} userId={user?.id ?? ''} />
+      </div>
+      <div className="mt-6">
+        <StockHistory movements={(movements as never[]) ?? []} unit={product.unit} />
       </div>
     </div>
   )

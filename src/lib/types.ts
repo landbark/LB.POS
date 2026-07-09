@@ -103,6 +103,20 @@ export interface StoreSettings {
   updated_at: string
 }
 
+export type StockMovementType = 'sale' | 'receive' | 'adjust_in' | 'adjust_out'
+
+export interface StockMovement {
+  id: string
+  product_id: string
+  product_lot_id: string | null
+  type: StockMovementType
+  quantity: number
+  reason: string | null
+  created_by: string | null
+  created_at: string
+  profiles?: Profile
+}
+
 export interface ProductLot {
   id: string
   product_id: string

@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { Plus, Trash2 } from 'lucide-react'
+import { Plus, Trash2, Pencil } from 'lucide-react'
 import toast from 'react-hot-toast'
 import type { ProductLot } from '@/lib/types'
 
@@ -11,32 +11,51 @@ interface Props {
   productId: string
   lots: ProductLot[]
   unit: string
+  userId: string
 }
 
-export default function LotManager({ productId, lots, unit }: Props) {
+export default function LotManager({ productId, lots, unit, userId }: Props) {
   const router = useRouter()
   const [showForm, setShowForm] = useState(false)
   const [loading, setLoading] = useState(false)
   const [form, setForm] = useState({ lot_number: '', expiry_date: '', quantity: '' })
+  // lot id ที่กำลังแก้ไขจำนวนอยู่ — null = ไม่มี
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editQty, setEditQty] = useState('')
+  const [editReason, setEditReason] = useState('')
 
   async function addLot(e: React.FormEvent) {
     e.preventDefault()
     setLoading(true)
     const supabase = createClient()
 
-    const { error } = await supabase.from('product_lots').insert({
-      product_id: productId,
-      lot_number: form.lot_number || null,
-      expiry_date: form.expiry_date || null,
-      quantity: parseInt(form.quantity),
-      initial_quantity: parseInt(form.quantity),
-    })
+    const qty = parseInt(form.quantity)
+    const { data: newLot, error } = await supabase
+      .from('product_lots')
+      .insert({
+        product_id: productId,
+        lot_number: form.lot_number || null,
+        expiry_date: form.expiry_date || null,
+        quantity: qty,
+        initial_quantity: qty,
+      })
+      .select('id')
+      .single()
 
-    if (error) {
+    if (error || !newLot) {
       toast.error('เกิดข้อผิดพลาด')
       setLoading(false)
       return
     }
+
+    await supabase.from('stock_movements').insert({
+      product_id: productId,
+      product_lot_id: newLot.id,
+      type: 'adjust_in',
+      quantity: qty,
+      reason: `เพิ่ม lot ใหม่${form.lot_number ? ` (${form.lot_number})` : ''}`,
+      created_by: userId || null,
+    })
 
     toast.success('เพิ่ม lot แล้ว')
     setForm({ lot_number: '', expiry_date: '', quantity: '' })
@@ -45,15 +64,72 @@ export default function LotManager({ productId, lots, unit }: Props) {
     router.refresh()
   }
 
-  async function deleteLot(id: string) {
+  async function deleteLot(lot: ProductLot) {
     if (!confirm('ลบ lot นี้?')) return
     const supabase = createClient()
-    await supabase.from('product_lots').delete().eq('id', id)
+
+    // log ก่อนลบ เพราะลบแล้ว FK จะอ้างอิง lot นี้ไม่ได้อีก
+    if (lot.quantity > 0) {
+      await supabase.from('stock_movements').insert({
+        product_id: productId,
+        product_lot_id: null,
+        type: 'adjust_out',
+        quantity: lot.quantity,
+        reason: `ลบ lot${lot.lot_number ? ` (${lot.lot_number})` : ''}`,
+        created_by: userId || null,
+      })
+    }
+
+    await supabase.from('product_lots').delete().eq('id', lot.id)
     toast.success('ลบ lot แล้ว')
     router.refresh()
   }
 
+  function startEdit(lot: ProductLot) {
+    setEditingId(lot.id)
+    setEditQty(lot.quantity.toString())
+    setEditReason('')
+  }
+
+  async function saveEdit(lot: ProductLot) {
+    const newQty = parseInt(editQty)
+    if (isNaN(newQty) || newQty < 0) {
+      toast.error('จำนวนไม่ถูกต้อง')
+      return
+    }
+    const diff = newQty - lot.quantity
+    if (diff === 0) {
+      setEditingId(null)
+      return
+    }
+
+    setLoading(true)
+    const supabase = createClient()
+
+    const { error } = await supabase.from('product_lots').update({ quantity: newQty }).eq('id', lot.id)
+    if (error) {
+      toast.error('ปรับสต็อคไม่สำเร็จ: ' + error.message)
+      setLoading(false)
+      return
+    }
+
+    await supabase.from('stock_movements').insert({
+      product_id: productId,
+      product_lot_id: lot.id,
+      type: diff > 0 ? 'adjust_in' : 'adjust_out',
+      quantity: Math.abs(diff),
+      reason: editReason.trim() || null,
+      created_by: userId || null,
+    })
+
+    toast.success('ปรับสต็อคแล้ว')
+    setEditingId(null)
+    setLoading(false)
+    router.refresh()
+  }
+
   const today = new Date().toISOString().split('T')[0]
+  const inputClass = 'w-full border border-gray-300 rounded px-2.5 py-2 text-sm'
 
   return (
     <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
@@ -77,7 +153,7 @@ export default function LotManager({ productId, lots, unit }: Props) {
                 type="text"
                 value={form.lot_number}
                 onChange={(e) => setForm({ ...form, lot_number: e.target.value })}
-                className="w-full border border-gray-300 rounded px-2.5 py-2 text-sm"
+                className={inputClass}
                 placeholder="LOT-001"
               />
             </div>
@@ -87,7 +163,7 @@ export default function LotManager({ productId, lots, unit }: Props) {
                 type="date"
                 value={form.expiry_date}
                 onChange={(e) => setForm({ ...form, expiry_date: e.target.value })}
-                className="w-full border border-gray-300 rounded px-2.5 py-2 text-sm"
+                className={inputClass}
               />
             </div>
           </div>
@@ -99,7 +175,7 @@ export default function LotManager({ productId, lots, unit }: Props) {
               min="1"
               value={form.quantity}
               onChange={(e) => setForm({ ...form, quantity: e.target.value })}
-              className="w-full border border-gray-300 rounded px-2.5 py-2 text-sm"
+              className={inputClass}
               placeholder="0"
             />
           </div>
@@ -130,32 +206,83 @@ export default function LotManager({ productId, lots, unit }: Props) {
           const isExpired = lot.expiry_date && lot.expiry_date < today
           const isExpiringSoon = lot.expiry_date && lot.expiry_date >= today &&
             lot.expiry_date <= new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+          const isEditing = editingId === lot.id
 
           return (
-            <div key={lot.id} className="flex items-center justify-between py-2 border-b border-gray-50 last:border-0">
-              <div>
-                <p className="text-sm font-medium text-gray-800">
-                  {lot.lot_number || 'ไม่ระบุ lot'}
-                </p>
-                <p className={`text-xs mt-0.5 ${isExpired ? 'text-red-600' : isExpiringSoon ? 'text-orange-500' : 'text-gray-400'}`}>
-                  {lot.expiry_date
-                    ? `หมดอายุ ${new Date(lot.expiry_date).toLocaleDateString('th-TH')}`
-                    : 'ไม่มีวันหมดอายุ'}
-                  {isExpired && ' ⚠️ หมดแล้ว'}
-                  {isExpiringSoon && ' ⚠️ ใกล้หมด'}
-                </p>
+            <div key={lot.id} className="py-2 border-b border-gray-50 last:border-0">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-gray-800">
+                    {lot.lot_number || 'ไม่ระบุ lot'}
+                  </p>
+                  <p className={`text-xs mt-0.5 ${isExpired ? 'text-red-600' : isExpiringSoon ? 'text-orange-500' : 'text-gray-400'}`}>
+                    {lot.expiry_date
+                      ? `หมดอายุ ${new Date(lot.expiry_date).toLocaleDateString('th-TH')}`
+                      : 'ไม่มีวันหมดอายุ'}
+                    {isExpired && ' ⚠️ หมดแล้ว'}
+                    {isExpiringSoon && ' ⚠️ ใกล้หมด'}
+                  </p>
+                </div>
+                <div className="flex items-center gap-3">
+                  {!isEditing && (
+                    <span className="text-sm font-semibold text-gray-900">
+                      {lot.quantity} {unit}
+                    </span>
+                  )}
+                  <button
+                    onClick={() => (isEditing ? setEditingId(null) : startEdit(lot))}
+                    className="text-gray-300 hover:text-blue-500 transition-colors"
+                    title="แก้ไขจำนวน"
+                  >
+                    <Pencil size={14} />
+                  </button>
+                  <button
+                    onClick={() => deleteLot(lot)}
+                    className="text-gray-300 hover:text-red-500 transition-colors"
+                    title="ลบ lot"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </div>
               </div>
-              <div className="flex items-center gap-3">
-                <span className="text-sm font-semibold text-gray-900">
-                  {lot.quantity} {unit}
-                </span>
-                <button
-                  onClick={() => deleteLot(lot.id)}
-                  className="text-gray-300 hover:text-red-500 transition-colors"
-                >
-                  <Trash2 size={14} />
-                </button>
-              </div>
+
+              {isEditing && (
+                <div className="bg-gray-50 rounded-lg p-3 mt-2 space-y-2">
+                  <div className="flex items-center gap-2">
+                    <label className="text-xs text-gray-500 shrink-0">จำนวนใหม่</label>
+                    <input
+                      type="number"
+                      min="0"
+                      value={editQty}
+                      onChange={(e) => setEditQty(e.target.value)}
+                      className={inputClass}
+                      autoFocus
+                    />
+                  </div>
+                  <input
+                    type="text"
+                    value={editReason}
+                    onChange={(e) => setEditReason(e.target.value)}
+                    className={inputClass}
+                    placeholder="เหตุผล เช่น นับสต็อคใหม่ / สินค้าเสียหาย (ไม่บังคับ)"
+                  />
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => saveEdit(lot)}
+                      disabled={loading}
+                      className="flex-1 bg-blue-600 text-white text-sm py-1.5 rounded font-medium disabled:opacity-50"
+                    >
+                      บันทึก
+                    </button>
+                    <button
+                      onClick={() => setEditingId(null)}
+                      className="px-3 py-1.5 border border-gray-300 rounded text-sm text-gray-600"
+                    >
+                      ยกเลิก
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           )
         })}

@@ -123,7 +123,7 @@ export default function StaffSection({ staff, migrated }: Props) {
               className={inputClass}
             >
               <option value="cashier">พนักงานขาย</option>
-              <option value="admin">ผู้ดูแล (admin)</option>
+              <option value="admin">เจ้าของร้าน</option>
             </select>
           </div>
           <div>
@@ -169,7 +169,7 @@ export default function StaffSection({ staff, migrated }: Props) {
                     className="border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                   >
                     <option value="cashier">พนักงานขาย</option>
-                    <option value="admin">ผู้ดูแล</option>
+                    <option value="admin">เจ้าของร้าน</option>
                   </select>
                 </td>
                 <td className="px-4 py-3 text-center">

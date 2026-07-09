@@ -230,6 +230,18 @@ CREATE TABLE purchase_items (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- ประวัติการเปลี่ยนแปลงสต็อค (ขาย/รับเข้าจากใบสั่งซื้อ/ปรับเพิ่ม/ปรับลดเอง)
+CREATE TABLE stock_movements (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  product_id UUID NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+  product_lot_id UUID REFERENCES product_lots(id) ON DELETE SET NULL,
+  type TEXT NOT NULL CHECK (type IN ('sale', 'receive', 'adjust_in', 'adjust_out')),
+  quantity INT NOT NULL CHECK (quantity > 0),
+  reason TEXT,
+  created_by UUID REFERENCES profiles(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
 -- Transaction items
 CREATE TABLE transaction_items (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -255,6 +267,7 @@ ALTER TABLE product_lots ENABLE ROW LEVEL SECURITY;
 ALTER TABLE customers ENABLE ROW LEVEL SECURITY;
 ALTER TABLE store_settings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE points_config ENABLE ROW LEVEL SECURITY;
+ALTER TABLE stock_movements ENABLE ROW LEVEL SECURITY;
 ALTER TABLE promotions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE transactions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE transaction_items ENABLE ROW LEVEL SECURITY;
@@ -275,6 +288,8 @@ CREATE POLICY "auth read points_config" ON points_config FOR SELECT TO authentic
 CREATE POLICY "auth read promotions" ON promotions FOR SELECT TO authenticated USING (true);
 CREATE POLICY "auth manage transactions" ON transactions FOR ALL TO authenticated USING (true);
 CREATE POLICY "auth manage transaction_items" ON transaction_items FOR ALL TO authenticated USING (true);
+CREATE POLICY "auth read stock_movements" ON stock_movements FOR SELECT TO authenticated USING (true);
+CREATE POLICY "auth insert stock_movements" ON stock_movements FOR INSERT TO authenticated WITH CHECK (true);
 CREATE POLICY "auth update product_lots" ON product_lots FOR UPDATE TO authenticated USING (true);
 
 CREATE POLICY "auth manage categories" ON categories FOR ALL TO authenticated USING (true);
@@ -308,6 +323,7 @@ CREATE INDEX idx_product_lots_expiry ON product_lots(expiry_date) WHERE expiry_d
 CREATE INDEX idx_transactions_created_at ON transactions(created_at);
 CREATE INDEX idx_transactions_customer_id ON transactions(customer_id);
 CREATE INDEX idx_customers_phone ON customers(phone);
+CREATE INDEX idx_stock_movements_product_id ON stock_movements(product_id, created_at DESC);
 
 -- Sample categories
 INSERT INTO categories (name) VALUES

@@ -65,7 +65,7 @@ export default function PaymentModal({
     const supabase = createClient()
 
     // เลขที่ RCxxyyzzzzbbbb จาก DB function — ถ้าชนกัน (ขายพร้อมกัน 2 เครื่อง) ลองใหม่อีกรอบ
-    let tx: { id: string } | null = null
+    let tx: { id: string; transaction_number: string } | null = null
     let lastError: string | undefined
     for (let attempt = 0; attempt < 2 && !tx; attempt++) {
       const { data: txNumber, error: numError } = await supabase.rpc('next_transaction_number')
@@ -90,7 +90,7 @@ export default function PaymentModal({
           points_earned: earnedPoints,
           points_used: usePoints,
         })
-        .select('id')
+        .select('id, transaction_number')
         .single()
 
       if (data) {
@@ -138,6 +138,14 @@ export default function PaymentModal({
           .from('product_lots')
           .update({ quantity: (lot as any).quantity - deduct })
           .eq('id', (lot as any).id)
+        await supabase.from('stock_movements').insert({
+          product_id: item.product.id,
+          product_lot_id: (lot as any).id,
+          type: 'sale',
+          quantity: deduct,
+          reason: tx.transaction_number,
+          created_by: cashierId,
+        })
         remaining -= deduct
       }
     }

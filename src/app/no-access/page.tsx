@@ -27,7 +27,7 @@ export default function NoAccessPage() {
           </h1>
           <p className="text-sm mb-6" style={{ color: '#D4A87A' }}>
             อีเมลของคุณยังไม่อยู่ในรายชื่อพนักงาน
-            กรุณาติดต่อผู้ดูแลร้านให้เพิ่มอีเมลนี้ในหน้าตั้งค่า
+            กรุณาติดต่อเจ้าของร้านให้เพิ่มอีเมลนี้ในหน้าตั้งค่า
           </p>
           <button
             onClick={handleLogout}
