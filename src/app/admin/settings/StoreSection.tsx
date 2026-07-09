@@ -16,6 +16,7 @@ export default function StoreSection({ config }: { config: StoreSettings | null 
     address: config?.address ?? '',
     phone: config?.phone ?? '',
     tax_id: config?.tax_id ?? '',
+    promptpay_id: config?.promptpay_id ?? '',
   })
   const [logoBlob, setLogoBlob] = useState<Blob | null>(null)
   const [logoPreview, setLogoPreview] = useState<string | null>(config?.logo_url ?? null)
@@ -62,6 +63,7 @@ export default function StoreSection({ config }: { config: StoreSettings | null 
         address: form.address.trim() || null,
         phone: form.phone.trim() || null,
         tax_id: form.tax_id.trim() || null,
+        promptpay_id: form.promptpay_id.trim() || null,
         logo_url: logoUrl,
         updated_at: new Date().toISOString(),
       })
@@ -137,6 +139,16 @@ export default function StoreSection({ config }: { config: StoreSettings | null 
               className={inputClass} placeholder="0-0000-00000-00-0"
             />
           </div>
+        </div>
+
+        <div>
+          <label className={labelClass}>PromptPay ID</label>
+          <input
+            type="text" value={form.promptpay_id}
+            onChange={(e) => set('promptpay_id', e.target.value)}
+            className={inputClass} placeholder="เบอร์โทรหรือเลขบัตรประชาชนที่ผูก PromptPay"
+          />
+          <p className="text-xs text-gray-400 mt-1">ใช้สร้าง QR รับเงินที่จอลูกค้าตอนขาย (จอสอง)</p>
         </div>
 
         <button

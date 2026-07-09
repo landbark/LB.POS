@@ -5,7 +5,7 @@ export default async function POSPage() {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
 
-  const [{ data: products }, { data: promotions }, { data: pointsConfig }] = await Promise.all([
+  const [{ data: products }, { data: promotions }, { data: pointsConfig }, { data: storeSettings }] = await Promise.all([
     supabase
       .from('products')
       .select(`
@@ -22,6 +22,7 @@ export default async function POSPage() {
       .lte('start_date', new Date().toISOString().split('T')[0])
       .gte('end_date', new Date().toISOString().split('T')[0]),
     supabase.from('points_config').select('*').limit(1).single(),
+    supabase.from('store_settings').select('promptpay_id').limit(1).single(),
   ])
 
   return (
@@ -30,6 +31,7 @@ export default async function POSPage() {
       promotions={promotions ?? []}
       pointsConfig={pointsConfig}
       cashierId={user?.id ?? ''}
+      promptpayId={storeSettings?.promptpay_id ?? null}
     />
   )
 }

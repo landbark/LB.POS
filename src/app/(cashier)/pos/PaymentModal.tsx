@@ -1,10 +1,11 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { X, CheckCircle2, Printer } from 'lucide-react'
 import toast from 'react-hot-toast'
 import type { CartItem, Customer, PointsConfig, PaymentMethod } from '@/lib/types'
+import { POS_DISPLAY_CHANNEL, type PosDisplayMessage } from '@/lib/posDisplay'
 
 interface Props {
   cart: CartItem[]
@@ -14,6 +15,7 @@ interface Props {
   customer: Customer | null
   pointsConfig: PointsConfig | null
   cashierId: string
+  promptpayId: string | null
   onClose: () => void
   onSuccess: () => void
 }
@@ -26,7 +28,7 @@ const PAYMENT_LABELS: Record<Exclude<PaymentMethod, 'qr'>, string> = {
 }
 
 export default function PaymentModal({
-  cart, subtotal, totalDiscount, total, customer, pointsConfig, cashierId, onClose, onSuccess,
+  cart, subtotal, totalDiscount, total, customer, pointsConfig, cashierId, promptpayId, onClose, onSuccess,
 }: Props) {
   const [method, setMethod] = useState<PaymentMethod>('cash')
   const [cashReceived, setCashReceived] = useState('')
@@ -34,6 +36,12 @@ export default function PaymentModal({
   const [loading, setLoading] = useState(false)
   // หลังบันทึกสำเร็จ เปลี่ยนเป็นหน้าเลือก เสร็จสิ้น/พิมพ์ใบเสร็จ แทนที่จะปิด modal ทันที
   const [completedTxId, setCompletedTxId] = useState<string | null>(null)
+  const displayChannelRef = useRef<BroadcastChannel | null>(null)
+
+  useEffect(() => {
+    displayChannelRef.current = new BroadcastChannel(POS_DISPLAY_CHANNEL)
+    return () => displayChannelRef.current?.close()
+  }, [])
 
   function openReceipt() {
     if (completedTxId) window.open(`/print/receipt/${completedTxId}`, '_blank')
@@ -54,6 +62,24 @@ export default function PaymentModal({
   const earnedPoints = pointsConfig && finalTotal > 0
     ? Math.floor(finalTotal / pointsConfig.spend_amount) * pointsConfig.earn_points
     : 0
+
+  const displayCustomer = customer
+    ? { name: customer.name, pointsBefore: customer.points, pointsEarned: earnedPoints, pointsAfter: customer.points + earnedPoints - usePoints }
+    : null
+
+  // ส่งสถานะให้จอลูกค้า (จอสอง) ทุกครั้งที่ยอด/วิธีจ่าย/แต้มเปลี่ยน จนกว่าจะบันทึกสำเร็จ
+  useEffect(() => {
+    if (completedTxId) return
+    const msg: PosDisplayMessage = {
+      stage: 'payment',
+      total: finalTotal,
+      method: method as Exclude<PaymentMethod, 'qr'>,
+      promptpayId,
+      customer: displayCustomer,
+    }
+    displayChannelRef.current?.postMessage(msg)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [finalTotal, method, promptpayId, customer, earnedPoints, usePoints, completedTxId])
 
   async function handleConfirm() {
     if (method === 'cash' && parseFloat(cashReceived || '0') < finalTotal) {
@@ -163,6 +189,11 @@ export default function PaymentModal({
 
     setLoading(false)
     setCompletedTxId(tx.id)
+    displayChannelRef.current?.postMessage({
+      stage: 'done',
+      total: finalTotal,
+      customer: displayCustomer,
+    } satisfies PosDisplayMessage)
   }
 
   if (completedTxId) {

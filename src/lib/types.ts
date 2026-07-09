@@ -101,6 +101,7 @@ export interface StoreSettings {
   phone: string | null
   tax_id: string | null
   logo_url: string | null
+  promptpay_id: string | null
   updated_at: string
 }
 

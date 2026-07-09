@@ -2,9 +2,10 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { Search, X, Plus, Minus, ShoppingCart, User } from 'lucide-react'
+import { Search, X, Plus, Minus, ShoppingCart, User, MonitorPlay } from 'lucide-react'
 import toast from 'react-hot-toast'
 import type { Product, CartItem, Promotion, PointsConfig, Customer, PaymentMethod } from '@/lib/types'
+import { POS_DISPLAY_CHANNEL, type PosDisplayMessage } from '@/lib/posDisplay'
 import PaymentModal from './PaymentModal'
 
 interface Props {
@@ -12,9 +13,10 @@ interface Props {
   promotions: Promotion[]
   pointsConfig: PointsConfig | null
   cashierId: string
+  promptpayId: string | null
 }
 
-export default function POSClient({ products, promotions, pointsConfig, cashierId }: Props) {
+export default function POSClient({ products, promotions, pointsConfig, cashierId, promptpayId }: Props) {
   const [search, setSearch] = useState('')
   const [cart, setCart] = useState<CartItem[]>([])
   const [customer, setCustomer] = useState<Customer | null>(null)
@@ -255,6 +257,37 @@ export default function POSClient({ products, promotions, pointsConfig, cashierI
   const totalDiscount = cart.reduce((s, item) => s + item.discount, 0)
   const total = subtotal - totalDiscount
 
+  // จอสอง (customer display) — เปิด BroadcastChannel ไว้ตลอด ส่งสถานะตะกร้าปัจจุบันให้จอลูกค้าเห็นแบบเรียลไทม์
+  const displayChannelRef = useRef<BroadcastChannel | null>(null)
+  useEffect(() => {
+    displayChannelRef.current = new BroadcastChannel(POS_DISPLAY_CHANNEL)
+    return () => displayChannelRef.current?.close()
+  }, [])
+
+  useEffect(() => {
+    if (showPayment) return // ตอนจ่ายเงิน ให้ PaymentModal เป็นคนส่งสถานะแทน
+    const earnedPoints = pointsConfig && total > 0
+      ? Math.floor(total / pointsConfig.spend_amount) * pointsConfig.earn_points
+      : 0
+    const msg: PosDisplayMessage = {
+      stage: 'cart',
+      items: cart.map((item) => ({
+        name: item.product.name,
+        unit: item.product.unit,
+        quantity: item.quantity,
+        unitPrice: item.unit_price,
+        subtotal: item.subtotal,
+      })),
+      subtotal,
+      discount: totalDiscount,
+      total,
+      customer: customer
+        ? { name: customer.name, pointsBefore: customer.points, pointsEarned: earnedPoints, pointsAfter: customer.points + earnedPoints }
+        : null,
+    }
+    displayChannelRef.current?.postMessage(msg)
+  }, [cart, customer, subtotal, totalDiscount, total, pointsConfig, showPayment])
+
   return (
     <div className="flex h-[calc(100vh-56px)]">
       {/* Left: Product Grid */}
@@ -344,6 +377,16 @@ export default function POSClient({ products, promotions, pointsConfig, cashierI
 
       {/* Right: Cart */}
       <div className="w-80 bg-white border-l border-gray-200 flex flex-col">
+        {/* จอสอง */}
+        <div className="px-3 pt-3">
+          <button
+            onClick={() => window.open('/pos-display', 'landbark-customer-display', 'width=1000,height=750')}
+            className="w-full flex items-center justify-center gap-2 border border-gray-200 hover:bg-gray-50 text-gray-600 text-xs font-medium py-1.5 rounded-lg transition-colors"
+          >
+            <MonitorPlay size={14} />
+            โชว์จอสอง (ให้ลูกค้าดู)
+          </button>
+        </div>
         {/* Customer */}
         <div className="p-3 border-b border-gray-100">
           <div className="flex gap-2">
@@ -508,6 +551,7 @@ export default function POSClient({ products, promotions, pointsConfig, cashierI
           customer={customer}
           pointsConfig={pointsConfig}
           cashierId={cashierId}
+          promptpayId={promptpayId}
           onClose={() => setShowPayment(false)}
           onSuccess={() => {
             setCart([])
