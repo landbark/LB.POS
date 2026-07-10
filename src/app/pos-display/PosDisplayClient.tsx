@@ -8,6 +8,11 @@ import { POS_DISPLAY_CHANNEL, type PosDisplayMessage, type DisplayCustomer } fro
 
 const money = (n: number) => n.toLocaleString('th-TH', { minimumFractionDigits: 2 })
 
+// ธีมจอสอง (จอลูกค้า): พื้นน้ำตาลเข้ม ตัวอักษรสว่าง อ่านง่ายในระยะไกล/แสงจ้า
+const DISPLAY_BG = 'radial-gradient(ellipse at 50% -10%, #4A311F 0%, #2A1B12 55%, #1E130C 100%)'
+const TEXT_LIGHT = '#F5E9DA'
+const TEXT_MUTED = '#C9A883'
+
 const PAYMENT_TH: Record<string, string> = {
   cash: 'เงินสด',
   transfer: 'โอนเงิน / สแกน QR',
@@ -82,11 +87,12 @@ export default function PosDisplayClient({ storeName, logoUrl, paymentQrUrl }: P
     <div
       ref={containerRef}
       className="min-h-screen flex flex-col"
-      style={{ background: '#FDF6EE' }}
+      style={{ background: DISPLAY_BG }}
     >
       <button
         onClick={toggleFullscreen}
-        className="absolute top-3 right-3 p-2 rounded-lg bg-white/70 hover:bg-white text-gray-500 shadow-sm z-10"
+        className="absolute top-3 right-3 p-2 rounded-lg hover:bg-white/10 shadow-sm z-10"
+        style={{ background: 'rgba(245,233,218,0.1)', color: TEXT_LIGHT }}
         title={fullscreen ? 'ออกจากเต็มจอ' : 'เต็มจอ'}
       >
         {fullscreen ? <Minimize size={18} /> : <Maximize size={18} />}
@@ -97,14 +103,34 @@ export default function PosDisplayClient({ storeName, logoUrl, paymentQrUrl }: P
           // eslint-disable-next-line @next/next/no-img-element
           <img src={logoUrl} alt={storeName} className="h-12 w-12 object-contain" />
         )}
-        <h1 className="text-2xl font-bold" style={{ color: '#7A4E2D' }}>{storeName}</h1>
+        <h1 className="text-2xl font-bold tracking-wide" style={{ color: TEXT_LIGHT }}>{storeName}</h1>
       </div>
 
       <div className="flex-1 flex items-center justify-center p-8">
         {(!msg || (msg.stage === 'cart' && msg.items.length === 0 && !msg.customer)) && (
-          <div className="text-center">
-            <p className="text-5xl mb-4">🐾</p>
-            <p className="text-2xl font-bold" style={{ color: '#7A4E2D' }}>ยินดีต้อนรับสู่ {storeName}</p>
+          <div className="flex flex-col items-center gap-5">
+            <div className="relative" style={{ width: 'clamp(180px, 26vw, 260px)', height: 'clamp(180px, 26vw, 260px)' }}>
+              <div
+                className="w-full h-full rounded-full overflow-hidden"
+                style={{
+                  border: '5px solid #C4865A',
+                  boxShadow: '0 0 0 3px rgba(245,233,218,0.18), 0 16px 40px rgba(0,0,0,0.5)',
+                }}
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src="/pos-display-welcome.webp" alt={storeName} className="w-full h-full object-cover" />
+              </div>
+              <div
+                className="absolute -bottom-1 -right-1 rounded-full flex items-center justify-center text-lg"
+                style={{ width: 42, height: 42, background: '#F0E4D4', border: '3px solid #C4865A' }}
+              >
+                🐾
+              </div>
+            </div>
+            <div className="text-center">
+              <p className="text-2xl font-bold" style={{ color: TEXT_LIGHT }}>ยินดีต้อนรับสู่ {storeName}</p>
+              <p className="text-sm mt-1" style={{ color: TEXT_MUTED }}>แจ้งพนักงานที่เคาน์เตอร์เพื่อเริ่มการขายได้เลยค่ะ</p>
+            </div>
           </div>
         )}
 
@@ -181,8 +207,8 @@ export default function PosDisplayClient({ storeName, logoUrl, paymentQrUrl }: P
         {msg?.stage === 'done' && (
           <div className="text-center max-w-md">
             <CheckCircle2 size={64} className="mx-auto text-green-500 mb-3" />
-            <p className="text-2xl font-bold" style={{ color: '#7A4E2D' }}>ชำระเงินสำเร็จ ขอบคุณค่ะ</p>
-            <p className="text-3xl font-bold text-gray-900 mt-2">฿{money(msg.total)}</p>
+            <p className="text-2xl font-bold" style={{ color: TEXT_LIGHT }}>ชำระเงินสำเร็จ ขอบคุณค่ะ</p>
+            <p className="text-3xl font-bold mt-2" style={{ color: TEXT_LIGHT }}>฿{money(msg.total)}</p>
             {msg.customer && <div className="mt-5"><PointsCard customer={msg.customer} /></div>}
           </div>
         )}
