@@ -6,6 +6,7 @@ const TYPE_LABEL: Record<StockMovementType, { text: string; className: string; s
   receive: { text: 'รับเข้า', className: 'bg-green-100 text-green-700', sign: '+' },
   adjust_in: { text: 'ปรับเพิ่ม', className: 'bg-blue-100 text-blue-700', sign: '+' },
   adjust_out: { text: 'ปรับลด', className: 'bg-orange-100 text-orange-700', sign: '-' },
+  cancel: { text: 'คืนจากยกเลิก', className: 'bg-purple-100 text-purple-700', sign: '+' },
 }
 
 type Movement = Omit<StockMovement, 'profiles'> & {

@@ -11,6 +11,7 @@ interface ReceiptTx {
   subtotal: number
   discount: number
   total: number
+  status: 'completed' | 'cancelled'
   payment_method: PaymentMethod
   cash_received: number | null
   change_given: number | null
@@ -94,6 +95,12 @@ export default function ReceiptView({
           className="bg-white shadow-lg print:shadow-none p-4"
           style={{ width: cfg.width, fontSize: cfg.font, maxWidth: '100%' }}
         >
+          {tx.status === 'cancelled' && (
+            <p className="text-center font-bold text-red-600 border-2 border-red-500 rounded py-1 mb-3" style={{ fontSize: '1.1em' }}>
+              ใบเสร็จนี้ถูกยกเลิกแล้ว
+            </p>
+          )}
+
           {/* หัวร้าน */}
           <div className="text-center mb-3">
             {store?.logo_url && (

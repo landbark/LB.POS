@@ -1,14 +1,18 @@
 'use client'
 
 import { useState } from 'react'
+import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { Receipt, ShoppingBag, Printer } from 'lucide-react'
+import { Receipt, ShoppingBag, Printer, Ban } from 'lucide-react'
+import CancelReceiptModal from './CancelReceiptModal'
 
 interface ReceiptRow {
   id: string
   transaction_number: string
   created_at: string
   total: number
+  status: 'completed' | 'cancelled'
+  customer_id: string | null
   profiles: { name: string } | null
 }
 
@@ -30,12 +34,16 @@ const money = (n: number) => n.toLocaleString('th-TH', { minimumFractionDigits: 
 export default function DocumentsClient({
   receipts,
   purchaseOrders,
+  currentUserId,
 }: {
   receipts: ReceiptRow[]
   purchaseOrders: PurchaseOrderRow[]
+  currentUserId: string
 }) {
+  const router = useRouter()
   const [tab, setTab] = useState<Tab>('receipt')
   const [query, setQuery] = useState('')
+  const [cancelling, setCancelling] = useState<ReceiptRow | null>(null)
 
   const q = query.trim().toLowerCase()
   const filteredReceipts = q
@@ -85,6 +93,7 @@ export default function DocumentsClient({
                 <th className="text-left text-xs font-medium text-gray-500 uppercase px-4 py-3">เลขที่</th>
                 <th className="text-left text-xs font-medium text-gray-500 uppercase px-4 py-3">วันที่</th>
                 <th className="text-left text-xs font-medium text-gray-500 uppercase px-4 py-3">แคชเชียร์</th>
+                <th className="text-center text-xs font-medium text-gray-500 uppercase px-4 py-3">สถานะ</th>
                 <th className="text-right text-xs font-medium text-gray-500 uppercase px-4 py-3">ยอด</th>
                 <th className="px-4 py-3"></th>
               </tr>
@@ -95,9 +104,16 @@ export default function DocumentsClient({
                   <td className="px-4 py-3 text-sm font-mono text-gray-600">{r.transaction_number}</td>
                   <td className="px-4 py-3 text-sm text-gray-600">{fmtDate(r.created_at)}</td>
                   <td className="px-4 py-3 text-sm text-gray-700">{r.profiles?.name ?? '—'}</td>
+                  <td className="px-4 py-3 text-center">
+                    <span className={`inline-flex text-xs px-2 py-0.5 rounded-full font-medium ${
+                      r.status === 'cancelled' ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'
+                    }`}>
+                      {r.status === 'cancelled' ? 'ยกเลิกแล้ว' : 'ปกติ'}
+                    </span>
+                  </td>
                   <td className="px-4 py-3 text-sm font-semibold text-gray-900 text-right">฿{money(r.total)}</td>
                   <td className="px-4 py-3">
-                    <div className="flex justify-end">
+                    <div className="flex justify-end items-center gap-1">
                       <Link
                         href={`/print/receipt/${r.id}`}
                         target="_blank"
@@ -106,13 +122,22 @@ export default function DocumentsClient({
                       >
                         <Printer size={15} />
                       </Link>
+                      {r.status !== 'cancelled' && (
+                        <button
+                          onClick={() => setCancelling(r)}
+                          title="ยกเลิกใบเสร็จ"
+                          className="p-1.5 text-gray-400 hover:text-red-600 rounded"
+                        >
+                          <Ban size={15} />
+                        </button>
+                      )}
                     </div>
                   </td>
                 </tr>
               ))}
               {filteredReceipts.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="px-4 py-10 text-center text-sm text-gray-400">ไม่พบใบเสร็จ</td>
+                  <td colSpan={6} className="px-4 py-10 text-center text-sm text-gray-400">ไม่พบใบเสร็จ</td>
                 </tr>
               )}
             </tbody>
@@ -166,6 +191,20 @@ export default function DocumentsClient({
           </table>
         )}
       </div>
+
+      {cancelling && (
+        <CancelReceiptModal
+          transactionId={cancelling.id}
+          transactionNumber={cancelling.transaction_number}
+          hasCustomer={!!cancelling.customer_id}
+          currentUserId={currentUserId}
+          onClose={() => setCancelling(null)}
+          onCancelled={() => {
+            setCancelling(null)
+            router.refresh()
+          }}
+        />
+      )}
     </div>
   )
 }

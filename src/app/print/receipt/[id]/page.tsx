@@ -19,7 +19,7 @@ export default async function ReceiptPrintPage({
     supabase
       .from('transactions')
       .select(`
-        id, transaction_number, created_at, subtotal, discount, total,
+        id, transaction_number, created_at, subtotal, discount, total, status,
         payment_method, cash_received, change_given, points_earned, points_used,
         customers(name, phone),
         profiles(name),

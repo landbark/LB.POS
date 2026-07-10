@@ -132,6 +132,7 @@ export default function CustomersClient({ customers }: { customers: Customer[] }
               <th className="text-left text-xs font-medium text-gray-500 uppercase px-4 py-3">ชื่อ</th>
               <th className="text-left text-xs font-medium text-gray-500 uppercase px-4 py-3">เบอร์โทร</th>
               <th className="text-right text-xs font-medium text-gray-500 uppercase px-4 py-3">แต้มสะสม</th>
+              <th className="text-right text-xs font-medium text-gray-500 uppercase px-4 py-3">เครดิต</th>
               <th className="text-right text-xs font-medium text-gray-500 uppercase px-4 py-3">ยอดซื้อสะสม</th>
               <th className="text-left text-xs font-medium text-gray-500 uppercase px-4 py-3">สมัครเมื่อ</th>
               <th className="px-4 py-3"></th>
@@ -141,13 +142,16 @@ export default function CustomersClient({ customers }: { customers: Customer[] }
             {filtered.map((c) => (
               editingId === c.id ? (
                 <tr key={c.id}>
-                  <td colSpan={6} className="px-4 py-3">{formCard}</td>
+                  <td colSpan={7} className="px-4 py-3">{formCard}</td>
                 </tr>
               ) : (
                 <tr key={c.id} className="hover:bg-gray-50">
                   <td className="px-4 py-3 text-sm font-medium text-gray-900">{c.name}</td>
                   <td className="px-4 py-3 text-sm text-gray-600 font-mono">{c.phone}</td>
                   <td className="px-4 py-3 text-sm text-right font-semibold text-blue-600">{c.points.toLocaleString('th-TH')}</td>
+                  <td className="px-4 py-3 text-sm text-right font-semibold text-green-600">
+                    {c.credit_balance > 0 ? `฿${c.credit_balance.toLocaleString('th-TH', { minimumFractionDigits: 2 })}` : '—'}
+                  </td>
                   <td className="px-4 py-3 text-sm text-right text-gray-700">
                     ฿{c.total_spent.toLocaleString('th-TH', { minimumFractionDigits: 2 })}
                   </td>
@@ -169,7 +173,7 @@ export default function CustomersClient({ customers }: { customers: Customer[] }
             ))}
             {filtered.length === 0 && (
               <tr>
-                <td colSpan={6} className="px-4 py-10 text-center text-sm text-gray-400">
+                <td colSpan={7} className="px-4 py-10 text-center text-sm text-gray-400">
                   {customers.length === 0
                     ? 'ยังไม่มีลูกค้า — เพิ่มได้ที่นี่ หรือพิมพ์เบอร์ลูกค้าที่หน้าขายเพื่อเพิ่มระหว่างขาย'
                     : 'ไม่พบลูกค้าที่ค้นหา'}

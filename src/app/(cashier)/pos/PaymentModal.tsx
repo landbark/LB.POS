@@ -179,6 +179,7 @@ export default function PaymentModal({
         await supabase.from('stock_movements').insert({
           product_id: item.product.id,
           product_lot_id: (lot as any).id,
+          transaction_id: tx.id,
           type: 'sale',
           quantity: deduct,
           reason: tx.transaction_number,

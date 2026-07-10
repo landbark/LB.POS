@@ -3,11 +3,12 @@ import DocumentsClient from './DocumentsClient'
 
 export default async function DocumentsPage() {
   const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
 
   const [{ data: receipts }, { data: purchaseOrders }] = await Promise.all([
     supabase
       .from('transactions')
-      .select('id, transaction_number, created_at, total, profiles(name)')
+      .select('id, transaction_number, created_at, total, status, customer_id, profiles(name)')
       .order('created_at', { ascending: false })
       .limit(100),
     supabase
@@ -21,6 +22,7 @@ export default async function DocumentsPage() {
     <DocumentsClient
       receipts={(receipts as never[]) ?? []}
       purchaseOrders={(purchaseOrders as never[]) ?? []}
+      currentUserId={user?.id ?? ''}
     />
   )
 }

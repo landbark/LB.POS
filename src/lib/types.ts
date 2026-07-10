@@ -106,12 +106,13 @@ export interface StoreSettings {
   updated_at: string
 }
 
-export type StockMovementType = 'sale' | 'receive' | 'adjust_in' | 'adjust_out'
+export type StockMovementType = 'sale' | 'receive' | 'adjust_in' | 'adjust_out' | 'cancel'
 
 export interface StockMovement {
   id: string
   product_id: string
   product_lot_id: string | null
+  transaction_id: string | null
   type: StockMovementType
   quantity: number
   reason: string | null
@@ -137,6 +138,7 @@ export interface Customer {
   phone: string
   points: number
   total_spent: number
+  credit_balance: number
   created_at: string
 }
 
@@ -169,6 +171,8 @@ export interface Promotion {
 }
 
 export type PaymentMethod = 'cash' | 'transfer' | 'card' | 'qr'
+export type TransactionStatus = 'completed' | 'cancelled'
+export type RefundMethod = 'cash' | 'transfer' | 'credit'
 
 export interface Transaction {
   id: string
@@ -184,6 +188,12 @@ export interface Transaction {
   points_earned: number
   points_used: number
   notes: string | null
+  status: TransactionStatus
+  cancelled_at: string | null
+  cancelled_by: string | null
+  cancel_reason: string | null
+  restocked: boolean | null
+  refund_method: RefundMethod | null
   created_at: string
   profiles?: Profile
   customers?: Customer
