@@ -33,6 +33,8 @@ export default function PaymentModal({
   const [method, setMethod] = useState<PaymentMethod>('cash')
   const [cashReceived, setCashReceived] = useState('')
   const [usePoints, setUsePoints] = useState(0)
+  const [manualDiscountMode, setManualDiscountMode] = useState<'percent' | 'amount'>('percent')
+  const [manualDiscountInput, setManualDiscountInput] = useState('')
   const [loading, setLoading] = useState(false)
   // หลังบันทึกสำเร็จ เปลี่ยนเป็นหน้าเลือก เสร็จสิ้น/พิมพ์ใบเสร็จ แทนที่จะปิด modal ทันที
   const [completedTxId, setCompletedTxId] = useState<string | null>(null)
@@ -47,13 +49,20 @@ export default function PaymentModal({
     if (completedTxId) window.open(`/print/receipt/${completedTxId}`, '_blank')
   }
 
+  const manualDiscountValue = parseFloat(manualDiscountInput || '0') || 0
+  const manualDiscountAmount = Math.min(
+    total,
+    Math.max(0, manualDiscountMode === 'percent' ? (total * manualDiscountValue) / 100 : manualDiscountValue)
+  )
+  const afterManualDiscount = Math.max(0, total - manualDiscountAmount)
+
   const maxRedeemablePoints = customer && pointsConfig
-    ? Math.min(customer.points, Math.floor(total / pointsConfig.redeem_value) * pointsConfig.redeem_points)
+    ? Math.min(customer.points, Math.floor(afterManualDiscount / pointsConfig.redeem_value) * pointsConfig.redeem_points)
     : 0
   const pointsDiscount = pointsConfig && usePoints > 0
     ? (usePoints / pointsConfig.redeem_points) * pointsConfig.redeem_value
     : 0
-  const finalTotal = Math.max(0, total - pointsDiscount)
+  const finalTotal = Math.max(0, afterManualDiscount - pointsDiscount)
 
   const change = method === 'cash' && cashReceived
     ? parseFloat(cashReceived) - finalTotal
@@ -108,13 +117,16 @@ export default function PaymentModal({
           cashier_id: cashierId,
           customer_id: customer?.id ?? null,
           subtotal,
-          discount: totalDiscount + pointsDiscount,
+          discount: totalDiscount + manualDiscountAmount + pointsDiscount,
           total: finalTotal,
           payment_method: method,
           cash_received: method === 'cash' ? parseFloat(cashReceived) : null,
           change_given: method === 'cash' ? Math.max(0, change) : null,
           points_earned: earnedPoints,
           points_used: usePoints,
+          notes: manualDiscountAmount > 0
+            ? `ส่วนลดเพิ่มเติม: ${manualDiscountMode === 'percent' ? `${manualDiscountValue}%` : `฿${manualDiscountValue.toFixed(2)}`} (฿${manualDiscountAmount.toFixed(2)})`
+            : null,
         })
         .select('id, transaction_number')
         .single()
@@ -266,6 +278,45 @@ export default function PaymentModal({
             </div>
           </div>
 
+          {/* Manual discount */}
+          <div className="bg-orange-50 rounded-lg p-3">
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-sm font-medium text-gray-900">ส่วนลดเพิ่มเติม</p>
+              <div className="flex bg-white rounded-lg border border-gray-200 p-0.5">
+                <button
+                  onClick={() => setManualDiscountMode('percent')}
+                  className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
+                    manualDiscountMode === 'percent' ? 'bg-orange-500 text-white' : 'text-gray-500'
+                  }`}
+                >
+                  %
+                </button>
+                <button
+                  onClick={() => setManualDiscountMode('amount')}
+                  className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
+                    manualDiscountMode === 'amount' ? 'bg-orange-500 text-white' : 'text-gray-500'
+                  }`}
+                >
+                  บาท
+                </button>
+              </div>
+            </div>
+            <input
+              type="number"
+              inputMode="decimal"
+              min={0}
+              max={manualDiscountMode === 'percent' ? 100 : undefined}
+              step="0.01"
+              placeholder="0"
+              value={manualDiscountInput}
+              onChange={(e) => setManualDiscountInput(e.target.value)}
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white"
+            />
+            {manualDiscountAmount > 0 && (
+              <p className="text-xs text-orange-600 mt-1">ลด ฿{manualDiscountAmount.toFixed(2)}</p>
+            )}
+          </div>
+
           {/* Cash input */}
           {method === 'cash' && (
             <div>
@@ -348,6 +399,12 @@ export default function PaymentModal({
               <span>ยอดรวม</span>
               <span>฿{total.toFixed(2)}</span>
             </div>
+            {manualDiscountAmount > 0 && (
+              <div className="flex justify-between text-sm text-orange-600">
+                <span>ส่วนลดเพิ่มเติม{manualDiscountMode === 'percent' ? ` (${manualDiscountValue}%)` : ''}</span>
+                <span>-฿{manualDiscountAmount.toFixed(2)}</span>
+              </div>
+            )}
             {pointsDiscount > 0 && (
               <div className="flex justify-between text-sm text-green-600">
                 <span>ลดด้วยแต้ม ({usePoints} แต้ม)</span>
