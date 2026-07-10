@@ -28,7 +28,11 @@ export async function proxy(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser()
   const { pathname } = request.nextUrl
 
-  if (!user && pathname !== '/login' && !pathname.startsWith('/auth')) {
+  // หน้าลูกค้า (ผ่าน LINE LIFF เช็คแต้มเอง) ไม่ต้อง login พนักงาน
+  const isPublicPath = pathname === '/login' || pathname.startsWith('/auth')
+    || pathname === '/member' || pathname.startsWith('/api/member')
+
+  if (!user && !isPublicPath) {
     return NextResponse.redirect(new URL('/login', request.url))
   }
 
