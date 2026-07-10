@@ -210,11 +210,11 @@ export default function PaymentModal({
 
           <div className="space-y-2">
             <button
-              onClick={() => { openReceipt(); onSuccess() }}
+              onClick={onSuccess}
               className="w-full flex items-center justify-center gap-2 bg-green-600 hover:bg-green-700 text-white font-bold py-3 rounded-xl text-base transition-colors"
             >
-              <Printer size={18} />
-              เสร็จสิ้นพร้อมพิมพ์ใบเสร็จ
+              <CheckCircle2 size={18} />
+              เสร็จสิ้น (ไม่พิมพ์ใบเสร็จ)
             </button>
             <button
               onClick={openReceipt}
@@ -224,10 +224,10 @@ export default function PaymentModal({
               พิมพ์ใบเสร็จ
             </button>
             <button
-              onClick={onSuccess}
+              onClick={() => { openReceipt(); onSuccess() }}
               className="w-full text-gray-400 hover:text-gray-600 font-medium py-2 text-sm transition-colors"
             >
-              เสร็จสิ้น (ไม่พิมพ์)
+              เสร็จสิ้นพร้อมพิมพ์ใบเสร็จ
             </button>
           </div>
         </div>
