@@ -303,19 +303,36 @@ export default function PaymentModal({
                   <p className="text-sm font-medium text-gray-900">ใช้แต้ม</p>
                   <p className="text-xs text-gray-500">คงเหลือ {customer.points} แต้ม</p>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1.5">
                   <button
-                    onClick={() => setUsePoints(Math.max(0, usePoints - pointsConfig.redeem_points))}
-                    className="w-7 h-7 flex items-center justify-center bg-white rounded-full border border-gray-200 text-gray-600 text-sm"
+                    onClick={() => setUsePoints(Math.max(0, usePoints - Math.min(10, pointsConfig.redeem_points)))}
+                    className="w-7 h-7 flex items-center justify-center bg-white rounded-full border border-gray-200 text-gray-600 text-sm shrink-0"
                   >
                     −
                   </button>
-                  <span className="text-sm font-bold w-10 text-center">{usePoints}</span>
+                  <input
+                    type="number"
+                    inputMode="numeric"
+                    min={0}
+                    max={maxRedeemablePoints}
+                    value={usePoints}
+                    onChange={(e) => {
+                      const v = parseInt(e.target.value || '0', 10)
+                      setUsePoints(Math.max(0, Math.min(maxRedeemablePoints, Number.isNaN(v) ? 0 : v)))
+                    }}
+                    className="w-16 text-sm font-bold text-center bg-white rounded-lg border border-gray-200 py-1"
+                  />
                   <button
-                    onClick={() => setUsePoints(Math.min(maxRedeemablePoints, usePoints + pointsConfig.redeem_points))}
-                    className="w-7 h-7 flex items-center justify-center bg-white rounded-full border border-gray-200 text-gray-600 text-sm"
+                    onClick={() => setUsePoints(Math.min(maxRedeemablePoints, usePoints + Math.min(10, pointsConfig.redeem_points)))}
+                    className="w-7 h-7 flex items-center justify-center bg-white rounded-full border border-gray-200 text-gray-600 text-sm shrink-0"
                   >
                     +
+                  </button>
+                  <button
+                    onClick={() => setUsePoints(maxRedeemablePoints)}
+                    className="text-xs font-medium text-blue-600 hover:text-blue-700 pl-1 shrink-0"
+                  >
+                    สูงสุด
                   </button>
                 </div>
               </div>
