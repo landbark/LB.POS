@@ -187,6 +187,7 @@ export interface Transaction {
   change_given: number | null
   points_earned: number
   points_used: number
+  credit_used: number
   notes: string | null
   status: TransactionStatus
   cancelled_at: string | null
@@ -211,6 +212,22 @@ export interface TransactionItem {
   subtotal: number
   created_at: string
   products?: Product
+}
+
+export interface Shift {
+  id: string
+  opened_at: string
+  opened_by: string | null
+  opening_cash: number
+  closed_at: string | null
+  closed_by: string | null
+  expected_cash: number | null
+  closing_cash_counted: number | null
+  cash_difference: number | null
+  notes: string | null
+  created_at: string
+  opener?: { name: string } | null
+  closer?: { name: string } | null
 }
 
 // Cart types for POS

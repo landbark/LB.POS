@@ -33,6 +33,7 @@ export default function PaymentModal({
   const [method, setMethod] = useState<PaymentMethod>('cash')
   const [cashReceived, setCashReceived] = useState('')
   const [usePoints, setUsePoints] = useState(0)
+  const [useCredit, setUseCredit] = useState(0)
   const [manualDiscountMode, setManualDiscountMode] = useState<'percent' | 'amount'>('percent')
   const [manualDiscountInput, setManualDiscountInput] = useState('')
   const [loading, setLoading] = useState(false)
@@ -62,7 +63,10 @@ export default function PaymentModal({
   const pointsDiscount = pointsConfig && usePoints > 0
     ? (usePoints / pointsConfig.redeem_points) * pointsConfig.redeem_value
     : 0
-  const finalTotal = Math.max(0, afterManualDiscount - pointsDiscount)
+  const afterPointsDiscount = Math.max(0, afterManualDiscount - pointsDiscount)
+
+  const maxCredit = customer ? Math.min(customer.credit_balance, afterPointsDiscount) : 0
+  const finalTotal = Math.max(0, afterPointsDiscount - useCredit)
 
   const change = method === 'cash' && cashReceived
     ? parseFloat(cashReceived) - finalTotal
@@ -124,6 +128,7 @@ export default function PaymentModal({
           change_given: method === 'cash' ? Math.max(0, change) : null,
           points_earned: earnedPoints,
           points_used: usePoints,
+          credit_used: useCredit,
           notes: manualDiscountAmount > 0
             ? `ส่วนลดเพิ่มเติม: ${manualDiscountMode === 'percent' ? `${manualDiscountValue}%` : `฿${manualDiscountValue.toFixed(2)}`} (฿${manualDiscountAmount.toFixed(2)})`
             : null,
@@ -189,13 +194,14 @@ export default function PaymentModal({
       }
     }
 
-    // Update customer points
+    // Update customer points + credit
     if (customer) {
       await supabase
         .from('customers')
         .update({
           points: customer.points + earnedPoints - usePoints,
           total_spent: customer.total_spent + finalTotal,
+          credit_balance: customer.credit_balance - useCredit,
         })
         .eq('id', customer.id)
     }
@@ -394,6 +400,43 @@ export default function PaymentModal({
             </div>
           )}
 
+          {/* Store credit */}
+          {customer && customer.credit_balance > 0 && (
+            <div className="bg-emerald-50 rounded-lg p-3">
+              <div className="flex justify-between items-center">
+                <div>
+                  <p className="text-sm font-medium text-gray-900">ใช้เครดิต</p>
+                  <p className="text-xs text-gray-500">คงเหลือ ฿{customer.credit_balance.toFixed(2)}</p>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    min={0}
+                    max={maxCredit}
+                    step="0.01"
+                    value={useCredit || ''}
+                    onChange={(e) => {
+                      const v = parseFloat(e.target.value || '0')
+                      setUseCredit(Math.max(0, Math.min(maxCredit, Number.isNaN(v) ? 0 : v)))
+                    }}
+                    placeholder="0"
+                    className="w-20 text-sm font-bold text-center bg-white rounded-lg border border-gray-200 py-1"
+                  />
+                  <button
+                    onClick={() => setUseCredit(maxCredit)}
+                    className="text-xs font-medium text-emerald-600 hover:text-emerald-700 pl-1 shrink-0"
+                  >
+                    สูงสุด
+                  </button>
+                </div>
+              </div>
+              {useCredit > 0 && (
+                <p className="text-xs text-emerald-600 mt-1">ลด ฿{useCredit.toFixed(2)}</p>
+              )}
+            </div>
+          )}
+
           {/* Summary */}
           <div className="bg-gray-50 rounded-lg p-3 space-y-1.5">
             <div className="flex justify-between text-sm text-gray-500">
@@ -410,6 +453,12 @@ export default function PaymentModal({
               <div className="flex justify-between text-sm text-green-600">
                 <span>ลดด้วยแต้ม ({usePoints} แต้ม)</span>
                 <span>-฿{pointsDiscount.toFixed(2)}</span>
+              </div>
+            )}
+            {useCredit > 0 && (
+              <div className="flex justify-between text-sm text-emerald-600">
+                <span>ใช้เครดิต</span>
+                <span>-฿{useCredit.toFixed(2)}</span>
               </div>
             )}
             <div className="flex justify-between font-bold text-base text-gray-900 pt-1 border-t border-gray-200">

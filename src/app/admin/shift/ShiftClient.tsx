@@ -1,0 +1,251 @@
+'use client'
+
+import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
+import { createClient } from '@/lib/supabase/client'
+import { Wallet, Lock, Unlock } from 'lucide-react'
+import toast from 'react-hot-toast'
+import type { Shift } from '@/lib/types'
+
+const money = (n: number) => n.toLocaleString('th-TH', { minimumFractionDigits: 2 })
+const fmtDate = (d: string) =>
+  new Date(d).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit', hour: '2-digit', minute: '2-digit' })
+
+const PAYMENT_LABELS: Record<string, string> = { cash: 'เงินสด', transfer: 'โอนเงิน', card: 'บัตรเครดิต', qr: 'QR Code' }
+
+export default function ShiftClient({
+  openShift,
+  history,
+  currentUserId,
+}: {
+  openShift: Shift | null
+  history: Shift[]
+  currentUserId: string
+}) {
+  const router = useRouter()
+  const [openingCash, setOpeningCash] = useState('')
+  const [closingCash, setClosingCash] = useState('')
+  const [notes, setNotes] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [loadingSummary, setLoadingSummary] = useState(true)
+  const [breakdown, setBreakdown] = useState<Record<string, number>>({})
+  const [cashRefunds, setCashRefunds] = useState(0)
+
+  useEffect(() => {
+    if (!openShift) return
+    let cancelled = false
+
+    async function loadSummary(shift: Shift) {
+      const supabase = createClient()
+      const [{ data: completed }, { data: refunds }] = await Promise.all([
+        supabase.from('transactions').select('total, payment_method').eq('status', 'completed').gte('created_at', shift.opened_at),
+        supabase.from('transactions').select('total').eq('status', 'cancelled').eq('refund_method', 'cash').gte('cancelled_at', shift.opened_at),
+      ])
+      if (cancelled) return
+      const acc: Record<string, number> = {}
+      for (const t of completed ?? []) acc[t.payment_method] = (acc[t.payment_method] ?? 0) + t.total
+      setBreakdown(acc)
+      setCashRefunds((refunds ?? []).reduce((s, t) => s + t.total, 0))
+      setLoadingSummary(false)
+    }
+
+    loadSummary(openShift)
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openShift?.id])
+
+  const cashSales = breakdown.cash ?? 0
+  const expectedCash = openShift ? openShift.opening_cash + cashSales - cashRefunds : 0
+  const counted = parseFloat(closingCash || '0') || 0
+  const difference = counted - expectedCash
+
+  async function openNewShift() {
+    const cash = parseFloat(openingCash || '0')
+    if (Number.isNaN(cash) || cash < 0) {
+      toast.error('กรุณาใส่เงินสดตั้งต้น')
+      return
+    }
+    setLoading(true)
+    const supabase = createClient()
+    const { error } = await supabase.from('shifts').insert({
+      opening_cash: cash,
+      opened_by: currentUserId,
+    })
+    setLoading(false)
+    if (error) {
+      toast.error(error.code === '23505' ? 'มีกะที่เปิดอยู่แล้ว' : 'เกิดข้อผิดพลาด: ' + error.message)
+      return
+    }
+    toast.success('เปิดกะแล้ว')
+    router.refresh()
+  }
+
+  async function closeShift() {
+    if (!openShift) return
+    if (!closingCash) {
+      toast.error('กรุณาใส่ยอดเงินสดที่นับได้')
+      return
+    }
+    setLoading(true)
+    const supabase = createClient()
+    const { error } = await supabase
+      .from('shifts')
+      .update({
+        closed_at: new Date().toISOString(),
+        closed_by: currentUserId,
+        expected_cash: expectedCash,
+        closing_cash_counted: counted,
+        cash_difference: difference,
+        notes: notes.trim() || null,
+      })
+      .eq('id', openShift.id)
+    setLoading(false)
+    if (error) {
+      toast.error('เกิดข้อผิดพลาด: ' + error.message)
+      return
+    }
+    toast.success('ปิดกะแล้ว')
+    setClosingCash('')
+    setNotes('')
+    router.refresh()
+  }
+
+  const inputClass = 'w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500'
+
+  return (
+    <div>
+      <h1 className="text-2xl font-bold text-gray-900 mb-1">ปิดกะ / นับเงินสด</h1>
+      <p className="text-sm text-gray-500 mb-6">กะเดียวรวมของร้าน ใครขายช่วงไหนก็รวมเข้ากะที่เปิดอยู่ ไม่บังคับเปิดกะก่อนขาย</p>
+
+      {!openShift ? (
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 max-w-sm">
+          <div className="flex items-center gap-2 mb-4">
+            <Unlock size={18} className="text-gray-400" />
+            <h2 className="font-semibold text-gray-900">เปิดกะใหม่</h2>
+          </div>
+          <label className="block text-xs font-medium text-gray-600 mb-1">เงินสดตั้งต้น</label>
+          <input
+            type="number" min={0} step="0.01"
+            value={openingCash}
+            onChange={(e) => setOpeningCash(e.target.value)}
+            className={inputClass}
+            placeholder="0.00"
+          />
+          <button
+            onClick={openNewShift}
+            disabled={loading}
+            className="mt-3 w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-sm font-medium px-4 py-2 rounded-lg"
+          >
+            <Wallet size={15} /> {loading ? 'กำลังเปิดกะ...' : 'เปิดกะ'}
+          </button>
+        </div>
+      ) : (
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 max-w-lg mb-8">
+          <div className="flex items-center gap-2 mb-4">
+            <Unlock size={18} className="text-green-500" />
+            <h2 className="font-semibold text-gray-900">กะกำลังเปิดอยู่</h2>
+          </div>
+          <p className="text-sm text-gray-500 mb-4">
+            เปิดเมื่อ {fmtDate(openShift.opened_at)} โดย {openShift.opener?.name ?? '—'} · เงินสดตั้งต้น ฿{money(openShift.opening_cash)}
+          </p>
+
+          <div className="bg-gray-50 rounded-lg p-3 space-y-1.5 mb-4 text-sm">
+            {loadingSummary ? (
+              <p className="text-gray-400">กำลังคำนวณ...</p>
+            ) : (
+              <>
+                {Object.entries(PAYMENT_LABELS).map(([key, label]) =>
+                  breakdown[key] ? (
+                    <div key={key} className="flex justify-between text-gray-600">
+                      <span>ขาย{label}</span><span>฿{money(breakdown[key])}</span>
+                    </div>
+                  ) : null
+                )}
+                {cashRefunds > 0 && (
+                  <div className="flex justify-between text-red-500">
+                    <span>คืนเงินสด (ใบเสร็จยกเลิก)</span><span>-฿{money(cashRefunds)}</span>
+                  </div>
+                )}
+                <div className="flex justify-between font-bold text-gray-900 pt-1 border-t border-gray-200">
+                  <span>เงินสดที่ควรมีในลิ้นชัก</span><span>฿{money(expectedCash)}</span>
+                </div>
+              </>
+            )}
+          </div>
+
+          <label className="block text-xs font-medium text-gray-600 mb-1">นับเงินสดจริง</label>
+          <input
+            type="number" min={0} step="0.01"
+            value={closingCash}
+            onChange={(e) => setClosingCash(e.target.value)}
+            className={inputClass}
+            placeholder="0.00"
+          />
+          {closingCash && (
+            <p className={`text-xs mt-1 font-medium ${difference === 0 ? 'text-green-600' : difference > 0 ? 'text-blue-600' : 'text-red-600'}`}>
+              {difference === 0 ? 'ตรงกันพอดี' : difference > 0 ? `เกิน ฿${money(difference)}` : `ขาด ฿${money(Math.abs(difference))}`}
+            </p>
+          )}
+
+          <label className="block text-xs font-medium text-gray-600 mb-1 mt-3">หมายเหตุ (ถ้ามี)</label>
+          <input
+            type="text"
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            className={inputClass}
+            placeholder="เช่น เหตุผลที่เงินขาด/เกิน"
+          />
+
+          <button
+            onClick={closeShift}
+            disabled={loading}
+            className="mt-4 w-full flex items-center justify-center gap-2 bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white text-sm font-medium px-4 py-2 rounded-lg"
+          >
+            <Lock size={15} /> {loading ? 'กำลังปิดกะ...' : 'ปิดกะ'}
+          </button>
+        </div>
+      )}
+
+      <h2 className="font-semibold text-gray-900 mb-3">ประวัติกะที่ผ่านมา</h2>
+      <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden overflow-x-auto">
+        <table className="w-full">
+          <thead className="bg-gray-50 border-b border-gray-100">
+            <tr>
+              <th className="text-left text-xs font-medium text-gray-500 uppercase px-4 py-3 whitespace-nowrap">เปิด - ปิด</th>
+              <th className="text-left text-xs font-medium text-gray-500 uppercase px-4 py-3">โดย</th>
+              <th className="text-right text-xs font-medium text-gray-500 uppercase px-4 py-3">เงินตั้งต้น</th>
+              <th className="text-right text-xs font-medium text-gray-500 uppercase px-4 py-3">คาดว่ามี</th>
+              <th className="text-right text-xs font-medium text-gray-500 uppercase px-4 py-3">นับได้จริง</th>
+              <th className="text-right text-xs font-medium text-gray-500 uppercase px-4 py-3">ผลต่าง</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-50">
+            {history.map((s) => (
+              <tr key={s.id} className="hover:bg-gray-50">
+                <td className="px-4 py-3 text-sm text-gray-600 whitespace-nowrap">
+                  {fmtDate(s.opened_at)} - {s.closed_at ? fmtDate(s.closed_at) : '—'}
+                </td>
+                <td className="px-4 py-3 text-sm text-gray-600">
+                  {s.opener?.name ?? '—'} / {s.closer?.name ?? '—'}
+                </td>
+                <td className="px-4 py-3 text-sm text-right text-gray-700">฿{money(s.opening_cash)}</td>
+                <td className="px-4 py-3 text-sm text-right text-gray-700">{s.expected_cash != null ? `฿${money(s.expected_cash)}` : '—'}</td>
+                <td className="px-4 py-3 text-sm text-right text-gray-700">{s.closing_cash_counted != null ? `฿${money(s.closing_cash_counted)}` : '—'}</td>
+                <td className={`px-4 py-3 text-sm text-right font-semibold ${
+                  s.cash_difference == null ? 'text-gray-400' : s.cash_difference === 0 ? 'text-green-600' : s.cash_difference > 0 ? 'text-blue-600' : 'text-red-600'
+                }`}>
+                  {s.cash_difference != null ? `${s.cash_difference > 0 ? '+' : ''}฿${money(s.cash_difference)}` : '—'}
+                </td>
+              </tr>
+            ))}
+            {history.length === 0 && (
+              <tr>
+                <td colSpan={6} className="px-4 py-10 text-center text-sm text-gray-400">ยังไม่มีประวัติกะ</td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}

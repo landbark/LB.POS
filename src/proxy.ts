@@ -57,8 +57,8 @@ export async function proxy(request: NextRequest) {
       return NextResponse.redirect(new URL('/pos', request.url))
     }
 
-    // เฉพาะ admin: ภาพรวม / รายงาน / ตั้งค่า — หน้าอื่นใต้ /admin cashier เข้าได้
-    const adminOnlyPaths = ['/admin/dashboard', '/admin/reports', '/admin/settings']
+    // เฉพาะ admin: ภาพรวม / รายงาน / ตั้งค่า / โปรโมชั่น (RLS ก็บังคับ admin เท่านั้นอยู่แล้ว) — หน้าอื่นใต้ /admin cashier เข้าได้
+    const adminOnlyPaths = ['/admin/dashboard', '/admin/reports', '/admin/settings', '/admin/promotions']
     if (adminOnlyPaths.some((p) => pathname.startsWith(p)) && profile?.role !== 'admin') {
       return NextResponse.redirect(new URL('/pos', request.url))
     }

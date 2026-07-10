@@ -17,6 +17,7 @@ interface ReceiptTx {
   change_given: number | null
   points_earned: number
   points_used: number
+  credit_used: number
   customers: { name: string; phone: string } | null
   profiles: { name: string } | null
   transaction_items: {
@@ -150,6 +151,7 @@ export default function ReceiptView({
           <div className="space-y-0.5" style={{ fontSize: '0.9em' }}>
             <div className="flex justify-between"><span>ยอดรวม</span><span>{money(tx.subtotal)}</span></div>
             {tx.discount > 0 && <div className="flex justify-between"><span>ส่วนลด</span><span>-{money(tx.discount)}</span></div>}
+            {tx.credit_used > 0 && <div className="flex justify-between"><span>ใช้เครดิต</span><span>-{money(tx.credit_used)}</span></div>}
             <div className="flex justify-between font-bold border-t border-gray-300 pt-1 mt-1" style={{ fontSize: '1.05em' }}>
               <span>ยอดสุทธิ</span><span>{money(tx.total)}</span>
             </div>
