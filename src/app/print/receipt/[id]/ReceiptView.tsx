@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import PrintToolbar from '@/components/PrintToolbar'
 import type { StoreSettings, PaymentMethod } from '@/lib/types'
 
@@ -44,9 +44,25 @@ const PAYMENT_LABELS: Record<PaymentMethod, string> = {
 
 const money = (n: number) => n.toLocaleString('th-TH', { minimumFractionDigits: 2 })
 
-export default function ReceiptView({ tx, store, backHref }: { tx: ReceiptTx; store: StoreSettings | null; backHref: string }) {
+export default function ReceiptView({
+  tx,
+  store,
+  backHref,
+  isCustomer = false,
+}: {
+  tx: ReceiptTx
+  store: StoreSettings | null
+  backHref: string
+  isCustomer?: boolean
+}) {
   const [size, setSize] = useState<PaperSize>('80mm')
   const cfg = PAPER_CONFIG[size]
+
+  // ลูกค้า (จากหน้าเช็คแต้ม LINE) ไม่ต้องเลือกขนาด — บังคับ 80mm แล้วเด้งไดอะล็อกบันทึกเป็น PDF ให้เลย
+  // อยากได้แบบเต็ม (A4/A5) ให้ไปขอพนักงานพิมพ์จาก /pos หรือ /admin/documents แทน
+  useEffect(() => {
+    if (isCustomer) window.print()
+  }, [isCustomer])
 
   return (
     <div className="min-h-screen bg-gray-100 print:bg-white">
@@ -62,11 +78,15 @@ export default function ReceiptView({ tx, store, backHref }: { tx: ReceiptTx; st
         backHref={backHref}
         size={size}
         onSizeChange={(v) => setSize(v as PaperSize)}
-        sizes={[
-          { value: '80mm', label: '80mm (เครื่องพิมพ์ใบเสร็จ)' },
-          { value: 'a4', label: 'A4' },
-          { value: 'a5', label: 'A5' },
-        ]}
+        sizes={
+          isCustomer
+            ? []
+            : [
+                { value: '80mm', label: '80mm (เครื่องพิมพ์ใบเสร็จ)' },
+                { value: 'a4', label: 'A4' },
+                { value: 'a5', label: 'A5' },
+              ]
+        }
       />
 
       <div className="flex justify-center py-6 print:py-0">

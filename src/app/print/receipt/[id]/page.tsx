@@ -32,5 +32,6 @@ export default async function ReceiptPrintPage({
 
   if (!tx) notFound()
 
-  return <ReceiptView tx={tx as never} store={store} backHref={from === 'member' ? '/member' : '/pos'} />
+  const isCustomer = from === 'member'
+  return <ReceiptView tx={tx as never} store={store} backHref={isCustomer ? '/member' : '/pos'} isCustomer={isCustomer} />
 }
