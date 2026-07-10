@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { PawPrint, Loader2 } from 'lucide-react'
+import { PawPrint, Loader2, ChevronDown, Receipt } from 'lucide-react'
 
 const money = (n: number) => n.toLocaleString('th-TH', { minimumFractionDigits: 2 })
 const dateTh = (iso: string) =>
@@ -14,12 +14,21 @@ interface CustomerData {
   total_spent: number
 }
 
+interface TxItem {
+  quantity: number
+  unit_price: number
+  subtotal: number
+  products: { name: string; unit: string } | null
+}
+
 interface TxRow {
+  id: string
   transaction_number: string
   total: number
   points_earned: number
   points_used: number
   created_at: string
+  transaction_items: TxItem[]
 }
 
 type Status = 'loading' | 'need-phone' | 'linking' | 'ready' | 'error'
@@ -31,6 +40,7 @@ export default function MemberClient() {
   const [transactions, setTransactions] = useState<TxRow[]>([])
   const [phone, setPhone] = useState('')
   const [errorMsg, setErrorMsg] = useState('')
+  const [expandedTx, setExpandedTx] = useState<string | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -167,22 +177,58 @@ export default function MemberClient() {
                 </div>
               ) : (
                 <div className="divide-y divide-gray-50">
-                  {transactions.map((tx) => (
-                    <div key={tx.transaction_number} className="py-2.5">
-                      <div className="flex items-center justify-between">
-                        <p className="text-sm font-medium text-gray-900">฿{money(tx.total)}</p>
-                        <p className="text-xs text-gray-400">{dateTh(tx.created_at)}</p>
-                      </div>
-                      <div className="flex items-center gap-2 mt-0.5">
-                        {tx.points_earned > 0 && (
-                          <span className="text-xs text-green-600">+{tx.points_earned} แต้ม</span>
+                  {transactions.map((tx) => {
+                    const isOpen = expandedTx === tx.id
+                    return (
+                      <div key={tx.id} className="py-2.5">
+                        <button
+                          onClick={() => setExpandedTx(isOpen ? null : tx.id)}
+                          className="w-full flex items-center justify-between text-left"
+                        >
+                          <div>
+                            <p className="text-sm font-medium text-gray-900">฿{money(tx.total)}</p>
+                            <div className="flex items-center gap-2 mt-0.5">
+                              {tx.points_earned > 0 && (
+                                <span className="text-xs text-green-600">+{tx.points_earned} แต้ม</span>
+                              )}
+                              {tx.points_used > 0 && (
+                                <span className="text-xs text-orange-500">ใช้ {tx.points_used} แต้ม</span>
+                              )}
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <p className="text-xs text-gray-400">{dateTh(tx.created_at)}</p>
+                            <ChevronDown size={14} className={`text-gray-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+                          </div>
+                        </button>
+
+                        {isOpen && (
+                          <div className="mt-2 bg-gray-50 rounded-xl p-3">
+                            <div className="space-y-1.5 mb-2">
+                              {tx.transaction_items.map((item, i) => (
+                                <div key={i} className="flex items-center justify-between text-xs">
+                                  <span className="text-gray-600">
+                                    {item.products?.name ?? 'สินค้า'} × {item.quantity} {item.products?.unit ?? ''}
+                                  </span>
+                                  <span className="text-gray-900 font-medium shrink-0 ml-2">฿{money(item.subtotal)}</span>
+                                </div>
+                              ))}
+                            </div>
+                            <a
+                              href={`/print/receipt/${tx.id}?from=member`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="flex items-center justify-center gap-1.5 w-full text-xs font-medium py-2 rounded-lg text-white"
+                              style={{ background: '#C4865A' }}
+                            >
+                              <Receipt size={14} />
+                              ดู / โหลดใบเสร็จ
+                            </a>
+                          </div>
                         )}
-                        {tx.points_used > 0 && (
-                          <span className="text-xs text-orange-500">ใช้ {tx.points_used} แต้ม</span>
-                        )}
                       </div>
-                    </div>
-                  ))}
+                    )
+                  })}
                 </div>
               )}
             </div>

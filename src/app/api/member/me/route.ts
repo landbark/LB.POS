@@ -19,7 +19,10 @@ export async function GET(request: NextRequest) {
 
   const { data: transactions } = await admin
     .from('transactions')
-    .select('transaction_number, total, points_earned, points_used, created_at')
+    .select(`
+      id, transaction_number, total, points_earned, points_used, created_at,
+      transaction_items(quantity, unit_price, subtotal, products(name, unit))
+    `)
     .eq('customer_id', customer.id)
     .order('created_at', { ascending: false })
     .limit(10)

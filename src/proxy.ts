@@ -31,6 +31,7 @@ export async function proxy(request: NextRequest) {
   // หน้าลูกค้า (ผ่าน LINE LIFF เช็คแต้มเอง) ไม่ต้อง login พนักงาน
   const isPublicPath = pathname === '/login' || pathname.startsWith('/auth')
     || pathname === '/member' || pathname.startsWith('/api/member')
+    || pathname.startsWith('/print/receipt')
 
   if (!user && !isPublicPath) {
     return NextResponse.redirect(new URL('/login', request.url))

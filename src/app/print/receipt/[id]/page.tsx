@@ -1,10 +1,19 @@
-import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { notFound } from 'next/navigation'
 import ReceiptView from './ReceiptView'
 
-export default async function ReceiptPrintPage({ params }: { params: Promise<{ id: string }> }) {
+// ใช้ admin client เพราะหน้านี้เปิดได้ทั้งพนักงาน (จาก POS) และลูกค้า (จากหน้าเช็คแต้ม LINE ที่ไม่ auth staff)
+// ปลอดภัยเพราะเข้าถึงได้เฉพาะคนที่รู้ transaction id (UUID) เท่านั้น
+export default async function ReceiptPrintPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>
+  searchParams: Promise<{ from?: string }>
+}) {
   const { id } = await params
-  const supabase = await createClient()
+  const { from } = await searchParams
+  const supabase = createAdminClient()
 
   const [{ data: tx }, { data: store }] = await Promise.all([
     supabase
@@ -23,5 +32,5 @@ export default async function ReceiptPrintPage({ params }: { params: Promise<{ i
 
   if (!tx) notFound()
 
-  return <ReceiptView tx={tx as never} store={store} />
+  return <ReceiptView tx={tx as never} store={store} backHref={from === 'member' ? '/member' : '/pos'} />
 }

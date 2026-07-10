@@ -44,7 +44,7 @@ const PAYMENT_LABELS: Record<PaymentMethod, string> = {
 
 const money = (n: number) => n.toLocaleString('th-TH', { minimumFractionDigits: 2 })
 
-export default function ReceiptView({ tx, store }: { tx: ReceiptTx; store: StoreSettings | null }) {
+export default function ReceiptView({ tx, store, backHref }: { tx: ReceiptTx; store: StoreSettings | null; backHref: string }) {
   const [size, setSize] = useState<PaperSize>('80mm')
   const cfg = PAPER_CONFIG[size]
 
@@ -59,7 +59,7 @@ export default function ReceiptView({ tx, store }: { tx: ReceiptTx; store: Store
       `}</style>
 
       <PrintToolbar
-        backHref="/pos"
+        backHref={backHref}
         size={size}
         onSizeChange={(v) => setSize(v as PaperSize)}
         sizes={[
