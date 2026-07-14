@@ -33,7 +33,16 @@ const DENOMS = [...BANKNOTES, ...COINS]
 type ShiftRow = Shift & {
   closing_denominations?: Record<string, number> | null
   cash_to_owner?: number | null
+  owner_denominations?: Record<string, number> | null
 }
+
+// สรุปรายละเอียดแบงค์เป็นข้อความ เช่น "แบงค์พัน × 3\nแบงค์ร้อย × 5" (ใช้เป็น tooltip ในประวัติกะ)
+const denomTitle = (den: Record<string, number> | null | undefined) =>
+  den
+    ? DENOMS.filter((d) => den[String(d.value)])
+        .map((d) => `${d.label} × ${den[String(d.value)]}`)
+        .join('\n') || undefined
+    : undefined
 
 export default function ShiftClient({
   openShift,
@@ -47,6 +56,7 @@ export default function ShiftClient({
   const router = useRouter()
   const [openingCash, setOpeningCash] = useState('')
   const [counts, setCounts] = useState<Record<number, string>>({})
+  const [ownerCounts, setOwnerCounts] = useState<Record<number, string>>({})
   const [reopenNext, setReopenNext] = useState(true)
   const [notes, setNotes] = useState('')
   const [loading, setLoading] = useState(false)
@@ -81,7 +91,10 @@ export default function ShiftClient({
   const expectedCash = openShift ? openShift.opening_cash + cashSales - cashRefunds : 0
   const hasCount = DENOMS.some((d) => (counts[d.value] ?? '') !== '')
   const counted = DENOMS.reduce((s, d) => s + d.value * (parseInt(counts[d.value] || '0', 10) || 0), 0)
-  const cashToOwner = 1000 * (parseInt(counts[1000] || '0', 10) || 0)
+  const qtyOf = (c: Record<number, string>, v: number) => parseInt(c[v] || '0', 10) || 0
+  const cashToOwner = BANKNOTES.reduce((s, d) => s + d.value * qtyOf(ownerCounts, d.value), 0)
+  // แบงค์ที่ให้เจ้าของต้องไม่เกินจำนวนที่นับได้ในลิ้นชัก
+  const ownerExceeds = BANKNOTES.filter((d) => qtyOf(ownerCounts, d.value) > qtyOf(counts, d.value))
   const leftover = counted - cashToOwner
   const difference = counted - expectedCash
 
@@ -112,11 +125,19 @@ export default function ShiftClient({
       toast.error('กรุณานับเงินอย่างน้อย 1 ช่อง (ถ้าไม่มีให้ใส่ 0)')
       return
     }
+    if (ownerExceeds.length > 0) {
+      toast.error(`${ownerExceeds[0].label}ที่ให้เจ้าของมากกว่าที่นับได้ในลิ้นชัก`)
+      return
+    }
     setLoading(true)
     const supabase = createClient()
     const denominations = Object.fromEntries(
       DENOMS.filter((d) => (counts[d.value] ?? '') !== '')
         .map((d) => [String(d.value), parseInt(counts[d.value], 10) || 0])
+    )
+    const ownerDenominations = Object.fromEntries(
+      BANKNOTES.filter((d) => qtyOf(ownerCounts, d.value) > 0)
+        .map((d) => [String(d.value), qtyOf(ownerCounts, d.value)])
     )
     const { error } = await supabase
       .from('shifts')
@@ -128,6 +149,7 @@ export default function ShiftClient({
         cash_difference: difference,
         closing_denominations: denominations,
         cash_to_owner: cashToOwner,
+        owner_denominations: ownerDenominations,
         notes: notes.trim() || null,
       })
       .eq('id', openShift.id)
@@ -147,6 +169,7 @@ export default function ShiftClient({
         setLoading(false)
         toast.error('ปิดกะแล้ว แต่เปิดกะใหม่ไม่สำเร็จ: ' + openError.message)
         setCounts({})
+        setOwnerCounts({})
         setNotes('')
         router.refresh()
         return
@@ -157,6 +180,7 @@ export default function ShiftClient({
     }
     setLoading(false)
     setCounts({})
+    setOwnerCounts({})
     setNotes('')
     router.refresh()
   }
@@ -250,7 +274,7 @@ export default function ShiftClient({
             ))}
           </div>
 
-          <div className="bg-gray-50 rounded-lg p-3 space-y-1.5 text-sm">
+          <div className="bg-gray-50 rounded-lg p-3 space-y-1 text-sm mb-4">
             <div className="flex justify-between font-bold text-gray-900">
               <span>รวมนับได้</span><span>฿{money(counted)}</span>
             </div>
@@ -259,10 +283,52 @@ export default function ShiftClient({
                 {difference === 0 ? 'ตรงกับที่ควรมีพอดี' : difference > 0 ? `เกิน ฿${money(difference)}` : `ขาด ฿${money(Math.abs(difference))}`}
               </p>
             )}
-            <div className="flex justify-between text-gray-600 pt-1 border-t border-gray-200">
-              <span>แยกแบงค์พันให้เจ้าของ</span><span>-฿{money(cashToOwner)}</span>
+          </div>
+
+          <div className="flex items-center justify-between mb-2">
+            <label className="block text-xs font-medium text-gray-600">แยกเงินให้เจ้าของ (วันไหนไม่ได้ให้ ปล่อยว่างไว้)</label>
+            {qtyOf(counts, 1000) > 0 && (
+              <button
+                type="button"
+                onClick={() => setOwnerCounts((c) => ({ ...c, 1000: counts[1000] }))}
+                className="text-xs font-medium text-blue-600 hover:text-blue-700"
+              >
+                แบงค์พันทั้งหมด ({qtyOf(counts, 1000)} ใบ)
+              </button>
+            )}
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1.5 mb-3">
+            {BANKNOTES.map((d) => {
+              const qty = qtyOf(ownerCounts, d.value)
+              const exceeds = qty > qtyOf(counts, d.value)
+              return (
+                <div key={d.value} className="flex items-center gap-2">
+                  <span className="text-sm text-gray-600 w-[5.5rem] shrink-0">{d.label}</span>
+                  <input
+                    type="number" min={0} step={1} inputMode="numeric"
+                    value={ownerCounts[d.value] ?? ''}
+                    onChange={(e) => setOwnerCounts((c) => ({ ...c, [d.value]: e.target.value }))}
+                    className={`w-16 border rounded-lg px-2 py-1.5 text-sm text-right focus:outline-none focus:ring-2 ${
+                      exceeds ? 'border-red-400 focus:ring-red-500' : 'border-gray-300 focus:ring-blue-500'
+                    }`}
+                    placeholder="0"
+                  />
+                  <span className={`text-sm text-right flex-1 tabular-nums ${exceeds ? 'text-red-600 font-medium' : qty > 0 ? 'text-gray-900 font-medium' : 'text-gray-300'}`}>
+                    ฿{money(d.value * qty)}
+                  </span>
+                </div>
+              )
+            })}
+          </div>
+          {ownerExceeds.length > 0 && (
+            <p className="text-xs font-medium text-red-600 mb-3">{ownerExceeds[0].label}ที่ให้เจ้าของมากกว่าที่นับได้ในลิ้นชัก</p>
+          )}
+
+          <div className="bg-gray-50 rounded-lg p-3 space-y-1.5 text-sm">
+            <div className="flex justify-between text-gray-600">
+              <span>ให้เจ้าของ</span><span>{cashToOwner > 0 ? `-฿${money(cashToOwner)}` : '—'}</span>
             </div>
-            <div className="flex justify-between font-medium text-gray-900">
+            <div className="flex justify-between font-medium text-gray-900 pt-1 border-t border-gray-200">
               <span>เหลือในลิ้นชัก (เงินตั้งต้นกะถัดไป)</span><span>฿{money(leftover)}</span>
             </div>
           </div>
@@ -321,17 +387,12 @@ export default function ShiftClient({
                 </td>
                 <td className="px-4 py-3 text-sm text-right text-gray-700">฿{money(s.opening_cash)}</td>
                 <td className="px-4 py-3 text-sm text-right text-gray-700">{s.expected_cash != null ? `฿${money(s.expected_cash)}` : '—'}</td>
-                <td
-                  className="px-4 py-3 text-sm text-right text-gray-700"
-                  title={s.closing_denominations
-                    ? DENOMS.filter((d) => s.closing_denominations?.[String(d.value)])
-                        .map((d) => `${d.label} × ${s.closing_denominations![String(d.value)]}`)
-                        .join('\n')
-                    : undefined}
-                >
+                <td className="px-4 py-3 text-sm text-right text-gray-700" title={denomTitle(s.closing_denominations)}>
                   {s.closing_cash_counted != null ? `฿${money(s.closing_cash_counted)}` : '—'}
                 </td>
-                <td className="px-4 py-3 text-sm text-right text-gray-700">{s.cash_to_owner != null && s.cash_to_owner > 0 ? `฿${money(s.cash_to_owner)}` : '—'}</td>
+                <td className="px-4 py-3 text-sm text-right text-gray-700" title={denomTitle(s.owner_denominations)}>
+                  {s.cash_to_owner != null && s.cash_to_owner > 0 ? `฿${money(s.cash_to_owner)}` : '—'}
+                </td>
                 <td className={`px-4 py-3 text-sm text-right font-semibold ${
                   s.cash_difference == null ? 'text-gray-400' : s.cash_difference === 0 ? 'text-green-600' : s.cash_difference > 0 ? 'text-blue-600' : 'text-red-600'
                 }`}>
