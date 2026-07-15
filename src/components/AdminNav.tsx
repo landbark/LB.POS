@@ -17,6 +17,7 @@ import {
   Users,
   Tag,
   Wallet,
+  CalendarDays,
 } from 'lucide-react'
 
 const navItems = [
@@ -30,6 +31,7 @@ const navItems = [
   { href: '/admin/promotions', label: 'โปรโมชั่น', icon: Tag, adminOnly: true },
   { href: '/admin/documents', label: 'เอกสาร', icon: FileText, adminOnly: false },
   { href: '/admin/shift', label: 'ปิดกะ/เงินสด', icon: Wallet, adminOnly: false },
+  { href: '/admin/daily', label: 'สรุปรายวัน', icon: CalendarDays, adminOnly: false },
   { href: '/admin/reports', label: 'รายงาน', icon: BarChart2, adminOnly: true },
   { href: '/admin/settings', label: 'ตั้งค่า', icon: Settings, adminOnly: true },
 ]
