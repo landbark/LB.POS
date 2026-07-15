@@ -140,13 +140,12 @@ export default function PosDisplayClient({ storeName, logoUrl, paymentQrUrl }: P
       <div className="flex-1 min-h-0 flex items-center justify-center" style={{ padding: 'clamp(0.75rem, 2.5vh, 2rem) clamp(1rem, 3vw, 3rem)' }}>
         {(!msg || (msg.stage === 'cart' && msg.items.length === 0 && !msg.customer)) && (
           <div className="flex flex-col items-center" style={{ gap: 'clamp(1rem, 3.5vh, 2rem)' }}>
-            {/* โลโก้เสือแคชเชียร์ (POS-2ND.webp บีบจาก POS-2ND.png ที่ user ให้) — มีชื่อร้านในภาพแล้ว โชว์เต็มใบไม่ครอปวงกลม */}
+            {/* โลโก้เสือแคชเชียร์ (POS-2ND.webp บีบจาก POS-2ND.png ที่ user ให้) — พื้นใส ลอยบน gradient ตรงๆ */}
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src="/POS-2ND.webp"
               alt={storeName}
-              className="rounded-3xl"
-              style={{ width: 'min(52vh, 38vw)', height: 'auto', boxShadow: '0 16px 40px rgba(0,0,0,0.45)' }}
+              style={{ width: 'min(52vh, 38vw)', height: 'auto', filter: 'drop-shadow(0 12px 28px rgba(0,0,0,0.45))' }}
             />
             <div className="text-center">
               <p className="font-bold" style={{ color: TEXT_LIGHT, fontSize: 'clamp(1.6rem, 5.5vh, 3.2rem)' }}>ยินดีต้อนรับสู่ {storeName}</p>
