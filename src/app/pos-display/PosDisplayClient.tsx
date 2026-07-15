@@ -8,6 +8,24 @@ import { POS_DISPLAY_CHANNEL, type PosDisplayMessage, type DisplayCustomer } fro
 
 const money = (n: number) => n.toLocaleString('th-TH', { minimumFractionDigits: 2 })
 
+// ขนาดฟอนต์ยอดเงินตัวใหญ่: อิงความสูงจอ (vh) เป็นหลัก แต่ไม่เกินความกว้างกล่อง
+// (คิดจากจำนวนตัวอักษร ~0.62em/ตัว) — กันยอดหลักพันขึ้นไป เช่น ฿1,300.00 ล้นกรอบ
+function bigMoneyFont(n: number, vh: number, boxInnerVw: number, boxInnerRem: number) {
+  const em = 0.62 * (money(n).length + 1) // +1 = สัญลักษณ์ ฿
+  return `min(${vh}vh, ${(boxInnerVw / em).toFixed(2)}vw, ${(boxInnerRem / em).toFixed(2)}rem)`
+}
+
+// แถวยอดเดิม (ขีดฆ่า) + ส่วนลด — โชว์ตัวเล็กไม่เน้น เหนือยอดสุทธิ เมื่อมีส่วนลด
+function DiscountLine({ subtotal, discount }: { subtotal: number; discount: number }) {
+  if (discount <= 0) return null
+  return (
+    <p className="whitespace-nowrap" style={{ color: 'rgba(255,255,255,0.75)', fontSize: 'clamp(0.85rem, 2.2vh, 1.3rem)' }}>
+      <span className="line-through">฿{money(subtotal)}</span>
+      <span style={{ marginLeft: '0.75em' }}>ส่วนลด −฿{money(discount)}</span>
+    </p>
+  )
+}
+
 // ธีมจอสอง (จอลูกค้า): พื้นน้ำตาลเข้ม ตัวอักษรสว่าง อ่านง่ายในระยะไกล/แสงจ้า
 // ขนาดตัวอักษรทั้งหน้าอิง vh (ความสูงจอ) — จอลูกค้ามักเป็นจอเล็ก ต้องใหญ่เต็มพื้นที่เสมอ
 const DISPLAY_BG = 'radial-gradient(ellipse at 50% -10%, #4A311F 0%, #2A1B12 55%, #1E130C 100%)'
@@ -174,8 +192,8 @@ export default function PosDisplayClient({ storeName, logoUrl, paymentQrUrl }: P
             <div className="flex flex-col justify-center shrink-0" style={{ width: 'clamp(16rem, 36vw, 32rem)', gap: 'clamp(0.75rem, 2.5vh, 1.5rem)' }}>
               <div className="rounded-2xl text-white" style={{ background: '#C4865A', padding: 'clamp(1rem, 3.5vh, 2rem)' }}>
                 <p className="opacity-90" style={{ fontSize: 'clamp(1rem, 2.8vh, 1.6rem)' }}>ยอดรวม</p>
-                <p className="font-bold leading-tight" style={{ fontSize: 'clamp(2.2rem, 9vh, 5.5rem)' }}>฿{money(msg.total)}</p>
-                {msg.discount > 0 && <p className="opacity-90" style={{ fontSize: 'clamp(0.9rem, 2.4vh, 1.4rem)', marginTop: 'clamp(0.25rem, 1vh, 0.5rem)' }}>ส่วนลด ฿{money(msg.discount)}</p>}
+                <DiscountLine subtotal={msg.subtotal} discount={msg.discount} />
+                <p className="font-bold leading-tight whitespace-nowrap" style={{ fontSize: bigMoneyFont(msg.total, 9, 30, 27) }}>฿{money(msg.total)}</p>
               </div>
               {msg.customer && <PointsCard customer={msg.customer} />}
             </div>
@@ -214,7 +232,8 @@ export default function PosDisplayClient({ storeName, logoUrl, paymentQrUrl }: P
             <div className="flex flex-col justify-center min-w-0" style={{ width: 'clamp(16rem, 40vw, 36rem)', gap: 'clamp(0.75rem, 2.5vh, 1.5rem)' }}>
               <div className="rounded-2xl text-white text-center" style={{ background: '#C4865A', padding: 'clamp(1rem, 4vh, 2.5rem)' }}>
                 <p className="opacity-90" style={{ fontSize: 'clamp(1.1rem, 3.2vh, 1.8rem)' }}>ยอดที่ต้องชำระ</p>
-                <p className="font-bold leading-tight" style={{ fontSize: 'clamp(2.5rem, 11vh, 7rem)' }}>฿{money(msg.total)}</p>
+                <DiscountLine subtotal={msg.subtotal} discount={msg.discount} />
+                <p className="font-bold leading-tight whitespace-nowrap" style={{ fontSize: bigMoneyFont(msg.total, 11, 33, 30) }}>฿{money(msg.total)}</p>
               </div>
               {msg.customer && <PointsCard customer={msg.customer} />}
             </div>
@@ -225,7 +244,7 @@ export default function PosDisplayClient({ storeName, logoUrl, paymentQrUrl }: P
           <div className="text-center" style={{ maxWidth: 'min(90vw, 44rem)' }}>
             <CheckCircle2 className="mx-auto text-green-500" style={{ width: 'clamp(4rem, 14vh, 8rem)', height: 'clamp(4rem, 14vh, 8rem)', marginBottom: 'clamp(0.5rem, 2vh, 1.25rem)' }} />
             <p className="font-bold" style={{ color: TEXT_LIGHT, fontSize: 'clamp(1.8rem, 6vh, 3.5rem)' }}>ชำระเงินสำเร็จ ขอบคุณค่ะ</p>
-            <p className="font-bold" style={{ color: TEXT_LIGHT, fontSize: 'clamp(2.5rem, 10vh, 6rem)', marginTop: 'clamp(0.25rem, 1.5vh, 1rem)' }}>฿{money(msg.total)}</p>
+            <p className="font-bold whitespace-nowrap" style={{ color: TEXT_LIGHT, fontSize: bigMoneyFont(msg.total, 10, 84, 42), marginTop: 'clamp(0.25rem, 1.5vh, 1rem)' }}>฿{money(msg.total)}</p>
             {msg.customer && <div style={{ marginTop: 'clamp(1rem, 3.5vh, 2rem)' }}><PointsCard customer={msg.customer} /></div>}
           </div>
         )}

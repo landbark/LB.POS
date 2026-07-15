@@ -21,6 +21,8 @@ export type PosDisplayMessage =
     }
   | {
       stage: 'payment'
+      subtotal: number
+      discount: number
       total: number
       method: Exclude<PaymentMethod, 'qr'>
       promptpayId: string | null

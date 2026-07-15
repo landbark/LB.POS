@@ -85,6 +85,8 @@ export default function PaymentModal({
     if (completedTxId) return
     const msg: PosDisplayMessage = {
       stage: 'payment',
+      subtotal,
+      discount: Math.max(0, subtotal - finalTotal),
       total: finalTotal,
       method: method as Exclude<PaymentMethod, 'qr'>,
       promptpayId,
