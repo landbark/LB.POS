@@ -140,24 +140,14 @@ export default function PosDisplayClient({ storeName, logoUrl, paymentQrUrl }: P
       <div className="flex-1 min-h-0 flex items-center justify-center" style={{ padding: 'clamp(0.75rem, 2.5vh, 2rem) clamp(1rem, 3vw, 3rem)' }}>
         {(!msg || (msg.stage === 'cart' && msg.items.length === 0 && !msg.customer)) && (
           <div className="flex flex-col items-center" style={{ gap: 'clamp(1rem, 3.5vh, 2rem)' }}>
-            <div className="relative" style={{ width: 'min(42vh, 32vw)', height: 'min(42vh, 32vw)' }}>
-              <div
-                className="w-full h-full rounded-full overflow-hidden"
-                style={{
-                  border: '5px solid #C4865A',
-                  boxShadow: '0 0 0 3px rgba(245,233,218,0.18), 0 16px 40px rgba(0,0,0,0.5)',
-                }}
-              >
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src="/pos-display-welcome.webp" alt={storeName} className="w-full h-full object-cover" />
-              </div>
-              <div
-                className="absolute -bottom-1 -right-1 rounded-full flex items-center justify-center"
-                style={{ width: 'clamp(2.5rem, 7vh, 4rem)', height: 'clamp(2.5rem, 7vh, 4rem)', fontSize: 'clamp(1.1rem, 3.2vh, 1.8rem)', background: '#F0E4D4', border: '3px solid #C4865A' }}
-              >
-                🐾
-              </div>
-            </div>
+            {/* โลโก้เสือแคชเชียร์ (POS-2ND.webp บีบจาก POS-2ND.png ที่ user ให้) — มีชื่อร้านในภาพแล้ว โชว์เต็มใบไม่ครอปวงกลม */}
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src="/POS-2ND.webp"
+              alt={storeName}
+              className="rounded-3xl"
+              style={{ width: 'min(52vh, 38vw)', height: 'auto', boxShadow: '0 16px 40px rgba(0,0,0,0.45)' }}
+            />
             <div className="text-center">
               <p className="font-bold" style={{ color: TEXT_LIGHT, fontSize: 'clamp(1.6rem, 5.5vh, 3.2rem)' }}>ยินดีต้อนรับสู่ {storeName}</p>
               <p style={{ color: TEXT_MUTED, fontSize: 'clamp(1rem, 2.8vh, 1.6rem)', marginTop: 'clamp(0.25rem, 1vh, 0.75rem)' }}>แจ้งพนักงานที่เคาน์เตอร์เพื่อเริ่มการขายได้เลยค่ะ</p>
