@@ -16,8 +16,9 @@ function bigMoneyFont(n: number, vh: number, boxInnerVw: number, boxInnerRem: nu
 }
 
 // แถวยอดเดิม (ขีดฆ่า) + ส่วนลด — โชว์ตัวเล็กไม่เน้น เหนือยอดสุทธิ เมื่อมีส่วนลด
-function DiscountLine({ subtotal, discount }: { subtotal: number; discount: number }) {
-  if (discount <= 0) return null
+// props เป็น optional เพราะ message อาจมาจากแท็บหน้าขายที่ยังรันโค้ดเวอร์ชันเก่า (เปิดค้างข้าม deploy)
+function DiscountLine({ subtotal, discount }: { subtotal?: number; discount?: number }) {
+  if (!subtotal || !discount || discount <= 0) return null
   return (
     <p className="whitespace-nowrap" style={{ color: 'rgba(255,255,255,0.75)', fontSize: 'clamp(0.85rem, 2.2vh, 1.3rem)' }}>
       <span className="line-through">฿{money(subtotal)}</span>

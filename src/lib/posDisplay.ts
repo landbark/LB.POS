@@ -21,8 +21,9 @@ export type PosDisplayMessage =
     }
   | {
       stage: 'payment'
-      subtotal: number
-      discount: number
+      // optional เพื่อรองรับ message จากแท็บที่ยังรันโค้ดเวอร์ชันเก่า (เปิดค้างข้าม deploy)
+      subtotal?: number
+      discount?: number
       total: number
       method: Exclude<PaymentMethod, 'qr'>
       promptpayId: string | null
