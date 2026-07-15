@@ -145,7 +145,7 @@ export default function PosDisplayClient({ storeName, logoUrl, paymentQrUrl }: P
             <img
               src="/POS-2ND.webp"
               alt={storeName}
-              style={{ width: 'min(52vh, 38vw)', height: 'auto', filter: 'drop-shadow(0 12px 28px rgba(0,0,0,0.45))' }}
+              style={{ width: 'min(62vh, 42vw)', height: 'auto', filter: 'drop-shadow(0 12px 28px rgba(0,0,0,0.45))' }}
             />
             <div className="text-center">
               <p className="font-bold" style={{ color: TEXT_LIGHT, fontSize: 'clamp(1.6rem, 5.5vh, 3.2rem)' }}>ยินดีต้อนรับสู่ {storeName}</p>
