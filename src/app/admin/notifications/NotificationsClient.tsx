@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Bell, Send, Trash2, MessageCircle, Save } from 'lucide-react'
@@ -33,49 +33,11 @@ export default function NotificationsClient({
   const [enabled, setEnabled] = useState(initialSettings.enabled)
   const [expiryDays, setExpiryDays] = useState(String(initialSettings.expiry_days))
   const [saving, setSaving] = useState(false)
-  const [linking, setLinking] = useState(false)
   const [testing, setTesting] = useState(false)
 
-  // ผูกบัญชี LINE: หลัง liff.login() จะ redirect กลับมาพร้อม ?link=1 → ทำต่อให้จบ
-  useEffect(() => {
-    if (new URLSearchParams(window.location.search).get('link') === '1') {
-      completeLink()
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
-  async function completeLink() {
-    setLinking(true)
-    try {
-      const liff = (await import('@line/liff')).default
-      await liff.init({ liffId: process.env.NEXT_PUBLIC_LIFF_ID! })
-
-      if (!liff.isLoggedIn()) {
-        const url = new URL(window.location.href)
-        url.searchParams.set('link', '1')
-        liff.login({ redirectUri: url.toString() })
-        return
-      }
-
-      const profile = await liff.getProfile()
-      const supabase = createClient()
-      const { error } = await supabase
-        .from('line_notify_recipients')
-        .upsert(
-          { line_user_id: profile.userId, display_name: profile.displayName },
-          { onConflict: 'line_user_id' }
-        )
-      if (error) throw new Error(error.message)
-
-      // ล้าง ?link=1 ออกจาก URL กันทำซ้ำตอน refresh
-      window.history.replaceState(null, '', window.location.pathname)
-      toast.success(`เชื่อม LINE "${profile.displayName}" เรียบร้อย`)
-      router.refresh()
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'เชื่อม LINE ไม่สำเร็จ')
-    } finally {
-      setLinking(false)
-    }
+  // flow เชื่อม LINE อยู่ที่ /member/notify-link — LIFF ยอม redirect กลับเฉพาะ URL ใต้ endpoint (/member)
+  function startLink() {
+    router.push('/member/notify-link')
   }
 
   async function saveSettings() {
@@ -203,11 +165,10 @@ export default function NotificationsClient({
 
         <div className="flex items-center gap-2">
           <button
-            onClick={completeLink}
-            disabled={linking}
-            className="flex items-center gap-2 bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white text-sm font-medium px-4 py-2 rounded-lg"
+            onClick={startLink}
+            className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white text-sm font-medium px-4 py-2 rounded-lg"
           >
-            <MessageCircle size={15} /> {linking ? 'กำลังเชื่อม...' : 'เชื่อม LINE ของฉัน'}
+            <MessageCircle size={15} /> เชื่อม LINE ของฉัน
           </button>
           <button
             onClick={sendTest}
