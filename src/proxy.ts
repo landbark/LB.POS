@@ -32,6 +32,8 @@ export async function proxy(request: NextRequest) {
   const isPublicPath = pathname === '/login' || pathname.startsWith('/auth')
     || pathname === '/member' || pathname.startsWith('/api/member')
     || pathname.startsWith('/print/receipt')
+    // Vercel Cron ไม่มี session พนักงาน — route เช็ค CRON_SECRET เอง
+    || pathname.startsWith('/api/cron')
 
   if (!user && !isPublicPath) {
     return NextResponse.redirect(new URL('/login', request.url))
