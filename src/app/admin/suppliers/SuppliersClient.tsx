@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 import { Plus, Edit, Trash2, X, Check } from 'lucide-react'
 import toast from 'react-hot-toast'
 import type { Supplier } from '@/lib/types'
+import SupplierImportButton from './SupplierImportButton'
 
 const emptyForm = { name: '', contact_name: '', phone: '', address: '', notes: '' }
 
@@ -119,12 +120,15 @@ export default function SuppliersClient({ suppliers }: { suppliers: Supplier[] }
   return (
     <div>
       {!showAdd && !editingId && (
-        <button
-          onClick={() => { setShowAdd(true); setForm(emptyForm) }}
-          className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors mb-4"
-        >
-          <Plus size={16} /> เพิ่มซัพพลายเออร์
-        </button>
+        <div className="flex flex-wrap items-center gap-2 mb-4">
+          <button
+            onClick={() => { setShowAdd(true); setForm(emptyForm) }}
+            className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
+          >
+            <Plus size={16} /> เพิ่มซัพพลายเออร์
+          </button>
+          <SupplierImportButton suppliers={suppliers} />
+        </div>
       )}
 
       {showAdd && formCard}

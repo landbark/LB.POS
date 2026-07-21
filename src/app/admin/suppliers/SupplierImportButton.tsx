@@ -6,22 +6,19 @@ import { createClient } from '@/lib/supabase/client'
 import { Upload, Download, X, Loader2, CheckCircle2, AlertTriangle } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { parseCsv, downloadCsv, headerIndexer } from '@/lib/csv'
-import type { Category, Unit } from '@/lib/types'
+import type { Supplier } from '@/lib/types'
 
-const HEADERS = ['ชื่อสินค้า', 'SKU', 'บาร์โค้ด', 'หมวดหมู่', 'หน่วย', 'ราคาขาย', 'ราคาทุน', 'แจ้งเตือนสต็อคต่ำกว่า', 'ซัพพลายเออร์']
+const HEADERS = ['ชื่อบริษัท', 'ชื่อผู้ติดต่อ', 'เบอร์โทร', 'ที่อยู่', 'หมายเหตุ']
 
 interface DraftRow {
   rowNum: number
   name: string
-  sku: string
-  barcode: string
-  category: string
-  unit: string
-  price: string
-  cost: string
-  minStock: string
-  supplier: string
+  contact_name: string
+  phone: string
+  address: string
+  notes: string
   error: string | null
+  existingId: string | null
 }
 
 interface ImportResult {
@@ -35,20 +32,14 @@ function downloadTemplate() {
   downloadCsv(
     [
       HEADERS,
-      ['อาหารแมว Royal Canin 1kg', 'LB-CAT-001', '8850000000001', 'อาหารสัตว์', 'ถุง', '450', '350', '5', ''],
-      ['ทรายแมว 10L', '', '', 'ทรายแมว', 'ถุง', '250', '180', '3', ''],
+      ['บจก.เพ็ทฟู้ดไทย', 'คุณสมชาย', '081-234-5678', '99 ถ.พหลโยธิน แขวงจตุจักร เขตจตุจักร กรุงเทพฯ 10900', 'ส่งทุกวันจันทร์'],
+      ['ร้านทรายแมวส่ง', '', '02-123-4567', '', ''],
     ],
-    'landbark-สินค้า-template.csv',
+    'landbark-ซัพพลายเออร์-template.csv',
   )
 }
 
-interface Props {
-  categories: Category[]
-  units: Unit[]
-  suppliers: { id: string; name: string }[]
-}
-
-export default function BulkImportButton({ categories, units, suppliers }: Props) {
+export default function SupplierImportButton({ suppliers }: { suppliers: Supplier[] }) {
   const router = useRouter()
   const fileRef = useRef<HTMLInputElement>(null)
   const [open, setOpen] = useState(false)
@@ -73,45 +64,45 @@ export default function BulkImportButton({ categories, units, suppliers }: Props
   async function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
     if (!file) return
-    const text = await file.text()
-    const rows = parseCsv(text)
+    const rows = parseCsv(await file.text())
     if (rows.length < 2) {
       toast.error('ไฟล์ว่างเปล่า หรือไม่มีข้อมูล')
       return
     }
     const idx = headerIndexer(rows[0])
     const col = {
-      name: idx('ชื่อสินค้า'),
-      sku: idx('SKU'),
-      barcode: idx('บาร์โค้ด'),
-      category: idx('หมวดหมู่'),
-      unit: idx('หน่วย'),
-      price: idx('ราคาขาย'),
-      cost: idx('ราคาทุน'),
-      minStock: idx('แจ้งเตือนสต็อคต่ำกว่า'),
-      supplier: idx('ซัพพลายเออร์'),
+      name: idx('ชื่อบริษัท'),
+      contact_name: idx('ชื่อผู้ติดต่อ'),
+      phone: idx('เบอร์โทร'),
+      address: idx('ที่อยู่'),
+      notes: idx('หมายเหตุ'),
+    }
+    if (col.name < 0) {
+      toast.error('ไม่พบคอลัมน์ "ชื่อบริษัท" — กรุณาใช้ template')
+      return
     }
     const get = (r: string[], i: number) => (i >= 0 ? (r[i] ?? '').trim() : '')
 
+    const existingByName = new Map(suppliers.map((s) => [s.name.toLowerCase(), s.id]))
+    const seen = new Set<string>()
+
     const parsed: DraftRow[] = rows.slice(1).map((r, i) => {
       const name = get(r, col.name)
-      const price = get(r, col.price)
+      const key = name.toLowerCase()
       let error: string | null = null
-      if (!name) error = 'ไม่มีชื่อสินค้า'
-      else if (!price || isNaN(parseFloat(price)) || parseFloat(price) < 0) error = 'ราคาขายไม่ถูกต้อง'
+      if (!name) error = 'ไม่มีชื่อบริษัท'
+      else if (seen.has(key)) error = 'ชื่อซ้ำกันในไฟล์'
+      if (name) seen.add(key)
 
       return {
         rowNum: i + 2,
         name,
-        sku: get(r, col.sku),
-        barcode: get(r, col.barcode),
-        category: get(r, col.category),
-        unit: get(r, col.unit),
-        price,
-        cost: get(r, col.cost),
-        minStock: get(r, col.minStock),
-        supplier: get(r, col.supplier),
+        contact_name: get(r, col.contact_name),
+        phone: get(r, col.phone),
+        address: get(r, col.address),
+        notes: get(r, col.notes),
         error,
+        existingId: existingByName.get(key) ?? null,
       }
     })
     setDrafts(parsed)
@@ -127,54 +118,32 @@ export default function BulkImportButton({ categories, units, suppliers }: Props
 
     setImporting(true)
     const supabase = createClient()
-    const categoryCache = new Map(categories.map((c) => [c.name.toLowerCase(), c.id]))
-    const unitCache = new Set(units.map((u) => u.name.toLowerCase()))
-    const supplierCache = new Map(suppliers.map((s) => [s.name.toLowerCase(), s.id]))
     const out: ImportResult[] = []
 
     for (let i = 0; i < validRows.length; i++) {
       const d = validRows[i]
       setProgress(i + 1)
 
-      let categoryId: string | null = null
-      if (d.category) {
-        const key = d.category.toLowerCase()
-        categoryId = categoryCache.get(key) ?? null
-        if (!categoryId) {
-          const { data } = await supabase.from('categories').insert({ name: d.category }).select('id').single()
-          if (data) { categoryId = data.id; categoryCache.set(key, data.id) }
-        }
-      }
-
-      const unitName = d.unit || 'ชิ้น'
-      if (!unitCache.has(unitName.toLowerCase())) {
-        await supabase.from('units').insert({ name: unitName })
-        unitCache.add(unitName.toLowerCase())
-      }
-
-      const supplierId = d.supplier ? supplierCache.get(d.supplier.toLowerCase()) ?? null : null
-
-      const { error } = await supabase.from('products').insert({
+      const payload = {
         name: d.name,
-        sku: d.sku || null,
-        barcode: d.barcode || null,
-        category_id: categoryId,
-        supplier_id: supplierId,
-        price: parseFloat(d.price),
-        cost: d.cost ? parseFloat(d.cost) : null,
-        unit: unitName,
-        min_stock: d.minStock ? parseInt(d.minStock) : 5,
-      })
+        contact_name: d.contact_name || null,
+        phone: d.phone || null,
+        address: d.address || null,
+        notes: d.notes || null,
+      }
+
+      // ชื่อซ้ำกับที่มีอยู่ = อัปเดตข้อมูลเดิม (ไม่สร้างซ้ำ)
+      const { error } = d.existingId
+        ? await supabase.from('suppliers').update(payload).eq('id', d.existingId)
+        : await supabase.from('suppliers').insert(payload)
 
       out.push({
         rowNum: d.rowNum,
         name: d.name,
         ok: !error,
         message: error
-          ? (error.code === '23505' ? 'SKU หรือบาร์โค้ดซ้ำ' : error.message)
-          : d.supplier && !supplierId
-            ? 'บันทึกแล้ว (ไม่พบซัพพลายเออร์ตามชื่อ — เว้นว่าง)'
-            : 'บันทึกแล้ว',
+          ? (error.code === '23505' ? 'มีชื่อบริษัทนี้อยู่แล้ว' : error.message)
+          : d.existingId ? 'อัปเดตข้อมูลเดิม' : 'เพิ่มใหม่แล้ว',
       })
     }
 
@@ -182,6 +151,8 @@ export default function BulkImportButton({ categories, units, suppliers }: Props
     setResults(out)
     router.refresh()
   }
+
+  const readyCount = drafts?.filter((d) => !d.error).length ?? 0
 
   return (
     <>
@@ -197,7 +168,7 @@ export default function BulkImportButton({ categories, units, suppliers }: Props
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl w-full max-w-2xl shadow-2xl max-h-[85vh] flex flex-col">
             <div className="flex items-center justify-between p-4 border-b border-gray-100 shrink-0">
-              <h2 className="font-bold text-gray-900">นำเข้าสินค้าเป็นชุด</h2>
+              <h2 className="font-bold text-gray-900">นำเข้าซัพพลายเออร์เป็นชุด</h2>
               <button onClick={close} className="text-gray-400 hover:text-gray-600">
                 <X size={20} />
               </button>
@@ -207,9 +178,8 @@ export default function BulkImportButton({ categories, units, suppliers }: Props
               {!drafts && (
                 <>
                   <p className="text-sm text-gray-600">
-                    ดาวน์โหลด template (เปิดแก้ไขได้ทั้ง Excel และ Google Sheets) ใส่ข้อมูลสินค้าแล้วอัปโหลดกลับมาที่นี่
-                    — ช่อง <span className="font-medium">หมวดหมู่</span> และ <span className="font-medium">หน่วย</span> ถ้าพิมพ์ชื่อใหม่ที่ยังไม่มีในระบบ จะสร้างให้อัตโนมัติ
-                    ส่วน <span className="font-medium">ซัพพลายเออร์</span> ต้องพิมพ์ชื่อให้ตรงกับที่มีอยู่แล้วเท่านั้น
+                    ดาวน์โหลด template (เปิดแก้ไขได้ทั้ง Excel และ Google Sheets) ใส่รายชื่อซัพพลายเออร์แล้วอัปโหลดกลับมาที่นี่
+                    — ถ้า <span className="font-medium">ชื่อบริษัท</span> ตรงกับที่มีอยู่แล้ว ระบบจะอัปเดตข้อมูลเดิมให้ ไม่สร้างซ้ำ
                   </p>
                   <button
                     onClick={downloadTemplate}
@@ -239,9 +209,9 @@ export default function BulkImportButton({ categories, units, suppliers }: Props
                   <div className="flex items-center justify-between">
                     <p className="text-sm text-gray-600">
                       พบ {drafts.length} รายการ — พร้อมนำเข้า{' '}
-                      <span className="font-semibold text-green-600">{drafts.filter((d) => !d.error).length}</span> รายการ
+                      <span className="font-semibold text-green-600">{readyCount}</span> รายการ
                       {drafts.some((d) => d.error) && (
-                        <> · ข้าม <span className="font-semibold text-red-500">{drafts.filter((d) => d.error).length}</span> รายการ (มีปัญหา)</>
+                        <> · ข้าม <span className="font-semibold text-red-500">{drafts.length - readyCount}</span> รายการ (มีปัญหา)</>
                       )}
                     </p>
                     <button onClick={reset} className="text-xs text-blue-600 hover:text-blue-700 font-medium">เลือกไฟล์ใหม่</button>
@@ -251,24 +221,26 @@ export default function BulkImportButton({ categories, units, suppliers }: Props
                       <thead className="bg-gray-50 text-xs text-gray-500 uppercase">
                         <tr>
                           <th className="text-left px-3 py-2">แถว</th>
-                          <th className="text-left px-3 py-2">ชื่อสินค้า</th>
-                          <th className="text-right px-3 py-2">ราคา</th>
-                          <th className="text-left px-3 py-2">หมวดหมู่</th>
+                          <th className="text-left px-3 py-2">ชื่อบริษัท</th>
+                          <th className="text-left px-3 py-2">ผู้ติดต่อ</th>
+                          <th className="text-left px-3 py-2">เบอร์โทร</th>
                           <th className="text-left px-3 py-2">สถานะ</th>
                         </tr>
                       </thead>
-                      <tbody className="divide-y divide-gray-50 max-h-64">
+                      <tbody className="divide-y divide-gray-50">
                         {drafts.map((d) => (
                           <tr key={d.rowNum} className={d.error ? 'bg-red-50/50' : ''}>
                             <td className="px-3 py-1.5 text-gray-400">{d.rowNum}</td>
                             <td className="px-3 py-1.5 text-gray-800">{d.name || '—'}</td>
-                            <td className="px-3 py-1.5 text-right text-gray-700">{d.price || '—'}</td>
-                            <td className="px-3 py-1.5 text-gray-500">{d.category || '—'}</td>
+                            <td className="px-3 py-1.5 text-gray-500">{d.contact_name || '—'}</td>
+                            <td className="px-3 py-1.5 text-gray-500">{d.phone || '—'}</td>
                             <td className="px-3 py-1.5">
                               {d.error ? (
                                 <span className="text-red-600 flex items-center gap-1"><AlertTriangle size={12} /> {d.error}</span>
+                              ) : d.existingId ? (
+                                <span className="text-amber-600 flex items-center gap-1"><CheckCircle2 size={12} /> อัปเดตของเดิม</span>
                               ) : (
-                                <span className="text-green-600 flex items-center gap-1"><CheckCircle2 size={12} /> พร้อมนำเข้า</span>
+                                <span className="text-green-600 flex items-center gap-1"><CheckCircle2 size={12} /> เพิ่มใหม่</span>
                               )}
                             </td>
                           </tr>
@@ -292,7 +264,7 @@ export default function BulkImportButton({ categories, units, suppliers }: Props
                       <thead className="bg-gray-50 text-xs text-gray-500 uppercase">
                         <tr>
                           <th className="text-left px-3 py-2">แถว</th>
-                          <th className="text-left px-3 py-2">ชื่อสินค้า</th>
+                          <th className="text-left px-3 py-2">ชื่อบริษัท</th>
                           <th className="text-left px-3 py-2">ผลลัพธ์</th>
                         </tr>
                       </thead>
@@ -324,11 +296,11 @@ export default function BulkImportButton({ categories, units, suppliers }: Props
                   </button>
                   <button
                     onClick={runImport}
-                    disabled={importing || drafts.filter((d) => !d.error).length === 0}
+                    disabled={importing || readyCount === 0}
                     className="ml-auto flex items-center gap-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-40 text-white text-sm font-semibold px-5 py-2 rounded-lg"
                   >
                     {importing && <Loader2 size={15} className="animate-spin" />}
-                    {importing ? `กำลังนำเข้า... (${progress}/${drafts.filter((d) => !d.error).length})` : 'นำเข้า'}
+                    {importing ? `กำลังนำเข้า... (${progress}/${readyCount})` : 'นำเข้า'}
                   </button>
                 </>
               )}
