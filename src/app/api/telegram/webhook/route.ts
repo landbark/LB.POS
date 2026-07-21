@@ -33,13 +33,29 @@ export async function POST(request: NextRequest) {
 
   try {
     if (text.startsWith('/start')) {
-      await admin
+      const { data: existing } = await admin
         .from('telegram_recipients')
-        .upsert({ chat_id: chatId, name }, { onConflict: 'chat_id' })
-      await sendTelegramMessage(
-        chatId,
-        `✅ เชื่อมสำเร็จ — "${name}" จะได้รับแจ้งเตือนสต็อคของร้าน LANDBARK\nพิมพ์ /stop เพื่อยกเลิกรับแจ้งเตือน`
-      )
+        .select('approved')
+        .eq('chat_id', chatId)
+        .maybeSingle()
+
+      if (existing?.approved) {
+        await admin.from('telegram_recipients').update({ name }).eq('chat_id', chatId)
+        await sendTelegramMessage(
+          chatId,
+          `✅ "${name}" รับแจ้งเตือนสต็อคของร้าน LANDBARK อยู่แล้ว\nพิมพ์ /stop เพื่อยกเลิก`
+        )
+      } else if (existing) {
+        await admin.from('telegram_recipients').update({ name }).eq('chat_id', chatId)
+        await sendTelegramMessage(chatId, '⏳ คำขอของคุณส่งแล้ว กำลังรอแอดมินอนุมัติ')
+      } else {
+        // สมัครใหม่ = pending เสมอ รอแอดมินกดอนุมัติในหน้าเว็บก่อน (approved default false)
+        await admin.from('telegram_recipients').insert({ chat_id: chatId, name })
+        await sendTelegramMessage(
+          chatId,
+          '⏳ ส่งคำขอรับแจ้งเตือนแล้ว — รอแอดมินอนุมัติ ระบบจะแจ้งให้ทราบเมื่อได้รับอนุมัติ'
+        )
+      }
     } else if (text.startsWith('/stop')) {
       await admin.from('telegram_recipients').delete().eq('chat_id', chatId)
       await sendTelegramMessage(chatId, '🔕 ยกเลิกรับแจ้งเตือนแล้ว — พิมพ์ /start เพื่อกลับมารับอีกครั้ง')

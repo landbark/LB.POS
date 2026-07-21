@@ -6,6 +6,7 @@ CREATE TABLE IF NOT EXISTS telegram_recipients (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   chat_id TEXT UNIQUE NOT NULL,
   name TEXT,
+  approved BOOLEAN NOT NULL DEFAULT false,
   created_at TIMESTAMPTZ DEFAULT now()
 );
 

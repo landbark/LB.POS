@@ -164,7 +164,7 @@ export async function sendStockAlerts(
 
   const [{ data: settings }, { data: recipients }] = await Promise.all([
     admin.from('notify_settings').select('enabled, expiry_days').eq('id', 1).maybeSingle(),
-    admin.from('telegram_recipients').select('chat_id'),
+    admin.from('telegram_recipients').select('chat_id').eq('approved', true),
   ])
 
   if (!ignoreDisabled && settings?.enabled === false) {
