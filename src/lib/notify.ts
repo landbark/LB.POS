@@ -1,8 +1,5 @@
 import { createAdminClient } from '@/lib/supabase/admin'
 
-// ใช้ multicast ส่งถึงผู้รับทุกคนใน call เดียว (โควตาข้อความนับต่อผู้รับอยู่ดี)
-const LINE_MULTICAST_URL = 'https://api.line.me/v2/bot/message/multicast'
-
 const MAX_ITEMS_PER_SECTION = 15
 
 interface LowStockItem {
@@ -134,31 +131,28 @@ export function buildAlertMessage(alerts: StockAlerts): string | null {
   return sections.join('\n\n')
 }
 
-export async function pushLineMessage(lineUserIds: string[], text: string) {
-  const token = process.env.LINE_CHANNEL_ACCESS_TOKEN
-  if (!token) throw new Error('ยังไม่ได้ตั้งค่า LINE_CHANNEL_ACCESS_TOKEN')
+// ---- Telegram delivery ----
 
-  const res = await fetch(LINE_MULTICAST_URL, {
+const telegramApi = (method: string) =>
+  `https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/${method}`
+
+export async function sendTelegramMessage(chatId: string, text: string) {
+  if (!process.env.TELEGRAM_BOT_TOKEN) throw new Error('ยังไม่ได้ตั้งค่า TELEGRAM_BOT_TOKEN')
+
+  const res = await fetch(telegramApi('sendMessage'), {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`,
-    },
-    body: JSON.stringify({
-      to: lineUserIds,
-      messages: [{ type: 'text', text }],
-    }),
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ chat_id: chatId, text, disable_web_page_preview: true }),
   })
-
-  if (!res.ok) {
-    throw new Error(`LINE push ล้มเหลว (${res.status}): ${await res.text()}`)
-  }
+  const data = await res.json()
+  if (!data.ok) throw new Error(`Telegram (${chatId}): ${data.description ?? res.status}`)
 }
 
 export interface SendResult {
   sent: boolean
   reason?: 'disabled' | 'no_recipients' | 'nothing_to_alert'
   recipients?: number
+  failed?: number
   counts?: { lowStock: number; expiring: number; expired: number }
 }
 
@@ -169,16 +163,16 @@ export async function sendStockAlerts(
   const admin = createAdminClient()
 
   const [{ data: settings }, { data: recipients }] = await Promise.all([
-    admin.from('line_notify_settings').select('enabled, expiry_days').eq('id', 1).maybeSingle(),
-    admin.from('line_notify_recipients').select('line_user_id'),
+    admin.from('notify_settings').select('enabled, expiry_days').eq('id', 1).maybeSingle(),
+    admin.from('telegram_recipients').select('chat_id'),
   ])
 
   if (!ignoreDisabled && settings?.enabled === false) {
     return { sent: false, reason: 'disabled' }
   }
 
-  const userIds = (recipients ?? []).map((r) => r.line_user_id)
-  if (userIds.length === 0) return { sent: false, reason: 'no_recipients' }
+  const chatIds = (recipients ?? []).map((r) => r.chat_id)
+  if (chatIds.length === 0) return { sent: false, reason: 'no_recipients' }
 
   const alerts = await gatherStockAlerts(admin, settings?.expiry_days ?? 30)
   const counts = {
@@ -193,6 +187,8 @@ export async function sendStockAlerts(
     message = '🐾 LANDBARK — ทดสอบแจ้งเตือนสำเร็จ ✅\nตอนนี้ไม่มีสินค้าสต็อคต่ำหรือใกล้หมดอายุ'
   }
 
-  await pushLineMessage(userIds, message)
-  return { sent: true, recipients: userIds.length, counts }
+  const results = await Promise.allSettled(chatIds.map((id) => sendTelegramMessage(id, message!)))
+  const failed = results.filter((r) => r.status === 'rejected').length
+
+  return { sent: true, recipients: chatIds.length, failed, counts }
 }

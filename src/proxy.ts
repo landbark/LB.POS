@@ -34,6 +34,8 @@ export async function proxy(request: NextRequest) {
     || pathname.startsWith('/print/receipt')
     // Vercel Cron ไม่มี session พนักงาน — route เช็ค CRON_SECRET เอง
     || pathname.startsWith('/api/cron')
+    // Telegram เรียก webhook เอง (ไม่มี session) — route เช็ค secret token header เอง
+    || pathname.startsWith('/api/telegram')
 
   if (!user && !isPublicPath) {
     return NextResponse.redirect(new URL('/login', request.url))

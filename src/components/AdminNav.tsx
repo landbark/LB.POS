@@ -34,7 +34,7 @@ const navItems = [
   { href: '/admin/shift', label: 'ปิดกะ/เงินสด', icon: Wallet, adminOnly: false },
   { href: '/admin/daily', label: 'สรุปรายวัน', icon: CalendarDays, adminOnly: false },
   { href: '/admin/reports', label: 'รายงาน', icon: BarChart2, adminOnly: true },
-  { href: '/admin/notifications', label: 'แจ้งเตือน LINE', icon: Bell, adminOnly: false },
+  { href: '/admin/notifications', label: 'แจ้งเตือน Telegram', icon: Bell, adminOnly: false },
   { href: '/admin/settings', label: 'ตั้งค่า', icon: Settings, adminOnly: true },
 ]
 

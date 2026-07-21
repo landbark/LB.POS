@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { sendStockAlerts } from '@/lib/lineNotify'
+import { sendStockAlerts } from '@/lib/notify'
 
 // ปุ่ม "ส่งทดสอบ" ในหน้าแจ้งเตือน — พนักงานที่ login แล้วเท่านั้น
 export async function POST() {

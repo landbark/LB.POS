@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { Bell, Send, Trash2, MessageCircle, Save } from 'lucide-react'
+import { Bell, Send, Trash2, Save, RefreshCw, ExternalLink } from 'lucide-react'
 import toast from 'react-hot-toast'
 
 interface NotifySettings {
@@ -14,8 +14,8 @@ interface NotifySettings {
 
 interface Recipient {
   id: string
-  line_user_id: string
-  display_name: string | null
+  chat_id: string
+  name: string | null
   created_at: string
 }
 
@@ -25,20 +25,17 @@ const fmtDate = (iso: string) =>
 export default function NotificationsClient({
   initialSettings,
   initialRecipients,
+  botUsername,
 }: {
   initialSettings: NotifySettings
   initialRecipients: Recipient[]
+  botUsername: string
 }) {
   const router = useRouter()
   const [enabled, setEnabled] = useState(initialSettings.enabled)
   const [expiryDays, setExpiryDays] = useState(String(initialSettings.expiry_days))
   const [saving, setSaving] = useState(false)
   const [testing, setTesting] = useState(false)
-
-  // flow เชื่อม LINE อยู่ที่ /member/notify-link — LIFF ยอม redirect กลับเฉพาะ URL ใต้ endpoint (/member)
-  function startLink() {
-    router.push('/member/notify-link')
-  }
 
   async function saveSettings() {
     const days = parseInt(expiryDays, 10)
@@ -49,7 +46,7 @@ export default function NotificationsClient({
     setSaving(true)
     const supabase = createClient()
     const { error } = await supabase
-      .from('line_notify_settings')
+      .from('notify_settings')
       .update({ enabled, expiry_days: days, updated_at: new Date().toISOString() })
       .eq('id', 1)
     setSaving(false)
@@ -61,9 +58,9 @@ export default function NotificationsClient({
   }
 
   async function removeRecipient(r: Recipient) {
-    if (!confirm(`เอา "${r.display_name ?? 'ไม่มีชื่อ'}" ออกจากรายชื่อผู้รับแจ้งเตือน?`)) return
+    if (!confirm(`เอา "${r.name ?? 'ไม่มีชื่อ'}" ออกจากรายชื่อผู้รับแจ้งเตือน?`)) return
     const supabase = createClient()
-    const { error } = await supabase.from('line_notify_recipients').delete().eq('id', r.id)
+    const { error } = await supabase.from('telegram_recipients').delete().eq('id', r.id)
     if (error) toast.error(error.message)
     else {
       toast.success('ลบแล้ว')
@@ -74,10 +71,11 @@ export default function NotificationsClient({
   async function sendTest() {
     setTesting(true)
     try {
-      const res = await fetch('/api/line-notify/test', { method: 'POST' })
+      const res = await fetch('/api/notify/test', { method: 'POST' })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error ?? 'ส่งไม่สำเร็จ')
-      if (data.reason === 'no_recipients') toast.error('ยังไม่มีผู้รับแจ้งเตือน — กดเชื่อม LINE ก่อน')
+      if (data.reason === 'no_recipients') toast.error('ยังไม่มีผู้รับแจ้งเตือน — เชื่อม Telegram ก่อน')
+      else if (data.failed) toast.error(`ส่งสำเร็จ ${data.recipients - data.failed}/${data.recipients} (บางคนล้มเหลว)`)
       else toast.success(`ส่งแล้วถึง ${data.recipients} คน`)
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'ส่งไม่สำเร็จ')
@@ -87,12 +85,13 @@ export default function NotificationsClient({
   }
 
   const inputClass = 'border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500'
+  const botLink = botUsername ? `https://t.me/${botUsername.replace(/^@/, '')}` : ''
 
   return (
     <div>
-      <h1 className="text-2xl font-bold text-gray-900 mb-1">แจ้งเตือน LINE</h1>
+      <h1 className="text-2xl font-bold text-gray-900 mb-1">แจ้งเตือน Telegram</h1>
       <p className="text-sm text-gray-500 mb-6">
-        ระบบส่งสรุปสต็อคต่ำ / สินค้าใกล้หมดอายุ เข้า LINE ทุกเช้า 8:00 น. (เฉพาะวันที่มีรายการต้องเตือน)
+        ระบบส่งสรุปสต็อคต่ำ / สินค้าใกล้หมดอายุ เข้า Telegram ทุกเช้า 8:00 น. (เฉพาะวันที่มีรายการต้องเตือน)
       </p>
 
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 max-w-xl mb-6">
@@ -134,11 +133,11 @@ export default function NotificationsClient({
 
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 max-w-xl mb-6">
         <div className="flex items-center gap-2 mb-1">
-          <MessageCircle size={18} className="text-gray-400" />
+          <Send size={18} className="text-gray-400" />
           <h2 className="font-semibold text-gray-900">ผู้รับแจ้งเตือน</h2>
         </div>
         <p className="text-xs text-gray-500 mb-4">
-          ต้องเพิ่มเพื่อน LINE OA ของร้าน (LANDBARK) ก่อน ถึงจะได้รับข้อความ
+          เปิดบอทใน Telegram แล้วพิมพ์ <span className="font-mono bg-gray-100 px-1 rounded">/start</span> เพื่อรับแจ้งเตือน (พิมพ์ <span className="font-mono bg-gray-100 px-1 rounded">/stop</span> เพื่อยกเลิก)
         </p>
 
         {initialRecipients.length === 0 ? (
@@ -148,7 +147,7 @@ export default function NotificationsClient({
             {initialRecipients.map((r) => (
               <li key={r.id} className="flex items-center justify-between py-2">
                 <div>
-                  <span className="text-sm text-gray-900">{r.display_name ?? 'ไม่มีชื่อ'}</span>
+                  <span className="text-sm text-gray-900">{r.name ?? 'ไม่มีชื่อ'}</span>
                   <span className="text-xs text-gray-400 ml-2">เชื่อมเมื่อ {fmtDate(r.created_at)}</span>
                 </div>
                 <button
@@ -163,12 +162,22 @@ export default function NotificationsClient({
           </ul>
         )}
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          {botLink && (
+            <a
+              href={botLink}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-2 bg-sky-600 hover:bg-sky-700 text-white text-sm font-medium px-4 py-2 rounded-lg"
+            >
+              <ExternalLink size={15} /> เปิดบอท Telegram
+            </a>
+          )}
           <button
-            onClick={startLink}
-            className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white text-sm font-medium px-4 py-2 rounded-lg"
+            onClick={() => router.refresh()}
+            className="flex items-center gap-2 border border-gray-300 hover:bg-gray-50 text-gray-700 text-sm font-medium px-4 py-2 rounded-lg"
           >
-            <MessageCircle size={15} /> เชื่อม LINE ของฉัน
+            <RefreshCw size={15} /> รีเฟรชรายชื่อ
           </button>
           <button
             onClick={sendTest}

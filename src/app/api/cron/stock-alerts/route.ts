@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from 'next/server'
-import { sendStockAlerts } from '@/lib/lineNotify'
+import { sendStockAlerts } from '@/lib/notify'
 
 // ยิงโดย Vercel Cron ทุกเช้า (ดู vercel.json) — Vercel แนบ Authorization: Bearer CRON_SECRET ให้เอง
 export async function GET(request: NextRequest) {
