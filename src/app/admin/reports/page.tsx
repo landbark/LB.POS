@@ -1,3 +1,4 @@
+import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
 
 export default async function ReportsPage() {
@@ -78,9 +79,11 @@ export default async function ReportsPage() {
       </div>
 
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 mb-6">
-        <div className="flex items-baseline justify-between mb-3">
+        <div className="flex items-baseline justify-between mb-3 gap-3 flex-wrap">
           <h2 className="font-semibold text-gray-900">ยอดขายเดือนนี้ แยกตาม VAT</h2>
-          <span className="text-xs text-gray-400">ยอดตามราคาสินค้า ก่อนหักส่วนลดท้ายบิล</span>
+          <Link href="/admin/reports/vat" className="text-sm text-blue-600 hover:text-blue-700 font-medium">
+            ดูรายปีเทียบเกณฑ์ 1.8 ล้าน →
+          </Link>
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <div>
@@ -96,8 +99,9 @@ export default async function ReportsPage() {
             <p className="text-xl font-bold text-gray-900 mt-0.5">฿{vatAmount.toLocaleString('th-TH', { minimumFractionDigits: 2 })}</p>
           </div>
         </div>
+        <p className="text-xs text-gray-400 mt-3">ยอดตามราคาสินค้า ก่อนหักส่วนลดท้ายบิล</p>
         {!store?.vat_registered && (
-          <p className="text-xs text-amber-600 mt-3">
+          <p className="text-xs text-amber-600 mt-1">
             ร้านยังไม่ได้จดทะเบียน VAT — ตัวเลขนี้เป็นการประมาณไว้ดูเฉยๆ ยังไม่ได้เก็บเงินลูกค้าจริง
           </p>
         )}
