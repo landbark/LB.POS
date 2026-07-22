@@ -5,10 +5,10 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Upload, Download, X, Loader2, CheckCircle2, AlertTriangle } from 'lucide-react'
 import toast from 'react-hot-toast'
-import { parseCsv, downloadCsv, headerIndexer } from '@/lib/csv'
+import { parseCsv, downloadCsv, headerIndexer, parseDateCell } from '@/lib/csv'
 import type { Category, Unit } from '@/lib/types'
 
-const HEADERS = ['ชื่อสินค้า', 'SKU', 'บาร์โค้ด', 'หมวดหมู่', 'หน่วย', 'ราคาขาย', 'ราคาทุน', 'แจ้งเตือนสต็อคต่ำกว่า', 'ซัพพลายเออร์']
+const HEADERS = ['ชื่อสินค้า', 'SKU', 'บาร์โค้ด', 'หมวดหมู่', 'หน่วย', 'ราคาขาย', 'ราคาทุน', 'แจ้งเตือนสต็อคต่ำกว่า', 'ซัพพลายเออร์', 'จำนวนคงเหลือ', 'LOT', 'วันหมดอายุ']
 
 interface DraftRow {
   rowNum: number
@@ -21,6 +21,10 @@ interface DraftRow {
   cost: string
   minStock: string
   supplier: string
+  quantity: string
+  lotNumber: string
+  /** วันหมดอายุที่แปลงเป็น YYYY-MM-DD แล้ว (null = ไม่ระบุ) */
+  expiry: string | null
   error: string | null
 }
 
@@ -35,8 +39,8 @@ function downloadTemplate() {
   downloadCsv(
     [
       HEADERS,
-      ['อาหารแมว Royal Canin 1kg', 'LB-CAT-001', '8850000000001', 'อาหารสัตว์', 'ถุง', '450', '350', '5', ''],
-      ['ทรายแมว 10L', '', '', 'ทรายแมว', 'ถุง', '250', '180', '3', ''],
+      ['อาหารแมว Royal Canin 1kg', 'LB-CAT-001', '8850000000001', 'อาหารสัตว์', 'ถุง', '450', '350', '5', '', '12', '', '31/12/2027'],
+      ['ทรายแมว 10L', '', '', 'ทรายแมว', 'ถุง', '250', '180', '3', '', '8', '', ''],
     ],
     'landbark-สินค้า-template.csv',
   )
@@ -46,9 +50,10 @@ interface Props {
   categories: Category[]
   units: Unit[]
   suppliers: { id: string; name: string }[]
+  userId: string
 }
 
-export default function BulkImportButton({ categories, units, suppliers }: Props) {
+export default function BulkImportButton({ categories, units, suppliers, userId }: Props) {
   const router = useRouter()
   const fileRef = useRef<HTMLInputElement>(null)
   const [open, setOpen] = useState(false)
@@ -90,15 +95,22 @@ export default function BulkImportButton({ categories, units, suppliers }: Props
       cost: idx('ราคาทุน'),
       minStock: idx('แจ้งเตือนสต็อคต่ำกว่า'),
       supplier: idx('ซัพพลายเออร์'),
+      quantity: idx('จำนวนคงเหลือ'),
+      lotNumber: idx('LOT'),
+      expiry: idx('วันหมดอายุ'),
     }
     const get = (r: string[], i: number) => (i >= 0 ? (r[i] ?? '').trim() : '')
 
     const parsed: DraftRow[] = rows.slice(1).map((r, i) => {
       const name = get(r, col.name)
       const price = get(r, col.price)
+      const quantity = get(r, col.quantity)
+      const expiry = parseDateCell(get(r, col.expiry))
       let error: string | null = null
       if (!name) error = 'ไม่มีชื่อสินค้า'
       else if (!price || isNaN(parseFloat(price)) || parseFloat(price) < 0) error = 'ราคาขายไม่ถูกต้อง'
+      else if (quantity && (!/^\d+$/.test(quantity) || parseInt(quantity) < 0)) error = 'จำนวนคงเหลือต้องเป็นจำนวนเต็ม'
+      else if (expiry === undefined) error = 'วันหมดอายุไม่ถูกต้อง (ใช้ วว/ดด/ปปปป)'
 
       return {
         rowNum: i + 2,
@@ -111,6 +123,9 @@ export default function BulkImportButton({ categories, units, suppliers }: Props
         cost: get(r, col.cost),
         minStock: get(r, col.minStock),
         supplier: get(r, col.supplier),
+        quantity,
+        lotNumber: get(r, col.lotNumber),
+        expiry: expiry ?? null,
         error,
       }
     })
@@ -154,7 +169,7 @@ export default function BulkImportButton({ categories, units, suppliers }: Props
 
       const supplierId = d.supplier ? supplierCache.get(d.supplier.toLowerCase()) ?? null : null
 
-      const { error } = await supabase.from('products').insert({
+      const { data: product, error } = await supabase.from('products').insert({
         name: d.name,
         sku: d.sku || null,
         barcode: d.barcode || null,
@@ -164,17 +179,50 @@ export default function BulkImportButton({ categories, units, suppliers }: Props
         cost: d.cost ? parseFloat(d.cost) : null,
         unit: unitName,
         min_stock: d.minStock ? parseInt(d.minStock) : 5,
-      })
+      }).select('id').single()
+
+      if (error || !product) {
+        out.push({
+          rowNum: d.rowNum,
+          name: d.name,
+          ok: false,
+          message: error?.code === '23505' ? 'SKU หรือบาร์โค้ดซ้ำ' : error?.message ?? 'บันทึกไม่สำเร็จ',
+        })
+        continue
+      }
+
+      // มีจำนวนคงเหลือ = สร้าง lot ตั้งต้นให้เลย (สต็อคเข้าทันที)
+      const qty = d.quantity ? parseInt(d.quantity) : 0
+      let stockNote = ''
+      if (qty > 0) {
+        const { data: lot, error: lotError } = await supabase.from('product_lots').insert({
+          product_id: product.id,
+          lot_number: d.lotNumber || null,
+          expiry_date: d.expiry,
+          quantity: qty,
+          initial_quantity: qty,
+        }).select('id').single()
+
+        if (lotError || !lot) {
+          stockNote = ' · แต่ลงสต็อคไม่สำเร็จ ต้องใส่จำนวนเองที่หน้าสินค้า'
+        } else {
+          await supabase.from('stock_movements').insert({
+            product_id: product.id,
+            product_lot_id: lot.id,
+            type: 'adjust_in',
+            quantity: qty,
+            reason: 'ยอดยกมาตอนนำเข้าเป็นชุด',
+            created_by: userId || null,
+          })
+          stockNote = ` · สต็อค ${qty}`
+        }
+      }
 
       out.push({
         rowNum: d.rowNum,
         name: d.name,
-        ok: !error,
-        message: error
-          ? (error.code === '23505' ? 'SKU หรือบาร์โค้ดซ้ำ' : error.message)
-          : d.supplier && !supplierId
-            ? 'บันทึกแล้ว (ไม่พบซัพพลายเออร์ตามชื่อ — เว้นว่าง)'
-            : 'บันทึกแล้ว',
+        ok: true,
+        message: (d.supplier && !supplierId ? 'บันทึกแล้ว (ไม่พบซัพพลายเออร์ตามชื่อ — เว้นว่าง)' : 'บันทึกแล้ว') + stockNote,
       })
     }
 
@@ -210,6 +258,11 @@ export default function BulkImportButton({ categories, units, suppliers }: Props
                     ดาวน์โหลด template (เปิดแก้ไขได้ทั้ง Excel และ Google Sheets) ใส่ข้อมูลสินค้าแล้วอัปโหลดกลับมาที่นี่
                     — ช่อง <span className="font-medium">หมวดหมู่</span> และ <span className="font-medium">หน่วย</span> ถ้าพิมพ์ชื่อใหม่ที่ยังไม่มีในระบบ จะสร้างให้อัตโนมัติ
                     ส่วน <span className="font-medium">ซัพพลายเออร์</span> ต้องพิมพ์ชื่อให้ตรงกับที่มีอยู่แล้วเท่านั้น
+                  </p>
+                  <p className="text-sm text-gray-600">
+                    ใส่ <span className="font-medium">จำนวนคงเหลือ</span> ได้เลย — ระบบจะสร้าง lot ตั้งต้นให้พร้อมบันทึกประวัติสต็อค
+                    (ใส่ <span className="font-medium">LOT</span> / <span className="font-medium">วันหมดอายุ</span> ด้วยก็ได้ ถ้าเว้นว่างจะเป็น lot ไม่มีวันหมดอายุ)
+                    เว้นว่างไว้ = สินค้าคงเหลือ 0 ค่อยรับเข้าทีหลัง
                   </p>
                   <button
                     onClick={downloadTemplate}
@@ -253,6 +306,7 @@ export default function BulkImportButton({ categories, units, suppliers }: Props
                           <th className="text-left px-3 py-2">แถว</th>
                           <th className="text-left px-3 py-2">ชื่อสินค้า</th>
                           <th className="text-right px-3 py-2">ราคา</th>
+                          <th className="text-right px-3 py-2">คงเหลือ</th>
                           <th className="text-left px-3 py-2">หมวดหมู่</th>
                           <th className="text-left px-3 py-2">สถานะ</th>
                         </tr>
@@ -263,6 +317,10 @@ export default function BulkImportButton({ categories, units, suppliers }: Props
                             <td className="px-3 py-1.5 text-gray-400">{d.rowNum}</td>
                             <td className="px-3 py-1.5 text-gray-800">{d.name || '—'}</td>
                             <td className="px-3 py-1.5 text-right text-gray-700">{d.price || '—'}</td>
+                            <td className="px-3 py-1.5 text-right text-gray-500">
+                              {d.quantity || '—'}
+                              {d.expiry && <span className="block text-[10px] text-gray-400">EXP {d.expiry}</span>}
+                            </td>
                             <td className="px-3 py-1.5 text-gray-500">{d.category || '—'}</td>
                             <td className="px-3 py-1.5">
                               {d.error ? (

@@ -7,7 +7,8 @@ import BulkImportButton from './BulkImportButton'
 export default async function ProductsPage() {
   const supabase = await createClient()
 
-  const [{ data: products }, { data: categories }, { data: units }, { data: suppliers }] = await Promise.all([
+  const [{ data: { user } }, { data: products }, { data: categories }, { data: units }, { data: suppliers }] = await Promise.all([
+    supabase.auth.getUser(),
     supabase
       .from('products')
       .select(`
@@ -30,6 +31,7 @@ export default async function ProductsPage() {
             categories={categories ?? []}
             units={units ?? []}
             suppliers={suppliers ?? []}
+            userId={user?.id ?? ''}
           />
           <Link
             href="/admin/products/new"
