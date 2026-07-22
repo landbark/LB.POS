@@ -17,6 +17,8 @@ export default function StoreSection({ config }: { config: StoreSettings | null 
     phone: config?.phone ?? '',
     tax_id: config?.tax_id ?? '',
     promptpay_id: config?.promptpay_id ?? '',
+    vat_registered: config?.vat_registered ?? false,
+    vat_rate: config?.vat_rate?.toString() ?? '7',
   })
   const [logoBlob, setLogoBlob] = useState<Blob | null>(null)
   const [logoPreview, setLogoPreview] = useState<string | null>(config?.logo_url ?? null)
@@ -109,6 +111,8 @@ export default function StoreSection({ config }: { config: StoreSettings | null 
         address: form.address.trim() || null,
         phone: form.phone.trim() || null,
         tax_id: form.tax_id.trim() || null,
+        vat_registered: form.vat_registered,
+        vat_rate: parseFloat(form.vat_rate) || 7,
         promptpay_id: form.promptpay_id.trim() || null,
         payment_qr_url: qrUrl,
         logo_url: logoUrl,
@@ -187,6 +191,33 @@ export default function StoreSection({ config }: { config: StoreSettings | null 
               className={inputClass} placeholder="0-0000-00000-00-0"
             />
           </div>
+        </div>
+
+        {/* ปิดไว้จนกว่าจะจดทะเบียนจริง — ออกใบกำกับภาษีทั้งที่ยังไม่จดทะเบียนผิดกฎหมาย */}
+        <div className="border border-gray-200 rounded-lg p-4">
+          <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer w-fit">
+            <input
+              type="checkbox"
+              checked={form.vat_registered}
+              onChange={(e) => setForm((prev) => ({ ...prev, vat_registered: e.target.checked }))}
+              className="w-4 h-4 accent-blue-600"
+            />
+            ร้านจดทะเบียน VAT แล้ว
+          </label>
+          <p className="text-xs text-gray-500 mt-1.5">
+            ปิดอยู่ = ระบบจะเก็บแค่ข้อมูลว่าสินค้าไหนเข้าข่าย VAT ไม่บวกเงินเพิ่มและไม่พิมพ์ VAT ลงใบเสร็จ
+            {' '}<span className="text-amber-600">เปิดเมื่อจดทะเบียนกับสรรพากรเรียบร้อยแล้วเท่านั้น</span>
+          </p>
+          {form.vat_registered && (
+            <div className="mt-3 w-40">
+              <label className={labelClass}>อัตรา VAT (%)</label>
+              <input
+                type="number" min="0" max="100" step="0.01" value={form.vat_rate}
+                onChange={(e) => set('vat_rate', e.target.value)}
+                className={inputClass}
+              />
+            </div>
+          )}
         </div>
 
         <div>

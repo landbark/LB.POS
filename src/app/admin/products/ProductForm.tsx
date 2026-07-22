@@ -28,6 +28,8 @@ export default function ProductForm({ categories, units, suppliers, product }: P
     cost: product?.cost?.toString() ?? '',
     unit: product?.unit ?? (units[0]?.name ?? 'ชิ้น'),
     min_stock: product?.min_stock?.toString() ?? '5',
+    // '' = ตามหมวดหมู่, 'yes'/'no' = ตั้งแยกเฉพาะสินค้าตัวนี้
+    vat: product?.vat_applicable === true ? 'yes' : product?.vat_applicable === false ? 'no' : '',
   })
 
   // รูปใหม่ที่ crop/บีบอัดแล้วรออัปโหลด; preview = URL เดิมหรือ object URL ของรูปใหม่
@@ -127,6 +129,7 @@ export default function ProductForm({ categories, units, suppliers, product }: P
       cost: form.cost ? parseFloat(form.cost) : null,
       unit: form.unit,
       min_stock: parseInt(form.min_stock),
+      vat_applicable: form.vat === '' ? null : form.vat === 'yes',
     }
 
     const { error } = product
@@ -147,6 +150,11 @@ export default function ProductForm({ categories, units, suppliers, product }: P
     router.push('/admin/products')
     router.refresh()
   }
+
+  const selectedCat = catList.find((c) => c.id === form.category_id)
+  const categoryVatLabel = !selectedCat
+    ? 'ไม่ระบุหมวด = ไม่มี VAT'
+    : selectedCat.vat_applicable ? 'มี VAT' : 'ไม่มี VAT'
 
   const inputClass = 'w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500'
   const labelClass = 'block text-sm font-medium text-gray-700 mb-1'
@@ -317,6 +325,18 @@ export default function ProductForm({ categories, units, suppliers, product }: P
               placeholder="0.00"
             />
           </div>
+        </div>
+
+        <div>
+          <label className={labelClass}>VAT</label>
+          <select value={form.vat} onChange={(e) => set('vat', e.target.value)} className={inputClass}>
+            <option value="">ตามหมวดหมู่ ({categoryVatLabel})</option>
+            <option value="yes">มี VAT</option>
+            <option value="no">ไม่มี VAT</option>
+          </select>
+          <p className="text-xs text-gray-400 mt-1">
+            ตอนนี้ร้านยังไม่ได้จดทะเบียน VAT — ค่านี้เก็บไว้เฉยๆ ยังไม่กระทบราคาขายหรือใบเสร็จ
+          </p>
         </div>
 
         <div>

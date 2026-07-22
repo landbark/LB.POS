@@ -80,6 +80,8 @@ $$;
 CREATE TABLE categories (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   name TEXT NOT NULL UNIQUE,
+  -- ค่าตั้งต้น VAT ของสินค้าในหมวด (สินค้าตั้งแยกเองทับได้)
+  vat_applicable BOOLEAN NOT NULL DEFAULT false,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -113,6 +115,8 @@ CREATE TABLE products (
   cost NUMERIC(10,2) CHECK (cost >= 0),
   unit TEXT NOT NULL DEFAULT 'ชิ้น',
   min_stock INT NOT NULL DEFAULT 5 CHECK (min_stock >= 0),
+  -- NULL = ใช้ตามหมวดหมู่
+  vat_applicable BOOLEAN,
   image_url TEXT,
   active BOOLEAN NOT NULL DEFAULT true,
   created_at TIMESTAMPTZ DEFAULT NOW()
@@ -150,6 +154,9 @@ CREATE TABLE store_settings (
   logo_url TEXT,
   promptpay_id TEXT,
   payment_qr_url TEXT,
+  -- เปิดเมื่อจดทะเบียน VAT แล้วเท่านั้น
+  vat_registered BOOLEAN NOT NULL DEFAULT false,
+  vat_rate NUMERIC(5,2) NOT NULL DEFAULT 7,
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -256,6 +263,8 @@ CREATE TABLE transaction_items (
   unit_price NUMERIC(10,2) NOT NULL,
   discount NUMERIC(10,2) NOT NULL DEFAULT 0,
   subtotal NUMERIC(12,2) NOT NULL,
+  -- สถานะ VAT ณ ตอนขาย (ไม่ดูจากสินค้าตอนนี้ เพราะอาจถูกย้ายหมวดทีหลัง)
+  vat_applicable BOOLEAN NOT NULL DEFAULT false,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 

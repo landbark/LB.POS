@@ -1,9 +1,11 @@
 import { createClient } from '@/lib/supabase/server'
+import { getMarketplaceChannels } from '@/lib/marketplace'
 import PasswordSection from './PasswordSection'
 import StaffSection from './StaffSection'
 import NameListSection from './NameListSection'
 import PointsSection from './PointsSection'
 import StoreSection from './StoreSection'
+import MarketplaceSection from './MarketplaceSection'
 
 export default async function SettingsPage() {
   const supabase = await createClient()
@@ -15,6 +17,7 @@ export default async function SettingsPage() {
     { data: categories },
     { data: pointsConfig },
     { data: storeConfig },
+    marketplaceChannels,
   ] = await Promise.all([
     supabase.from('staff_emails').select('*').order('created_at'),
     supabase.from('profiles').select('*'),
@@ -22,6 +25,7 @@ export default async function SettingsPage() {
     supabase.from('categories').select('*').order('name'),
     supabase.from('points_config').select('*').limit(1).single(),
     supabase.from('store_settings').select('*').limit(1).single(),
+    getMarketplaceChannels(),
   ])
 
   // จับคู่ whitelist กับโปรไฟล์ที่เคยล็อกอิน เพื่อโชว์สถานะ
@@ -53,10 +57,13 @@ export default async function SettingsPage() {
             items={categories ?? []}
             placeholder="เช่น อาหารเสริม"
             deleteHint="สินค้าในหมวดนี้จะกลายเป็น ไม่ระบุหมวดหมู่"
+            showVat
           />
         </div>
 
         <PointsSection config={pointsConfig} />
+
+        <MarketplaceSection channels={marketplaceChannels} />
 
         <PasswordSection />
       </div>

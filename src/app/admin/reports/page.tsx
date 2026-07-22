@@ -5,7 +5,7 @@ export default async function ReportsPage() {
   const today = new Date().toISOString().split('T')[0]
   const startOfMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0]
 
-  const [{ data: todayTx }, { data: monthTx }, { data: recentTx }] = await Promise.all([
+  const [{ data: todayTx }, { data: monthTx }, { data: recentTx }, { data: monthItems }, { data: store }] = await Promise.all([
     supabase.from('transactions').select('total, payment_method').gte('created_at', today),
     supabase.from('transactions').select('total').gte('created_at', startOfMonth),
     supabase
@@ -13,7 +13,19 @@ export default async function ReportsPage() {
       .select('*, profiles(name), customers(name)')
       .order('created_at', { ascending: false })
       .limit(20),
+    // แยกยอด VAT ต้องดูรายสินค้า ไม่ใช่ระดับบิล — ตัดบิลที่ถูกยกเลิกออก
+    supabase
+      .from('transaction_items')
+      .select('subtotal, vat_applicable, transactions!inner(created_at, status)')
+      .gte('transactions.created_at', startOfMonth)
+      .neq('transactions.status', 'cancelled'),
+    supabase.from('store_settings').select('vat_registered, vat_rate').limit(1).single(),
   ])
+
+  const vatBase = monthItems?.reduce((s, i) => s + (i.vat_applicable ? i.subtotal : 0), 0) ?? 0
+  const nonVatBase = monthItems?.reduce((s, i) => s + (i.vat_applicable ? 0 : i.subtotal), 0) ?? 0
+  const vatRate = store?.vat_rate ?? 7
+  const vatAmount = vatBase * (vatRate / 100)
 
   const todayTotal = todayTx?.reduce((s, t) => s + t.total, 0) ?? 0
   const monthTotal = monthTx?.reduce((s, t) => s + t.total, 0) ?? 0
@@ -63,6 +75,32 @@ export default async function ReportsPage() {
             )}
           </div>
         </div>
+      </div>
+
+      <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 mb-6">
+        <div className="flex items-baseline justify-between mb-3">
+          <h2 className="font-semibold text-gray-900">ยอดขายเดือนนี้ แยกตาม VAT</h2>
+          <span className="text-xs text-gray-400">ยอดตามราคาสินค้า ก่อนหักส่วนลดท้ายบิล</span>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div>
+            <p className="text-sm text-gray-500">กลุ่มมี VAT</p>
+            <p className="text-xl font-bold text-gray-900 mt-0.5">฿{vatBase.toLocaleString('th-TH', { minimumFractionDigits: 2 })}</p>
+          </div>
+          <div>
+            <p className="text-sm text-gray-500">กลุ่มไม่มี VAT</p>
+            <p className="text-xl font-bold text-gray-900 mt-0.5">฿{nonVatBase.toLocaleString('th-TH', { minimumFractionDigits: 2 })}</p>
+          </div>
+          <div>
+            <p className="text-sm text-gray-500">VAT {vatRate}% ของกลุ่มมี VAT</p>
+            <p className="text-xl font-bold text-gray-900 mt-0.5">฿{vatAmount.toLocaleString('th-TH', { minimumFractionDigits: 2 })}</p>
+          </div>
+        </div>
+        {!store?.vat_registered && (
+          <p className="text-xs text-amber-600 mt-3">
+            ร้านยังไม่ได้จดทะเบียน VAT — ตัวเลขนี้เป็นการประมาณไว้ดูเฉยๆ ยังไม่ได้เก็บเงินลูกค้าจริง
+          </p>
+        )}
       </div>
 
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">

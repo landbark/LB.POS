@@ -10,7 +10,7 @@ export default async function POSPage() {
       .from('products')
       .select(`
         *,
-        categories(name),
+        categories(name, vat_applicable),
         product_lots(id, quantity, expiry_date, lot_number)
       `)
       .eq('active', true)

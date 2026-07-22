@@ -24,6 +24,8 @@ export interface StaffEmail {
 export interface Category {
   id: string
   name: string
+  /** หมวดนี้เป็นสินค้าที่ต้องเสีย VAT ไหม — ใช้เป็นค่าตั้งต้นให้สินค้าในหมวด */
+  vat_applicable: boolean
   created_at: string
 }
 
@@ -44,6 +46,8 @@ export interface Product {
   cost: number | null
   unit: string
   min_stock: number
+  /** null = ใช้ตามหมวดหมู่, true/false = ตั้งแยกเฉพาะสินค้าตัวนี้ */
+  vat_applicable: boolean | null
   image_url: string | null
   active: boolean
   created_at: string
@@ -103,6 +107,9 @@ export interface StoreSettings {
   logo_url: string | null
   promptpay_id: string | null
   payment_qr_url: string | null
+  /** ร้านจดทะเบียน VAT แล้วหรือยัง — ปิดอยู่ = ไม่แสดง VAT บนใบเสร็จเลย */
+  vat_registered: boolean
+  vat_rate: number
   updated_at: string
 }
 
@@ -211,6 +218,8 @@ export interface TransactionItem {
   unit_price: number
   discount: number
   subtotal: number
+  /** บันทึกไว้ตอนขาย ไม่ใช่ดูจากสินค้าตอนนี้ — สินค้าอาจถูกย้ายหมวด/แก้ทีหลัง */
+  vat_applicable: boolean
   created_at: string
   products?: Product
 }

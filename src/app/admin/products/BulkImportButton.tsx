@@ -8,7 +8,7 @@ import toast from 'react-hot-toast'
 import { parseCsv, downloadCsv, headerIndexer, parseDateCell } from '@/lib/csv'
 import type { Category, Unit } from '@/lib/types'
 
-const HEADERS = ['ชื่อสินค้า', 'SKU', 'บาร์โค้ด', 'หมวดหมู่', 'หน่วย', 'ราคาขาย', 'ราคาทุน', 'แจ้งเตือนสต็อคต่ำกว่า', 'ซัพพลายเออร์', 'จำนวนคงเหลือ', 'LOT', 'วันหมดอายุ']
+const HEADERS = ['ชื่อสินค้า', 'SKU', 'บาร์โค้ด', 'หมวดหมู่', 'หน่วย', 'ราคาขาย', 'ราคาทุน', 'แจ้งเตือนสต็อคต่ำกว่า', 'ซัพพลายเออร์', 'จำนวนคงเหลือ', 'LOT', 'วันหมดอายุ', 'VAT']
 
 interface DraftRow {
   rowNum: number
@@ -23,6 +23,8 @@ interface DraftRow {
   supplier: string
   quantity: string
   lotNumber: string
+  /** null = ตามหมวดหมู่ */
+  vat: boolean | null
   /** วันหมดอายุที่แปลงเป็น YYYY-MM-DD แล้ว (null = ไม่ระบุ) */
   expiry: string | null
   error: string | null
@@ -35,12 +37,21 @@ interface ImportResult {
   message: string
 }
 
+// ช่อง VAT: ว่าง = ตามหมวดหมู่ (null), มี/ไม่มี = ตั้งแยกรายสินค้า, undefined = พิมพ์ผิด
+function parseVatCell(v: string): boolean | null | undefined {
+  const s = v.trim().toLowerCase()
+  if (!s) return null
+  if (['มี', 'มี vat', 'vat', 'yes', 'y', 'true', '1'].includes(s)) return true
+  if (['ไม่มี', 'ไม่มี vat', 'no', 'n', 'false', '0', '-'].includes(s)) return false
+  return undefined
+}
+
 function downloadTemplate() {
   downloadCsv(
     [
       HEADERS,
-      ['อาหารแมว Royal Canin 1kg', 'LB-CAT-001', '8850000000001', 'อาหารสัตว์', 'ถุง', '450', '350', '5', '', '12', '', '31/12/2027'],
-      ['ทรายแมว 10L', '', '', 'ทรายแมว', 'ถุง', '250', '180', '3', '', '8', '', ''],
+      ['อาหารแมว Royal Canin 1kg', 'LB-CAT-001', '8850000000001', 'อาหารสัตว์', 'ถุง', '450', '350', '5', '', '12', '', '31/12/2027', ''],
+      ['ทรายแมว 10L', '', '', 'ทรายแมว', 'ถุง', '250', '180', '3', '', '8', '', '', 'ไม่มี'],
     ],
     'landbark-สินค้า-template.csv',
   )
@@ -98,6 +109,7 @@ export default function BulkImportButton({ categories, units, suppliers, userId 
       quantity: idx('จำนวนคงเหลือ'),
       lotNumber: idx('LOT'),
       expiry: idx('วันหมดอายุ'),
+      vat: idx('VAT'),
     }
     const get = (r: string[], i: number) => (i >= 0 ? (r[i] ?? '').trim() : '')
 
@@ -106,11 +118,13 @@ export default function BulkImportButton({ categories, units, suppliers, userId 
       const price = get(r, col.price)
       const quantity = get(r, col.quantity)
       const expiry = parseDateCell(get(r, col.expiry))
+      const vat = parseVatCell(get(r, col.vat))
       let error: string | null = null
       if (!name) error = 'ไม่มีชื่อสินค้า'
       else if (!price || isNaN(parseFloat(price)) || parseFloat(price) < 0) error = 'ราคาขายไม่ถูกต้อง'
       else if (quantity && (!/^\d+$/.test(quantity) || parseInt(quantity) < 0)) error = 'จำนวนคงเหลือต้องเป็นจำนวนเต็ม'
       else if (expiry === undefined) error = 'วันหมดอายุไม่ถูกต้อง (ใช้ วว/ดด/ปปปป)'
+      else if (vat === undefined) error = 'ช่อง VAT ใส่ได้แค่ มี / ไม่มี (เว้นว่าง = ตามหมวดหมู่)'
 
       return {
         rowNum: i + 2,
@@ -126,6 +140,7 @@ export default function BulkImportButton({ categories, units, suppliers, userId 
         quantity,
         lotNumber: get(r, col.lotNumber),
         expiry: expiry ?? null,
+        vat: vat ?? null,
         error,
       }
     })
@@ -179,6 +194,7 @@ export default function BulkImportButton({ categories, units, suppliers, userId 
         cost: d.cost ? parseFloat(d.cost) : null,
         unit: unitName,
         min_stock: d.minStock ? parseInt(d.minStock) : 5,
+        vat_applicable: d.vat,
       }).select('id').single()
 
       if (error || !product) {
@@ -263,6 +279,9 @@ export default function BulkImportButton({ categories, units, suppliers, userId 
                     ใส่ <span className="font-medium">จำนวนคงเหลือ</span> ได้เลย — ระบบจะสร้าง lot ตั้งต้นให้พร้อมบันทึกประวัติสต็อค
                     (ใส่ <span className="font-medium">LOT</span> / <span className="font-medium">วันหมดอายุ</span> ด้วยก็ได้ ถ้าเว้นว่างจะเป็น lot ไม่มีวันหมดอายุ)
                     เว้นว่างไว้ = สินค้าคงเหลือ 0 ค่อยรับเข้าทีหลัง
+                  </p>
+                  <p className="text-sm text-gray-600">
+                    ช่อง <span className="font-medium">VAT</span> เว้นว่าง = ใช้ตามหมวดหมู่ (ปกติใช้อันนี้) หรือพิมพ์ <span className="font-medium">มี</span> / <span className="font-medium">ไม่มี</span> เพื่อตั้งแยกเฉพาะสินค้าตัวนั้น
                   </p>
                   <button
                     onClick={downloadTemplate}

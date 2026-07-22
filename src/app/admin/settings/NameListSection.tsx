@@ -9,6 +9,7 @@ import toast from 'react-hot-toast'
 interface Item {
   id: string
   name: string
+  vat_applicable?: boolean
 }
 
 interface Props {
@@ -17,10 +18,12 @@ interface Props {
   items: Item[]
   placeholder: string
   deleteHint: string
+  /** โชว์ช่องติ๊ก VAT ต่อรายการ (ใช้กับหมวดหมู่เท่านั้น) */
+  showVat?: boolean
 }
 
 // จัดการรายการชื่ออย่างเดียว (หน่วยสินค้า / หมวดหมู่)
-export default function NameListSection({ title, table, items, placeholder, deleteHint }: Props) {
+export default function NameListSection({ title, table, items, placeholder, deleteHint, showVat }: Props) {
   const router = useRouter()
   const [newName, setNewName] = useState('')
   const [loading, setLoading] = useState(false)
@@ -40,6 +43,19 @@ export default function NameListSection({ title, table, items, placeholder, dele
     }
     toast.success(`เพิ่ม "${name}" แล้ว`)
     setNewName('')
+    router.refresh()
+  }
+
+  // ติ๊ก VAT แล้วบันทึกทันที — สินค้าในหมวดที่ไม่ได้ตั้งค่าเองจะเปลี่ยนตาม
+  async function toggleVat(item: Item, next: boolean) {
+    setLoading(true)
+    const supabase = createClient()
+    const { error } = await supabase.from(table).update({ vat_applicable: next }).eq('id', item.id)
+    setLoading(false)
+    if (error) {
+      toast.error('บันทึกไม่สำเร็จ: ' + error.message)
+      return
+    }
     router.refresh()
   }
 
@@ -86,6 +102,19 @@ export default function NameListSection({ title, table, items, placeholder, dele
         {items.map((item) => (
           <li key={item.id} className="flex items-center justify-between py-2 px-1 hover:bg-gray-50 rounded">
             <span className="text-sm text-gray-800">{item.name}</span>
+            <div className="flex items-center gap-3">
+              {showVat && (
+                <label className="flex items-center gap-1.5 text-xs text-gray-500 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={item.vat_applicable ?? false}
+                    disabled={loading}
+                    onChange={(e) => toggleVat(item, e.target.checked)}
+                    className="w-3.5 h-3.5 accent-blue-600"
+                  />
+                  มี VAT
+                </label>
+              )}
             <button
               onClick={() => handleDelete(item)}
               disabled={loading}
@@ -94,6 +123,7 @@ export default function NameListSection({ title, table, items, placeholder, dele
             >
               <Trash2 size={14} />
             </button>
+            </div>
           </li>
         ))}
         {items.length === 0 && (

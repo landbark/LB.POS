@@ -6,6 +6,7 @@ import { X, CheckCircle2, Printer } from 'lucide-react'
 import toast from 'react-hot-toast'
 import type { CartItem, Customer, PointsConfig, PaymentMethod } from '@/lib/types'
 import { POS_DISPLAY_CHANNEL, type PosDisplayMessage } from '@/lib/posDisplay'
+import { isVatApplicable } from '@/lib/vat'
 
 interface Props {
   cart: CartItem[]
@@ -162,6 +163,8 @@ export default function PaymentModal({
       unit_price: item.unit_price,
       discount: item.discount,
       subtotal: item.subtotal,
+      // เก็บสถานะ VAT ณ วันที่ขาย (ยังไม่ได้คิดเงิน VAT — ไว้ใช้ตอนจดทะเบียนแล้ว)
+      vat_applicable: isVatApplicable(item.product),
     }))
 
     await supabase.from('transaction_items').insert(itemInserts)
