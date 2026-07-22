@@ -158,6 +158,7 @@ INSERT INTO store_settings (name) VALUES ('LANDBARK');
 -- Points configuration
 CREATE TABLE points_config (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  enabled BOOLEAN NOT NULL DEFAULT true,
   spend_amount NUMERIC(10,2) NOT NULL DEFAULT 100,
   earn_points INT NOT NULL DEFAULT 1,
   redeem_points INT NOT NULL DEFAULT 100,

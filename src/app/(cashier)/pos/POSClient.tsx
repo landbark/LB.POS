@@ -205,7 +205,7 @@ export default function POSClient({ products, promotions, pointsConfig, cashierI
     if (data) {
       setCustomer(data)
       setShowAddCustomer(false)
-      toast.success(`พบลูกค้า: ${data.name} (${data.points} แต้ม)`)
+      toast.success(pointsConfig ? `พบลูกค้า: ${data.name} (${data.points} แต้ม)` : `พบลูกค้า: ${data.name}`)
     } else {
       toast.error('ไม่พบลูกค้า — เพิ่มใหม่ได้เลย')
       setShowAddCustomer(true)
@@ -281,7 +281,7 @@ export default function POSClient({ products, promotions, pointsConfig, cashierI
       subtotal,
       discount: totalDiscount,
       total,
-      customer: customer
+      customer: customer && pointsConfig
         ? { name: customer.name, pointsBefore: customer.points, pointsEarned: earnedPoints, pointsAfter: customer.points + earnedPoints }
         : null,
     }
@@ -412,7 +412,7 @@ export default function POSClient({ products, promotions, pointsConfig, cashierI
             <div className="mt-2 flex items-center justify-between bg-blue-50 rounded-lg px-3 py-2">
               <div>
                 <p className="text-sm font-medium text-gray-900">{customer.name}</p>
-                <p className="text-xs text-blue-600">{customer.points} แต้ม</p>
+                {pointsConfig && <p className="text-xs text-blue-600">{customer.points} แต้ม</p>}
               </div>
               <button
                 onClick={() => { setCustomer(null); setCustomerPhone(''); setShowAddCustomer(false) }}

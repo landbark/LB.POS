@@ -10,6 +10,8 @@ import type { PointsConfig } from '@/lib/types'
 export default function PointsSection({ config }: { config: PointsConfig | null }) {
   const router = useRouter()
   const [loading, setLoading] = useState(false)
+  const [enabled, setEnabled] = useState(config?.enabled ?? true)
+  const [toggling, setToggling] = useState(false)
   const [form, setForm] = useState({
     spend_amount: config?.spend_amount?.toString() ?? '100',
     earn_points: config?.earn_points?.toString() ?? '1',
@@ -21,9 +23,29 @@ export default function PointsSection({ config }: { config: PointsConfig | null 
     setForm((prev) => ({ ...prev, [key]: value }))
   }
 
+  // สลับเปิด/ปิดแล้วบันทึกทันที ไม่ต้องกดปุ่มบันทึกซ้ำ
+  async function toggleEnabled(next: boolean) {
+    if (!config) return
+    setToggling(true)
+    setEnabled(next)
+    const supabase = createClient()
+    const { error } = await supabase
+      .from('points_config')
+      .update({ enabled: next, updated_at: new Date().toISOString() })
+      .eq('id', config.id)
+    setToggling(false)
+    if (error) {
+      setEnabled(!next)
+      toast.error('บันทึกไม่สำเร็จ: ' + error.message)
+      return
+    }
+    toast.success(next ? 'เปิดระบบสะสมแต้มแล้ว' : 'ปิดระบบสะสมแต้มแล้ว')
+    router.refresh()
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    if (!config) return
+    if (!config || !enabled) return
     setLoading(true)
     const supabase = createClient()
     const { error } = await supabase
@@ -55,11 +77,31 @@ export default function PointsSection({ config }: { config: PointsConfig | null 
         <h2 className="text-lg font-semibold text-gray-900">แต้มสะสม</h2>
       </div>
       <p className="text-xs text-gray-500 mb-4">
-        ตอนนี้: ซื้อครบ ฿{form.spend_amount || '—'} ได้ {form.earn_points || '—'} แต้ม
-        และใช้ {form.redeem_points || '—'} แต้มแทนเงินได้ ฿{form.redeem_value || '—'}
+        {enabled ? (
+          <>
+            ตอนนี้: ซื้อครบ ฿{form.spend_amount || '—'} ได้ {form.earn_points || '—'} แต้ม
+            และใช้ {form.redeem_points || '—'} แต้มแทนเงินได้ ฿{form.redeem_value || '—'}
+          </>
+        ) : (
+          'ปิดอยู่ — หน้าขายจะไม่คิดแต้มให้ลูกค้าและใช้แต้มแทนเงินไม่ได้ (แต้มที่ลูกค้าสะสมไว้แล้วยังอยู่ครบ เปิดกลับมาเมื่อไหร่ก็ใช้ได้)'
+        )}
       </p>
 
-      <form onSubmit={handleSubmit} className="grid grid-cols-2 md:grid-cols-5 gap-4 items-end">
+      <label className="flex items-center gap-2 text-sm text-gray-700 mb-4 cursor-pointer w-fit">
+        <input
+          type="checkbox"
+          checked={enabled}
+          disabled={!config || toggling}
+          onChange={(e) => toggleEnabled(e.target.checked)}
+          className="w-4 h-4 accent-blue-600"
+        />
+        เปิดใช้ระบบสะสมแต้ม
+      </label>
+
+      <form
+        onSubmit={handleSubmit}
+        className={`grid grid-cols-2 md:grid-cols-5 gap-4 items-end ${enabled ? '' : 'opacity-50 pointer-events-none'}`}
+      >
         <div>
           <label className={labelClass}>ยอดซื้อ (บาท)</label>
           <input

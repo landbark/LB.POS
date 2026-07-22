@@ -76,7 +76,8 @@ export default function PaymentModal({
     ? Math.floor(finalTotal / pointsConfig.spend_amount) * pointsConfig.earn_points
     : 0
 
-  const displayCustomer = customer
+  // ปิดระบบแต้ม (pointsConfig = null) → ไม่ต้องขึ้นการ์ดแต้มบนจอลูกค้า
+  const displayCustomer = customer && pointsConfig
     ? { name: customer.name, pointsBefore: customer.points, pointsEarned: earnedPoints, pointsAfter: customer.points + earnedPoints - usePoints }
     : null
 

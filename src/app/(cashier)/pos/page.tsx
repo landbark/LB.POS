@@ -25,11 +25,14 @@ export default async function POSPage() {
     supabase.from('store_settings').select('promptpay_id').limit(1).single(),
   ])
 
+  // ปิดระบบแต้ม = ส่ง null ลงไป หน้าขายจะไม่คิด/ไม่ให้ใช้แต้มเลย (แต้มเดิมของลูกค้ายังอยู่)
+  const activePointsConfig = pointsConfig?.enabled === false ? null : pointsConfig
+
   return (
     <POSClient
       products={products ?? []}
       promotions={promotions ?? []}
-      pointsConfig={pointsConfig}
+      pointsConfig={activePointsConfig}
       cashierId={user?.id ?? ''}
       promptpayId={storeSettings?.promptpay_id ?? null}
     />

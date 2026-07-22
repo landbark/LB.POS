@@ -144,6 +144,7 @@ export interface Customer {
 
 export interface PointsConfig {
   id: string
+  enabled: boolean
   spend_amount: number
   earn_points: number
   redeem_points: number
@@ -228,6 +229,32 @@ export interface Shift {
   created_at: string
   opener?: { name: string } | null
   closer?: { name: string } | null
+}
+
+export type MarketplacePlatform = 'shopee' | 'tiktok' | 'lazada'
+
+// ข้อมูล channel แบบไม่มีความลับ (ไม่มี partner_key/access_token/refresh_token) — ใช้แสดงผลฝั่ง client
+export interface MarketplaceChannel {
+  id: string
+  platform: MarketplacePlatform
+  shop_id: string | null
+  shop_name: string | null
+  active: boolean
+  connected: boolean
+  updated_at: string
+}
+
+export interface ProductMarketplaceLink {
+  id: string
+  product_id: string
+  channel_id: string
+  external_item_id: string
+  external_model_id: string | null
+  external_name: string | null
+  sync_enabled: boolean
+  last_synced_stock: number | null
+  last_synced_at: string | null
+  created_at: string
 }
 
 // Cart types for POS
