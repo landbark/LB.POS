@@ -194,6 +194,70 @@ export interface Pet {
   customers?: Customer
 }
 
+/** open = หมอยังบันทึกอยู่, pending_payment = รอแคชเชียร์เก็บเงิน, paid = เก็บเงินแล้ว */
+export type VisitStatus = 'open' | 'pending_payment' | 'paid' | 'cancelled'
+
+export const VISIT_STATUS_LABELS: Record<VisitStatus, string> = {
+  open: 'กำลังตรวจ',
+  pending_payment: 'รอเก็บเงิน',
+  paid: 'เก็บเงินแล้ว',
+  cancelled: 'ยกเลิก',
+}
+
+export interface Visit {
+  id: string
+  visit_number: string
+  pet_id: string
+  customer_id: string | null
+  vet_id: string | null
+  visit_date: string
+  weight: number | null
+  temperature: number | null
+  heart_rate: number | null
+  resp_rate: number | null
+  symptoms: string | null
+  diagnosis: string | null
+  treatment: string | null
+  notes: string | null
+  follow_up_date: string | null
+  status: VisitStatus
+  transaction_id: string | null
+  created_by: string | null
+  created_at: string
+  pets?: Pet
+  customers?: Customer
+  vet?: { name: string } | null
+  visit_items?: VisitItem[]
+}
+
+export interface VisitItem {
+  id: string
+  visit_id: string
+  product_id: string | null
+  quantity: number
+  unit_price: number
+  /** วิธีใช้ยา — พิมพ์ลงใบสรุปการรักษา */
+  dosage: string | null
+  created_at: string
+  products?: Product
+}
+
+/** รายการจากคลินิกที่ส่งมารอเก็บเงินที่หน้าขาย (ผูก product เต็มก้อนมาแล้วเพื่อตัดสต็อค FEFO ได้) */
+export interface ClinicQueueItem {
+  quantity: number
+  unit_price: number
+  dosage: string | null
+  product: Product
+}
+
+export interface ClinicQueueVisit {
+  id: string
+  visit_number: string
+  pet_name: string
+  customer: Customer | null
+  items: ClinicQueueItem[]
+}
+
 export interface PointsConfig {
   id: string
   enabled: boolean

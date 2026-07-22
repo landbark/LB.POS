@@ -84,6 +84,23 @@ BEGIN
 END;
 $$;
 
+-- เลขที่เวชระเบียน OPD + วันเดือนปีค.ศ. (เวลาไทย) + ลำดับ 4 หลัก รีเซ็ตรายวัน
+CREATE OR REPLACE FUNCTION public.next_visit_number()
+RETURNS text
+SECURITY DEFINER SET search_path = public
+LANGUAGE plpgsql AS $$
+DECLARE
+  prefix text := 'OPD' || to_char(now() AT TIME ZONE 'Asia/Bangkok', 'DDMMYYYY');
+  seq int;
+BEGIN
+  SELECT COALESCE(MAX(SUBSTRING(visit_number FROM 12)::int), 0) + 1
+  INTO seq
+  FROM visits
+  WHERE visit_number LIKE prefix || '%';
+  RETURN prefix || LPAD(seq::text, 4, '0');
+END;
+$$;
+
 -- Categories
 CREATE TABLE categories (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -174,6 +191,40 @@ CREATE TABLE pets (
   notes TEXT,
   photo_url TEXT,
   active BOOLEAN NOT NULL DEFAULT true,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- เวชระเบียน OPD — ยาที่จ่ายจะถูกส่งไปเก็บเงินที่หน้าขาย (สต็อคตัดตอนจ่ายเงิน)
+CREATE TABLE visits (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  visit_number TEXT NOT NULL UNIQUE,
+  pet_id UUID NOT NULL REFERENCES pets(id) ON DELETE CASCADE,
+  -- เจ้าของ ณ วันที่มาตรวจ (เก็บแยกจาก pets.customer_id เผื่อเปลี่ยนมือทีหลัง)
+  customer_id UUID REFERENCES customers(id) ON DELETE SET NULL,
+  vet_id UUID REFERENCES profiles(id) ON DELETE SET NULL,
+  visit_date TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  weight NUMERIC(6,2),
+  temperature NUMERIC(4,1),
+  heart_rate INT,
+  resp_rate INT,
+  symptoms TEXT,
+  diagnosis TEXT,
+  treatment TEXT,
+  notes TEXT,
+  follow_up_date DATE,
+  status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'pending_payment', 'paid', 'cancelled')),
+  transaction_id UUID REFERENCES transactions(id) ON DELETE SET NULL,
+  created_by UUID REFERENCES profiles(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE visit_items (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  visit_id UUID NOT NULL REFERENCES visits(id) ON DELETE CASCADE,
+  product_id UUID REFERENCES products(id) ON DELETE SET NULL,
+  quantity INT NOT NULL CHECK (quantity > 0),
+  unit_price NUMERIC(10,2) NOT NULL,
+  dosage TEXT,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -362,9 +413,13 @@ ALTER TABLE staff_emails ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "admin manage staff_emails" ON staff_emails FOR ALL TO authenticated
   USING (public.is_admin());
 
--- คลินิก
+-- คลินิก — หมอต้องเขียนได้ จึงไม่อยู่ในลิสต์ RESTRICTIVE ข้างล่าง
 ALTER TABLE pets ENABLE ROW LEVEL SECURITY;
+ALTER TABLE visits ENABLE ROW LEVEL SECURITY;
+ALTER TABLE visit_items ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "auth manage pets" ON pets FOR ALL TO authenticated USING (true);
+CREATE POLICY "auth manage visits" ON visits FOR ALL TO authenticated USING (true);
+CREATE POLICY "auth manage visit_items" ON visit_items FOR ALL TO authenticated USING (true);
 
 -- สัตวแพทย์: อ่านได้ทุกอย่าง เขียนได้เฉพาะงานคลินิก/ลูกค้า
 -- policy ข้างบนเป็น permissive (OR กัน) เติมเงื่อนไขเข้าไปทีละอันไม่ได้ผล — ใช้ RESTRICTIVE ซ้อน (AND กับทุก policy)
@@ -396,6 +451,10 @@ CREATE INDEX idx_customers_phone ON customers(phone);
 CREATE INDEX idx_stock_movements_product_id ON stock_movements(product_id, created_at DESC);
 CREATE INDEX idx_pets_customer_id ON pets(customer_id);
 CREATE INDEX idx_pets_name ON pets(name);
+CREATE INDEX idx_visits_pet_id ON visits(pet_id, visit_date DESC);
+CREATE INDEX idx_visits_status ON visits(status);
+CREATE INDEX idx_visits_visit_date ON visits(visit_date DESC);
+CREATE INDEX idx_visit_items_visit_id ON visit_items(visit_id);
 
 -- Sample categories
 INSERT INTO categories (name) VALUES

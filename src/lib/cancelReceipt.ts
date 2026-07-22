@@ -98,5 +98,11 @@ export async function cancelReceipt({
     })
     .eq('id', transactionId)
 
+  // บิลนี้มาจากคลินิก → ส่งเวชระเบียนกลับเข้าคิวรอเก็บเงิน (ไม่งั้นจะค้างเป็น "เก็บเงินแล้ว" ทั้งที่บิลถูกยกเลิก)
+  await supabase
+    .from('visits')
+    .update({ status: 'pending_payment', transaction_id: null })
+    .eq('transaction_id', transactionId)
+
   return { error: updateError?.message ?? null }
 }

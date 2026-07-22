@@ -17,6 +17,8 @@ interface Props {
   pointsConfig: PointsConfig | null
   cashierId: string
   promptpayId: string | null
+  /** เก็บเงินให้เวชระเบียนคลินิกใบไหน — จ่ายเสร็จจะ mark เป็น paid พร้อมผูกเลขที่บิล */
+  visitId: string | null
   onClose: () => void
   onSuccess: () => void
 }
@@ -29,7 +31,7 @@ const PAYMENT_LABELS: Record<Exclude<PaymentMethod, 'qr'>, string> = {
 }
 
 export default function PaymentModal({
-  cart, subtotal, totalDiscount, total, customer, pointsConfig, cashierId, promptpayId, onClose, onSuccess,
+  cart, subtotal, totalDiscount, total, customer, pointsConfig, cashierId, promptpayId, visitId, onClose, onSuccess,
 }: Props) {
   const [method, setMethod] = useState<PaymentMethod>('cash')
   const [cashReceived, setCashReceived] = useState('')
@@ -198,6 +200,14 @@ export default function PaymentModal({
         })
         remaining -= deduct
       }
+    }
+
+    // ปิดเวชระเบียนคลินิกที่เพิ่งเก็บเงิน — ผูกกับบิลไว้เพื่อพิมพ์ใบเสร็จซ้ำ/คืนสถานะตอนยกเลิกบิล
+    if (visitId) {
+      await supabase
+        .from('visits')
+        .update({ status: 'paid', transaction_id: tx.id })
+        .eq('id', visitId)
     }
 
     // Update customer points + credit

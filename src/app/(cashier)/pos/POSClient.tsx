@@ -1,10 +1,11 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
+import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { Search, X, Plus, Minus, ShoppingCart, User, MonitorPlay } from 'lucide-react'
+import { Search, X, Plus, Minus, ShoppingCart, User, MonitorPlay, Stethoscope } from 'lucide-react'
 import toast from 'react-hot-toast'
-import type { Product, CartItem, Promotion, PointsConfig, Customer, PaymentMethod } from '@/lib/types'
+import type { Product, CartItem, Promotion, PointsConfig, Customer, PaymentMethod, ClinicQueueVisit } from '@/lib/types'
 import { POS_DISPLAY_CHANNEL, type PosDisplayMessage } from '@/lib/posDisplay'
 import PaymentModal from './PaymentModal'
 
@@ -14,9 +15,14 @@ interface Props {
   pointsConfig: PointsConfig | null
   cashierId: string
   promptpayId: string | null
+  clinicQueue: ClinicQueueVisit[]
 }
 
-export default function POSClient({ products, promotions, pointsConfig, cashierId, promptpayId }: Props) {
+export default function POSClient({ products, promotions, pointsConfig, cashierId, promptpayId, clinicQueue }: Props) {
+  const router = useRouter()
+  // เวชระเบียนที่กำลังเก็บเงินอยู่ — จ่ายเสร็จแล้วจะถูก mark เป็น paid พร้อมผูกเลขที่บิล
+  const [activeVisit, setActiveVisit] = useState<ClinicQueueVisit | null>(null)
+  const [showQueue, setShowQueue] = useState(false)
   const [search, setSearch] = useState('')
   const [cart, setCart] = useState<CartItem[]>([])
   const [customer, setCustomer] = useState<Customer | null>(null)
@@ -145,6 +151,30 @@ export default function POSClient({ products, promotions, pointsConfig, cashierI
         },
       ])
     }
+  }
+
+  // ดึงรายการที่หมอสั่งจ่ายเข้าตะกร้า — ราคาใช้ตามที่บันทึกไว้ในเวชระเบียน ไม่ใช่ราคาสินค้าปัจจุบัน
+  function loadVisit(visit: ClinicQueueVisit) {
+    if (cart.length > 0 && !confirm('ตะกร้ามีของอยู่แล้ว — แทนที่ด้วยรายการจากคลินิก?')) return
+
+    const short = visit.items.filter((i) => !i.product.is_service && getProductStock(i.product) < i.quantity)
+    if (short.length > 0) {
+      toast.error(`สต็อคไม่พอ: ${short.map((i) => i.product.name).join(', ')}`)
+    }
+
+    setCart(visit.items.map((i) => ({
+      product: i.product,
+      quantity: i.quantity,
+      unit_price: i.unit_price,
+      discount: 0,
+      subtotal: i.unit_price * i.quantity,
+      lot_id: getBestLot(i.product),
+    })))
+    setCustomer(visit.customer)
+    setCustomerPhone(visit.customer?.phone ?? '')
+    setShowAddCustomer(false)
+    setActiveVisit(visit)
+    setShowQueue(false)
   }
 
   function changeQty(index: number, delta: number) {
@@ -382,6 +412,37 @@ export default function POSClient({ products, promotions, pointsConfig, cashierI
 
       {/* Right: Cart */}
       <div className="w-80 bg-white border-l border-gray-200 flex flex-col">
+        {/* คิวเก็บเงินจากคลินิก */}
+        {clinicQueue.length > 0 && !activeVisit && (
+          <div className="px-3 pt-3">
+            <button
+              onClick={() => setShowQueue(true)}
+              className="w-full flex items-center justify-center gap-2 bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-800 text-sm font-medium py-2 rounded-lg transition-colors"
+            >
+              <Stethoscope size={15} />
+              รอเก็บเงินจากคลินิก ({clinicQueue.length})
+            </button>
+          </div>
+        )}
+        {activeVisit && (
+          <div className="px-3 pt-3">
+            <div className="flex items-center justify-between gap-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+              <div className="min-w-0">
+                <p className="text-xs font-medium text-amber-800 truncate">
+                  คลินิก: {activeVisit.pet_name || 'ไม่ระบุสัตว์'}
+                </p>
+                <p className="text-[11px] text-amber-600 font-mono">{activeVisit.visit_number}</p>
+              </div>
+              <button
+                onClick={() => { setActiveVisit(null); setCart([]) }}
+                title="ยกเลิกการเก็บเงินรายการนี้"
+                className="text-amber-500 hover:text-amber-700 shrink-0"
+              >
+                <X size={14} />
+              </button>
+            </div>
+          </div>
+        )}
         {/* จอสอง */}
         <div className="px-3 pt-3">
           <button
@@ -557,6 +618,7 @@ export default function POSClient({ products, promotions, pointsConfig, cashierI
           pointsConfig={pointsConfig}
           cashierId={cashierId}
           promptpayId={promptpayId}
+          visitId={activeVisit?.id ?? null}
           onClose={() => setShowPayment(false)}
           onSuccess={() => {
             setCart([])
@@ -564,9 +626,57 @@ export default function POSClient({ products, promotions, pointsConfig, cashierI
             setCustomerPhone('')
             setShowAddCustomer(false)
             setShowPayment(false)
+            setActiveVisit(null)
             toast.success('บันทึกการขายแล้ว')
+            // คิวคลินิกอยู่ฝั่ง server — ต้อง refresh ไม่งั้นรายการที่เพิ่งเก็บเงินยังค้างอยู่
+            router.refresh()
           }}
         />
+      )}
+
+      {/* คิวเก็บเงินจากคลินิก */}
+      {showQueue && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={() => setShowQueue(false)}>
+          <div className="bg-white rounded-2xl w-full max-w-lg shadow-2xl p-5" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+                <Stethoscope size={18} className="text-gray-400" /> รอเก็บเงินจากคลินิก
+              </h2>
+              <button onClick={() => setShowQueue(false)} className="p-1.5 text-gray-400 hover:text-gray-600">
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="max-h-96 overflow-y-auto divide-y divide-gray-50">
+              {clinicQueue.map((v) => {
+                const visitTotal = v.items.reduce((sum, i) => sum + i.unit_price * i.quantity, 0)
+                return (
+                  <button
+                    key={v.id}
+                    onClick={() => loadVisit(v)}
+                    className="w-full text-left px-2 py-3 hover:bg-gray-50"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-gray-900">
+                          {v.pet_name || 'ไม่ระบุสัตว์'}
+                          <span className="ml-2 text-xs text-gray-400">{v.customer?.name ?? 'ไม่มีเจ้าของในระบบ'}</span>
+                        </p>
+                        <p className="text-xs text-gray-400 font-mono">{v.visit_number} · {v.items.length} รายการ</p>
+                      </div>
+                      <p className="text-sm font-semibold text-gray-900 shrink-0">
+                        ฿{visitTotal.toLocaleString('th-TH', { minimumFractionDigits: 2 })}
+                      </p>
+                    </div>
+                  </button>
+                )
+              })}
+              {clinicQueue.length === 0 && (
+                <p className="py-8 text-center text-sm text-gray-400">ไม่มีรายการรอเก็บเงิน</p>
+              )}
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )
