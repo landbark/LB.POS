@@ -27,6 +27,8 @@ export default function NameListSection({ title, table, items, placeholder, dele
   const router = useRouter()
   const [newName, setNewName] = useState('')
   const [loading, setLoading] = useState(false)
+  // ติ๊กแล้วต้องเห็นผลทันที ไม่ต้องรอ DB ตอบ + router.refresh() (เดิมกดแล้วค้างเป็นวินาที)
+  const [vatOverrides, setVatOverrides] = useState<Record<string, boolean>>({})
   const Icon = table === 'units' ? Ruler : Tag
 
   async function handleAdd(e: React.FormEvent) {
@@ -46,13 +48,20 @@ export default function NameListSection({ title, table, items, placeholder, dele
     router.refresh()
   }
 
+  const vatOf = (item: Item) => vatOverrides[item.id] ?? item.vat_applicable ?? false
+
   // ติ๊ก VAT แล้วบันทึกทันที — สินค้าในหมวดที่ไม่ได้ตั้งค่าเองจะเปลี่ยนตาม
   async function toggleVat(item: Item, next: boolean) {
-    setLoading(true)
+    setVatOverrides((prev) => ({ ...prev, [item.id]: next }))
     const supabase = createClient()
     const { error } = await supabase.from(table).update({ vat_applicable: next }).eq('id', item.id)
-    setLoading(false)
     if (error) {
+      // บันทึกไม่ผ่าน = คืนค่าเดิม ไม่ให้ค้างเป็นติ๊กหลอกๆ
+      setVatOverrides((prev) => {
+        const rest = { ...prev }
+        delete rest[item.id]
+        return rest
+      })
       toast.error('บันทึกไม่สำเร็จ: ' + error.message)
       return
     }
@@ -107,8 +116,7 @@ export default function NameListSection({ title, table, items, placeholder, dele
                 <label className="flex items-center gap-1.5 text-xs text-gray-500 cursor-pointer">
                   <input
                     type="checkbox"
-                    checked={item.vat_applicable ?? false}
-                    disabled={loading}
+                    checked={vatOf(item)}
                     onChange={(e) => toggleVat(item, e.target.checked)}
                     className="w-3.5 h-3.5 accent-blue-600"
                   />
