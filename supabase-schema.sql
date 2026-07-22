@@ -4,7 +4,7 @@
 -- Profiles (extends auth.users)
 CREATE TABLE profiles (
   id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
-  role TEXT NOT NULL CHECK (role IN ('admin', 'cashier')),
+  role TEXT NOT NULL CHECK (role IN ('admin', 'cashier', 'vet')),
   name TEXT NOT NULL,
   email TEXT,
   active BOOLEAN NOT NULL DEFAULT true,
@@ -16,7 +16,7 @@ CREATE TABLE staff_emails (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   email TEXT NOT NULL UNIQUE,
   name TEXT NOT NULL,
-  role TEXT NOT NULL DEFAULT 'cashier' CHECK (role IN ('admin', 'cashier')),
+  role TEXT NOT NULL DEFAULT 'cashier' CHECK (role IN ('admin', 'cashier', 'vet')),
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -59,6 +59,14 @@ LANGUAGE sql AS $$
   SELECT EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'admin');
 $$;
 
+-- helper เช็คสัตวแพทย์ — หมออ่านได้ทุกอย่าง แต่เขียนได้เฉพาะงานคลินิก/ลูกค้า (ดู RESTRICTIVE policy ท้ายไฟล์)
+CREATE OR REPLACE FUNCTION public.is_vet()
+RETURNS boolean
+SECURITY DEFINER SET search_path = public
+LANGUAGE sql AS $$
+  SELECT EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'vet');
+$$;
+
 -- เลขที่รายการขาย RC + วันเดือนปีค.ศ. (เวลาไทย) + ลำดับ 4 หลัก รีเซ็ตรายวัน
 CREATE OR REPLACE FUNCTION public.next_transaction_number()
 RETURNS text
@@ -82,6 +90,8 @@ CREATE TABLE categories (
   name TEXT NOT NULL UNIQUE,
   -- ค่าตั้งต้น VAT ของสินค้าในหมวด (สินค้าตั้งแยกเองทับได้)
   vat_applicable BOOLEAN NOT NULL DEFAULT false,
+  -- ของคลินิก (ยา/เวชภัณฑ์) — ไม่ขึ้นในหน้าขาย เลือกจ่ายได้เฉพาะในหน้าตรวจรักษา
+  clinic_only BOOLEAN NOT NULL DEFAULT false,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -117,6 +127,9 @@ CREATE TABLE products (
   min_stock INT NOT NULL DEFAULT 5 CHECK (min_stock >= 0),
   -- NULL = ใช้ตามหมวดหมู่
   vat_applicable BOOLEAN,
+  clinic_only BOOLEAN,
+  -- ค่าตรวจ/ค่าหัตถการ/ค่าผ่าตัด — ขายได้ตามปกติ แต่ไม่มีสต็อคให้ตัด
+  is_service BOOLEAN NOT NULL DEFAULT false,
   image_url TEXT,
   active BOOLEAN NOT NULL DEFAULT true,
   created_at TIMESTAMPTZ DEFAULT NOW()
@@ -141,6 +154,26 @@ CREATE TABLE customers (
   phone TEXT NOT NULL UNIQUE,
   points INT NOT NULL DEFAULT 0 CHECK (points >= 0),
   total_spent NUMERIC(12,2) NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- สัตว์เลี้ยง (คลินิก) — เจ้าของคือลูกค้าเดิมในระบบ POS
+CREATE TABLE pets (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  customer_id UUID NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  species TEXT NOT NULL DEFAULT 'dog' CHECK (species IN ('dog', 'cat', 'bird', 'rabbit', 'rodent', 'reptile', 'other')),
+  breed TEXT,
+  sex TEXT CHECK (sex IN ('male', 'female')),
+  birth_date DATE,
+  color TEXT,
+  microchip TEXT,
+  sterilized BOOLEAN NOT NULL DEFAULT false,
+  allergies TEXT,
+  chronic_conditions TEXT,
+  notes TEXT,
+  photo_url TEXT,
+  active BOOLEAN NOT NULL DEFAULT true,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -329,6 +362,30 @@ ALTER TABLE staff_emails ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "admin manage staff_emails" ON staff_emails FOR ALL TO authenticated
   USING (public.is_admin());
 
+-- คลินิก
+ALTER TABLE pets ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "auth manage pets" ON pets FOR ALL TO authenticated USING (true);
+
+-- สัตวแพทย์: อ่านได้ทุกอย่าง เขียนได้เฉพาะงานคลินิก/ลูกค้า
+-- policy ข้างบนเป็น permissive (OR กัน) เติมเงื่อนไขเข้าไปทีละอันไม่ได้ผล — ใช้ RESTRICTIVE ซ้อน (AND กับทุก policy)
+-- แยกตามคำสั่งเพราะ FOR ALL จะไปปิด SELECT ของหมอด้วย
+DO $$
+DECLARE
+  t text;
+BEGIN
+  FOREACH t IN ARRAY ARRAY[
+    'products', 'product_lots', 'categories', 'units', 'suppliers',
+    'purchases', 'purchase_items', 'transactions', 'transaction_items', 'stock_movements'
+  ] LOOP
+    EXECUTE format(
+      'CREATE POLICY "vet readonly insert" ON %I AS RESTRICTIVE FOR INSERT TO authenticated WITH CHECK (NOT public.is_vet())', t);
+    EXECUTE format(
+      'CREATE POLICY "vet readonly update" ON %I AS RESTRICTIVE FOR UPDATE TO authenticated USING (NOT public.is_vet())', t);
+    EXECUTE format(
+      'CREATE POLICY "vet readonly delete" ON %I AS RESTRICTIVE FOR DELETE TO authenticated USING (NOT public.is_vet())', t);
+  END LOOP;
+END $$;
+
 -- Indexes
 CREATE INDEX idx_products_barcode ON products(barcode) WHERE barcode IS NOT NULL;
 CREATE INDEX idx_product_lots_product_id ON product_lots(product_id);
@@ -337,6 +394,8 @@ CREATE INDEX idx_transactions_created_at ON transactions(created_at);
 CREATE INDEX idx_transactions_customer_id ON transactions(customer_id);
 CREATE INDEX idx_customers_phone ON customers(phone);
 CREATE INDEX idx_stock_movements_product_id ON stock_movements(product_id, created_at DESC);
+CREATE INDEX idx_pets_customer_id ON pets(customer_id);
+CREATE INDEX idx_pets_name ON pets(name);
 
 -- Sample categories
 INSERT INTO categories (name) VALUES

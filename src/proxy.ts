@@ -1,6 +1,9 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
+// หน้าแรกหลังเข้าระบบ — หมอเข้าหน้าขายไม่ได้ ให้ไปเมนูคลินิกแทน
+const homePath = (role?: string) => (role === 'vet' ? '/admin/pets' : '/pos')
+
 export async function proxy(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request })
 
@@ -58,13 +61,20 @@ export async function proxy(request: NextRequest) {
       return NextResponse.redirect(new URL('/no-access', request.url))
     }
     if (profile?.active !== false && pathname === '/no-access') {
-      return NextResponse.redirect(new URL('/pos', request.url))
+      return NextResponse.redirect(new URL(homePath(profile?.role), request.url))
     }
 
     // เฉพาะ admin: ภาพรวม / รายงาน / ตั้งค่า / โปรโมชั่น (RLS ก็บังคับ admin เท่านั้นอยู่แล้ว) — หน้าอื่นใต้ /admin cashier เข้าได้
     const adminOnlyPaths = ['/admin/dashboard', '/admin/reports', '/admin/settings', '/admin/promotions']
     if (adminOnlyPaths.some((p) => pathname.startsWith(p)) && profile?.role !== 'admin') {
-      return NextResponse.redirect(new URL('/pos', request.url))
+      return NextResponse.redirect(new URL(homePath(profile?.role), request.url))
+    }
+
+    // สัตวแพทย์: ทำงานคลินิก + ดูสินค้า/สต็อค/ลูกค้าได้ แต่ไม่ยุ่งกับการขาย/จัดซื้อ/เงิน
+    // (RLS ฝั่ง DB กันการเขียนไว้อีกชั้น — ตรงนี้แค่ไม่ให้หลงเข้าหน้าที่ใช้ไม่ได้)
+    const vetBlockedPaths = ['/pos', '/admin/receiving', '/admin/suppliers', '/admin/shift', '/admin/daily', '/admin/documents']
+    if (profile?.role === 'vet' && vetBlockedPaths.some((p) => pathname === p || pathname.startsWith(p + '/'))) {
+      return NextResponse.redirect(new URL(homePath('vet'), request.url))
     }
   }
 

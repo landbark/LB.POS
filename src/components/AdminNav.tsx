@@ -19,20 +19,23 @@ import {
   Wallet,
   CalendarDays,
   Bell,
+  PawPrint,
 } from 'lucide-react'
 
+// vetHidden = หน้าที่หมอเข้าไม่ได้ (proxy.ts กันไว้แล้ว ตรงนี้แค่ไม่ให้เห็นเมนู)
 const navItems = [
   { href: '/admin/dashboard', label: 'ภาพรวม', icon: LayoutDashboard, adminOnly: true },
-  { href: '/pos', label: 'หน้าขาย', icon: ShoppingCart, adminOnly: false },
+  { href: '/pos', label: 'หน้าขาย', icon: ShoppingCart, adminOnly: false, vetHidden: true },
+  { href: '/admin/pets', label: 'สัตว์เลี้ยง', icon: PawPrint, adminOnly: false },
   { href: '/admin/products', label: 'สินค้า', icon: Package, adminOnly: false },
   { href: '/admin/inventory', label: 'สต็อค', icon: Layers, adminOnly: false },
-  { href: '/admin/receiving', label: 'นำเข้าสินค้า', icon: PackagePlus, adminOnly: false },
-  { href: '/admin/suppliers', label: 'ซัพพลายเออร์', icon: Truck, adminOnly: false },
+  { href: '/admin/receiving', label: 'นำเข้าสินค้า', icon: PackagePlus, adminOnly: false, vetHidden: true },
+  { href: '/admin/suppliers', label: 'ซัพพลายเออร์', icon: Truck, adminOnly: false, vetHidden: true },
   { href: '/admin/customers', label: 'ลูกค้า', icon: Users, adminOnly: false },
   { href: '/admin/promotions', label: 'โปรโมชั่น', icon: Tag, adminOnly: true },
-  { href: '/admin/documents', label: 'เอกสาร', icon: FileText, adminOnly: false },
-  { href: '/admin/shift', label: 'ปิดกะ/เงินสด', icon: Wallet, adminOnly: false },
-  { href: '/admin/daily', label: 'สรุปรายวัน', icon: CalendarDays, adminOnly: false },
+  { href: '/admin/documents', label: 'เอกสาร', icon: FileText, adminOnly: false, vetHidden: true },
+  { href: '/admin/shift', label: 'ปิดกะ/เงินสด', icon: Wallet, adminOnly: false, vetHidden: true },
+  { href: '/admin/daily', label: 'สรุปรายวัน', icon: CalendarDays, adminOnly: false, vetHidden: true },
   { href: '/admin/reports', label: 'รายงาน', icon: BarChart2, adminOnly: true },
   { href: '/admin/notifications', label: 'แจ้งเตือน Telegram', icon: Bell, adminOnly: false },
   { href: '/admin/settings', label: 'ตั้งค่า', icon: Settings, adminOnly: true },
@@ -59,7 +62,10 @@ export default function AdminNav({ userName, role }: { userName: string; role: s
       {/* min-h-0 + overflow-y-auto: เมนูเยอะกว่าความสูงจอเมื่อไหร่ ให้ตัวเมนูเลื่อนเอง
           ไม่ใช่ดันปุ่มออกจากระบบตกขอบล่างไป */}
       <nav className="flex-1 min-h-0 overflow-y-auto py-4 space-y-0.5 px-2">
-        {navItems.filter((item) => role === 'admin' || !item.adminOnly).map(({ href, label, icon: Icon }) => {
+        {navItems
+          .filter((item) => role === 'admin' || !item.adminOnly)
+          .filter((item) => role !== 'vet' || !item.vetHidden)
+          .map(({ href, label, icon: Icon }) => {
           const active = (pathname.startsWith(href) && href !== '/pos') || pathname === href
           return (
             <Link

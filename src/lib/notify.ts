@@ -50,6 +50,8 @@ export async function gatherStockAlerts(
     .from('products')
     .select('name, unit, min_stock, product_lots(lot_number, quantity, expiry_date)')
     .eq('active', true)
+    // ค่าบริการไม่มีสต็อค — ไม่งั้นจะขึ้นเตือน "สต็อคต่ำ" ทุกวัน
+    .eq('is_service', false)
 
   const products = (data ?? []) as ProductWithLots[]
   const today = todayThai()

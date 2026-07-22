@@ -4,13 +4,15 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { ChevronDown, ChevronRight, Edit } from 'lucide-react'
 import DeleteProductButton from './DeleteProductButton'
+import { isClinicOnly } from '@/lib/clinic'
 import type { Product } from '@/lib/types'
 
 export default function ProductRow({ product }: { product: Product }) {
   const [expanded, setExpanded] = useState(false)
   const lots = product.product_lots ?? []
   const totalStock = lots.reduce((sum, lot) => sum + (lot.quantity ?? 0), 0)
-  const lowStock = totalStock <= product.min_stock
+  const lowStock = !product.is_service && totalStock <= product.min_stock
+  const clinicOnly = isClinicOnly(product)
   const today = new Date().toISOString().split('T')[0]
 
   return (
@@ -42,7 +44,11 @@ export default function ProductRow({ product }: { product: Product }) {
             )}
             <div>
               <p className="text-sm font-medium text-gray-900 hover:text-blue-600">{product.name}</p>
-              <p className="text-xs text-gray-500">{product.unit}</p>
+              <p className="text-xs text-gray-500">
+                {product.unit}
+                {clinicOnly && <span className="ml-1.5 text-amber-600">· ของคลินิก</span>}
+                {product.is_service && <span className="ml-1.5 text-gray-400">· บริการ</span>}
+              </p>
             </div>
           </button>
         </td>

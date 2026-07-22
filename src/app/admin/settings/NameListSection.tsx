@@ -6,10 +6,13 @@ import { createClient } from '@/lib/supabase/client'
 import { Ruler, Tag, Plus, Trash2 } from 'lucide-react'
 import toast from 'react-hot-toast'
 
+type Flag = 'vat_applicable' | 'clinic_only'
+
 interface Item {
   id: string
   name: string
   vat_applicable?: boolean
+  clinic_only?: boolean
 }
 
 interface Props {
@@ -18,7 +21,7 @@ interface Props {
   items: Item[]
   placeholder: string
   deleteHint: string
-  /** โชว์ช่องติ๊ก VAT ต่อรายการ (ใช้กับหมวดหมู่เท่านั้น) */
+  /** โชว์ช่องติ๊ก VAT + ของคลินิก ต่อรายการ (ใช้กับหมวดหมู่เท่านั้น) */
   showVat?: boolean
 }
 
@@ -28,7 +31,7 @@ export default function NameListSection({ title, table, items, placeholder, dele
   const [newName, setNewName] = useState('')
   const [loading, setLoading] = useState(false)
   // ติ๊กแล้วต้องเห็นผลทันที ไม่ต้องรอ DB ตอบ + router.refresh() (เดิมกดแล้วค้างเป็นวินาที)
-  const [vatOverrides, setVatOverrides] = useState<Record<string, boolean>>({})
+  const [overrides, setOverrides] = useState<Record<string, Partial<Record<Flag, boolean>>>>({})
   const Icon = table === 'units' ? Ruler : Tag
 
   async function handleAdd(e: React.FormEvent) {
@@ -48,18 +51,18 @@ export default function NameListSection({ title, table, items, placeholder, dele
     router.refresh()
   }
 
-  const vatOf = (item: Item) => vatOverrides[item.id] ?? item.vat_applicable ?? false
+  const flagOf = (item: Item, flag: Flag) => overrides[item.id]?.[flag] ?? item[flag] ?? false
 
-  // ติ๊ก VAT แล้วบันทึกทันที — สินค้าในหมวดที่ไม่ได้ตั้งค่าเองจะเปลี่ยนตาม
-  async function toggleVat(item: Item, next: boolean) {
-    setVatOverrides((prev) => ({ ...prev, [item.id]: next }))
+  // ติ๊กแล้วบันทึกทันที — สินค้าในหมวดที่ไม่ได้ตั้งค่าเองจะเปลี่ยนตาม
+  async function toggleFlag(item: Item, flag: Flag, next: boolean) {
+    setOverrides((prev) => ({ ...prev, [item.id]: { ...prev[item.id], [flag]: next } }))
     const supabase = createClient()
-    const { error } = await supabase.from(table).update({ vat_applicable: next }).eq('id', item.id)
+    const { error } = await supabase.from(table).update({ [flag]: next }).eq('id', item.id)
     if (error) {
       // บันทึกไม่ผ่าน = คืนค่าเดิม ไม่ให้ค้างเป็นติ๊กหลอกๆ
-      setVatOverrides((prev) => {
-        const rest = { ...prev }
-        delete rest[item.id]
+      setOverrides((prev) => {
+        const rest = { ...prev, [item.id]: { ...prev[item.id] } }
+        delete rest[item.id][flag]
         return rest
       })
       toast.error('บันทึกไม่สำเร็จ: ' + error.message)
@@ -113,15 +116,29 @@ export default function NameListSection({ title, table, items, placeholder, dele
             <span className="text-sm text-gray-800">{item.name}</span>
             <div className="flex items-center gap-3">
               {showVat && (
-                <label className="flex items-center gap-1.5 text-xs text-gray-500 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={vatOf(item)}
-                    onChange={(e) => toggleVat(item, e.target.checked)}
-                    className="w-3.5 h-3.5 accent-blue-600"
-                  />
-                  มี VAT
-                </label>
+                <>
+                  <label className="flex items-center gap-1.5 text-xs text-gray-500 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={flagOf(item, 'vat_applicable')}
+                      onChange={(e) => toggleFlag(item, 'vat_applicable', e.target.checked)}
+                      className="w-3.5 h-3.5 accent-blue-600"
+                    />
+                    มี VAT
+                  </label>
+                  <label
+                    className="flex items-center gap-1.5 text-xs text-gray-500 cursor-pointer"
+                    title="ยา/เวชภัณฑ์ — ไม่ขึ้นในหน้าขาย จ่ายได้จากหน้าตรวจรักษาเท่านั้น"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={flagOf(item, 'clinic_only')}
+                      onChange={(e) => toggleFlag(item, 'clinic_only', e.target.checked)}
+                      className="w-3.5 h-3.5 accent-blue-600"
+                    />
+                    ของคลินิก
+                  </label>
+                </>
               )}
             <button
               onClick={() => handleDelete(item)}

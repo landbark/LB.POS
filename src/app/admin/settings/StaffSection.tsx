@@ -123,6 +123,7 @@ export default function StaffSection({ staff, migrated }: Props) {
               className={inputClass}
             >
               <option value="cashier">พนักงานขาย</option>
+              <option value="vet">สัตวแพทย์</option>
               <option value="admin">เจ้าของร้าน</option>
             </select>
           </div>
@@ -169,6 +170,7 @@ export default function StaffSection({ staff, migrated }: Props) {
                     className="border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                   >
                     <option value="cashier">พนักงานขาย</option>
+                    <option value="vet">สัตวแพทย์</option>
                     <option value="admin">เจ้าของร้าน</option>
                   </select>
                 </td>

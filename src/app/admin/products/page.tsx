@@ -13,7 +13,7 @@ export default async function ProductsPage() {
       .from('products')
       .select(`
         *,
-        categories(name),
+        categories(name, clinic_only),
         product_lots(id, lot_number, expiry_date, quantity)
       `)
       .order('name'),

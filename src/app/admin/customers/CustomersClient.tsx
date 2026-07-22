@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Plus, Edit, Trash2, X, Check, Search } from 'lucide-react'
@@ -9,7 +10,14 @@ import type { Customer } from '@/lib/types'
 
 const emptyForm = { name: '', phone: '' }
 
-export default function CustomersClient({ customers }: { customers: Customer[] }) {
+export default function CustomersClient({
+  customers,
+  petNames,
+}: {
+  customers: Customer[]
+  /** customer_id → ชื่อสัตว์เลี้ยง (ทะเบียนคลินิก) */
+  petNames: Record<string, string[]>
+}) {
   const router = useRouter()
   const [showAdd, setShowAdd] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -131,6 +139,7 @@ export default function CustomersClient({ customers }: { customers: Customer[] }
             <tr>
               <th className="text-left text-xs font-medium text-gray-500 uppercase px-4 py-3">ชื่อ</th>
               <th className="text-left text-xs font-medium text-gray-500 uppercase px-4 py-3">เบอร์โทร</th>
+              <th className="text-left text-xs font-medium text-gray-500 uppercase px-4 py-3">สัตว์เลี้ยง</th>
               <th className="text-right text-xs font-medium text-gray-500 uppercase px-4 py-3">แต้มสะสม</th>
               <th className="text-right text-xs font-medium text-gray-500 uppercase px-4 py-3">เครดิต</th>
               <th className="text-right text-xs font-medium text-gray-500 uppercase px-4 py-3">ยอดซื้อสะสม</th>
@@ -142,12 +151,17 @@ export default function CustomersClient({ customers }: { customers: Customer[] }
             {filtered.map((c) => (
               editingId === c.id ? (
                 <tr key={c.id}>
-                  <td colSpan={7} className="px-4 py-3">{formCard}</td>
+                  <td colSpan={8} className="px-4 py-3">{formCard}</td>
                 </tr>
               ) : (
                 <tr key={c.id} className="hover:bg-gray-50">
                   <td className="px-4 py-3 text-sm font-medium text-gray-900">{c.name}</td>
                   <td className="px-4 py-3 text-sm text-gray-600 font-mono">{c.phone}</td>
+                  <td className="px-4 py-3 text-sm text-gray-600">
+                    {petNames[c.id]?.length
+                      ? <Link href="/admin/pets" className="hover:text-blue-600">{petNames[c.id].join(', ')}</Link>
+                      : <span className="text-gray-300">—</span>}
+                  </td>
                   <td className="px-4 py-3 text-sm text-right font-semibold text-blue-600">{c.points.toLocaleString('th-TH')}</td>
                   <td className="px-4 py-3 text-sm text-right font-semibold text-green-600">
                     {c.credit_balance > 0 ? `฿${c.credit_balance.toLocaleString('th-TH', { minimumFractionDigits: 2 })}` : '—'}
@@ -173,7 +187,7 @@ export default function CustomersClient({ customers }: { customers: Customer[] }
             ))}
             {filtered.length === 0 && (
               <tr>
-                <td colSpan={7} className="px-4 py-10 text-center text-sm text-gray-400">
+                <td colSpan={8} className="px-4 py-10 text-center text-sm text-gray-400">
                   {customers.length === 0
                     ? 'ยังไม่มีลูกค้า — เพิ่มได้ที่นี่ หรือพิมพ์เบอร์ลูกค้าที่หน้าขายเพื่อเพิ่มระหว่างขาย'
                     : 'ไม่พบลูกค้าที่ค้นหา'}

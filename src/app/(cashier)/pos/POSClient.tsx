@@ -61,11 +61,14 @@ export default function POSClient({ products, promotions, pointsConfig, cashierI
       p.name.toLowerCase().includes(search.toLowerCase()) ||
       (p.barcode && p.barcode.includes(search))
     const matchCategory = !categoryFilter || (p.categories as any)?.name === categoryFilter
-    const hasStock = (p.product_lots ?? []).reduce((s: number, l: any) => s + l.quantity, 0) > 0
+    // ค่าตรวจ/ค่าหัตถการไม่มีสต็อค — ขายได้เสมอ
+    const hasStock = p.is_service || (p.product_lots ?? []).reduce((s: number, l: any) => s + l.quantity, 0) > 0
     return matchSearch && matchCategory && hasStock
   })
 
   function getProductStock(product: Product): number {
+    // บริการ (ค่าตรวจ/ค่าหัตถการ) ไม่มีล็อตให้ตัด — ไม่จำกัดจำนวนที่ขายได้
+    if (product.is_service) return Infinity
     return (product.product_lots ?? []).reduce((s: number, l: any) => s + l.quantity, 0)
   }
 
@@ -362,7 +365,9 @@ export default function POSClient({ products, promotions, pointsConfig, cashierI
                   <p className="text-sm font-bold text-blue-600">
                     ฿{product.price.toLocaleString('th-TH', { minimumFractionDigits: 2 })}
                   </p>
-                  <p className="text-xs text-gray-400 mt-0.5">คงเหลือ {stock}</p>
+                  <p className="text-xs text-gray-400 mt-0.5">
+                    {product.is_service ? 'บริการ' : `คงเหลือ ${stock}`}
+                  </p>
                 </button>
               )
             })}

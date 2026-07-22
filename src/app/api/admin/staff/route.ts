@@ -2,6 +2,9 @@ import { NextResponse, type NextRequest } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 
+const ROLES = ['admin', 'cashier', 'vet']
+const normalizeRole = (role: unknown) => (ROLES.includes(role as string) ? (role as string) : 'cashier')
+
 // ตรวจว่า caller เป็น admin ก่อนใช้ service role ทุกครั้ง
 async function requireAdmin() {
   const supabase = await createClient()
@@ -38,7 +41,7 @@ export async function POST(request: NextRequest) {
   const body = await request.json()
   const email = (body.email ?? '').trim().toLowerCase()
   const name = (body.name ?? '').trim()
-  const role = body.role === 'admin' ? 'admin' : 'cashier'
+  const role = normalizeRole(body.role)
   const password = body.password?.trim() || null
 
   if (!email || !name) {
@@ -98,11 +101,11 @@ export async function PATCH(request: NextRequest) {
 
   if (body.role || body.name) {
     const updates: Record<string, string> = {}
-    if (body.role) updates.role = body.role === 'admin' ? 'admin' : 'cashier'
+    if (body.role) updates.role = normalizeRole(body.role)
     if (body.name) updates.name = body.name.trim()
 
     // กันลดสิทธิ์ตัวเอง (จะล็อกตัวเองออกจากหน้าตั้งค่า)
-    if (updates.role === 'cashier' && userId === user!.id) {
+    if (updates.role && updates.role !== 'admin' && userId === user!.id) {
       return NextResponse.json({ error: 'ไม่สามารถลดสิทธิ์ของตัวเองได้' }, { status: 400 })
     }
 

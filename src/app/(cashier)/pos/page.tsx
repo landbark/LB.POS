@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { isClinicOnly } from '@/lib/clinic'
 import POSClient from './POSClient'
 
 export default async function POSPage() {
@@ -10,7 +11,7 @@ export default async function POSPage() {
       .from('products')
       .select(`
         *,
-        categories(name, vat_applicable),
+        categories(name, vat_applicable, clinic_only),
         product_lots(id, quantity, expiry_date, lot_number)
       `)
       .eq('active', true)
@@ -28,9 +29,12 @@ export default async function POSPage() {
   // ปิดระบบแต้ม = ส่ง null ลงไป หน้าขายจะไม่คิด/ไม่ให้ใช้แต้มเลย (แต้มเดิมของลูกค้ายังอยู่)
   const activePointsConfig = pointsConfig?.enabled === false ? null : pointsConfig
 
+  // ยา/เวชภัณฑ์ไม่ขายหน้าร้าน — หมอสั่งจ่ายจากหน้าตรวจรักษา แล้วส่งเข้าตะกร้ามาเก็บเงินแทน
+  const shelfProducts = (products ?? []).filter((p) => !isClinicOnly(p))
+
   return (
     <POSClient
-      products={products ?? []}
+      products={shelfProducts}
       promotions={promotions ?? []}
       pointsConfig={activePointsConfig}
       cashierId={user?.id ?? ''}

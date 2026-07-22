@@ -30,6 +30,8 @@ export default function ProductForm({ categories, units, suppliers, product }: P
     min_stock: product?.min_stock?.toString() ?? '5',
     // '' = ตามหมวดหมู่, 'yes'/'no' = ตั้งแยกเฉพาะสินค้าตัวนี้
     vat: product?.vat_applicable === true ? 'yes' : product?.vat_applicable === false ? 'no' : '',
+    clinic: product?.clinic_only === true ? 'yes' : product?.clinic_only === false ? 'no' : '',
+    is_service: product?.is_service ?? false,
   })
 
   // รูปใหม่ที่ crop/บีบอัดแล้วรออัปโหลด; preview = URL เดิมหรือ object URL ของรูปใหม่
@@ -130,6 +132,8 @@ export default function ProductForm({ categories, units, suppliers, product }: P
       unit: form.unit,
       min_stock: parseInt(form.min_stock),
       vat_applicable: form.vat === '' ? null : form.vat === 'yes',
+      clinic_only: form.clinic === '' ? null : form.clinic === 'yes',
+      is_service: form.is_service,
     }
 
     const { error } = product
@@ -155,6 +159,9 @@ export default function ProductForm({ categories, units, suppliers, product }: P
   const categoryVatLabel = !selectedCat
     ? 'ไม่ระบุหมวด = ไม่มี VAT'
     : selectedCat.vat_applicable ? 'มี VAT' : 'ไม่มี VAT'
+  const categoryClinicLabel = !selectedCat
+    ? 'ไม่ระบุหมวด = ขายหน้าร้านได้'
+    : selectedCat.clinic_only ? 'ของคลินิก' : 'ขายหน้าร้านได้'
 
   const inputClass = 'w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500'
   const labelClass = 'block text-sm font-medium text-gray-700 mb-1'
@@ -340,16 +347,45 @@ export default function ProductForm({ categories, units, suppliers, product }: P
         </div>
 
         <div>
-          <label className={labelClass}>แจ้งเตือนเมื่อสต็อคต่ำกว่า</label>
-          <input
-            type="number"
-            min="0"
-            value={form.min_stock}
-            onChange={(e) => set('min_stock', e.target.value)}
-            className={inputClass}
-            placeholder="5"
-          />
+          <label className={labelClass}>ของคลินิก</label>
+          <select value={form.clinic} onChange={(e) => set('clinic', e.target.value)} className={inputClass}>
+            <option value="">ตามหมวดหมู่ ({categoryClinicLabel})</option>
+            <option value="yes">ใช่ — ไม่ขึ้นในหน้าขาย</option>
+            <option value="no">ไม่ใช่ — ขายหน้าร้านได้</option>
+          </select>
+          <p className="text-xs text-gray-400 mt-1">
+            ยา/เวชภัณฑ์ที่ต้องให้หมอสั่งจ่าย — จะไม่ขึ้นในหน้าขาย แต่เลือกจ่ายได้จากหน้าตรวจรักษา
+          </p>
         </div>
+
+        <div>
+          <label className="flex items-center gap-2 text-sm font-medium text-gray-700">
+            <input
+              type="checkbox"
+              checked={form.is_service}
+              onChange={(e) => setForm((prev) => ({ ...prev, is_service: e.target.checked }))}
+              className="w-4 h-4 accent-blue-600"
+            />
+            เป็นค่าบริการ (ไม่มีสต็อค)
+          </label>
+          <p className="text-xs text-gray-400 mt-1">
+            เช่น ค่าตรวจ ค่าหัตถการ ค่าผ่าตัด — ขายได้ไม่จำกัดจำนวน ไม่ต้องรับเข้าสต็อค
+          </p>
+        </div>
+
+        {!form.is_service && (
+          <div>
+            <label className={labelClass}>แจ้งเตือนเมื่อสต็อคต่ำกว่า</label>
+            <input
+              type="number"
+              min="0"
+              value={form.min_stock}
+              onChange={(e) => set('min_stock', e.target.value)}
+              className={inputClass}
+              placeholder="5"
+            />
+          </div>
+        )}
       </div>
 
       <div className="flex gap-3 mt-6">

@@ -1,4 +1,10 @@
-export type Role = 'admin' | 'cashier'
+export type Role = 'admin' | 'cashier' | 'vet'
+
+export const ROLE_LABELS: Record<Role, string> = {
+  admin: 'เจ้าของร้าน',
+  cashier: 'พนักงานขาย',
+  vet: 'สัตวแพทย์',
+}
 
 export interface Profile {
   id: string
@@ -26,6 +32,8 @@ export interface Category {
   name: string
   /** หมวดนี้เป็นสินค้าที่ต้องเสีย VAT ไหม — ใช้เป็นค่าตั้งต้นให้สินค้าในหมวด */
   vat_applicable: boolean
+  /** ของคลินิก (ยา/เวชภัณฑ์) — ไม่ขึ้นในหน้าขาย จ่ายได้จากหน้าตรวจรักษาเท่านั้น */
+  clinic_only: boolean
   created_at: string
 }
 
@@ -48,6 +56,10 @@ export interface Product {
   min_stock: number
   /** null = ใช้ตามหมวดหมู่, true/false = ตั้งแยกเฉพาะสินค้าตัวนี้ */
   vat_applicable: boolean | null
+  /** null = ใช้ตามหมวดหมู่ */
+  clinic_only: boolean | null
+  /** ค่าตรวจ/ค่าหัตถการ — ขายได้ตามปกติ แต่ไม่มีสต็อคให้ตัด */
+  is_service: boolean
   image_url: string | null
   active: boolean
   created_at: string
@@ -147,6 +159,39 @@ export interface Customer {
   total_spent: number
   credit_balance: number
   created_at: string
+}
+
+export type PetSpecies = 'dog' | 'cat' | 'bird' | 'rabbit' | 'rodent' | 'reptile' | 'other'
+
+export const SPECIES_LABELS: Record<PetSpecies, string> = {
+  dog: 'สุนัข',
+  cat: 'แมว',
+  bird: 'นก',
+  rabbit: 'กระต่าย',
+  rodent: 'หนู/แฮมสเตอร์',
+  reptile: 'สัตว์เลื้อยคลาน',
+  other: 'อื่นๆ',
+}
+
+export interface Pet {
+  id: string
+  customer_id: string
+  name: string
+  species: PetSpecies
+  breed: string | null
+  sex: 'male' | 'female' | null
+  birth_date: string | null
+  color: string | null
+  microchip: string | null
+  sterilized: boolean
+  /** ขึ้นเตือนหัวฟอร์มตรวจรักษา */
+  allergies: string | null
+  chronic_conditions: string | null
+  notes: string | null
+  photo_url: string | null
+  active: boolean
+  created_at: string
+  customers?: Customer
 }
 
 export interface PointsConfig {
