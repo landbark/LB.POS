@@ -51,12 +51,14 @@ export default function AdminNav({ userName, role }: { userName: string; role: s
 
   return (
     <aside className="fixed left-0 top-0 h-screen w-56 flex flex-col" style={{ background: '#4A4338' }}>
-      <div className="px-4 py-5" style={{ borderBottom: '1px solid #5C5144' }}>
+      <div className="px-4 py-5 shrink-0" style={{ borderBottom: '1px solid #5C5144' }}>
         <h1 className="text-lg font-bold" style={{ color: '#F0E8DC' }}>LANDBARK</h1>
         <p className="text-xs mt-0.5" style={{ color: '#D4A87A' }}>{userName}</p>
       </div>
 
-      <nav className="flex-1 py-4 space-y-0.5 px-2">
+      {/* min-h-0 + overflow-y-auto: เมนูเยอะกว่าความสูงจอเมื่อไหร่ ให้ตัวเมนูเลื่อนเอง
+          ไม่ใช่ดันปุ่มออกจากระบบตกขอบล่างไป */}
+      <nav className="flex-1 min-h-0 overflow-y-auto py-4 space-y-0.5 px-2">
         {navItems.filter((item) => role === 'admin' || !item.adminOnly).map(({ href, label, icon: Icon }) => {
           const active = (pathname.startsWith(href) && href !== '/pos') || pathname === href
           return (
@@ -78,7 +80,7 @@ export default function AdminNav({ userName, role }: { userName: string; role: s
         })}
       </nav>
 
-      <div className="p-2" style={{ borderTop: '1px solid #5C5144' }}>
+      <div className="p-2 shrink-0" style={{ borderTop: '1px solid #5C5144' }}>
         <button
           onClick={handleLogout}
           className="flex items-center gap-3 w-full px-3 py-2.5 rounded-lg text-sm transition-colors"
