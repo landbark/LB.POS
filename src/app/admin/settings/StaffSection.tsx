@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Users, Plus, KeyRound, Trash2, X } from 'lucide-react'
+import { Users, Plus, KeyRound, Trash2, X, Pencil, Check } from 'lucide-react'
 import toast from 'react-hot-toast'
 import type { StaffEmail } from '@/lib/types'
 
@@ -21,6 +21,9 @@ export default function StaffSection({ staff, migrated }: Props) {
   const [form, setForm] = useState({ name: '', email: '', role: 'cashier', password: '' })
   const [pwTarget, setPwTarget] = useState<StaffEmail | null>(null)
   const [newPw, setNewPw] = useState('')
+  // แก้ชื่อในตารางได้ทุกคน รวมทั้งตัวเอง (ชื่อนี้ไปโผล่เป็นชื่อผู้ตรวจในเวชระเบียน)
+  const [nameEditId, setNameEditId] = useState<string | null>(null)
+  const [nameDraft, setNameDraft] = useState('')
 
   async function api(method: string, body: object) {
     setLoading(true)
@@ -51,6 +54,18 @@ export default function StaffSection({ staff, migrated }: Props) {
   async function handleRoleChange(s: StaffEmail, role: string) {
     if (await api('PATCH', { email: s.email, role })) {
       toast.success(`เปลี่ยนสิทธิ์ของ "${s.name}" แล้ว`)
+    }
+  }
+
+  async function handleNameSave(s: StaffEmail) {
+    const name = nameDraft.trim()
+    if (!name || name === s.name) {
+      setNameEditId(null)
+      return
+    }
+    if (await api('PATCH', { email: s.email, name })) {
+      toast.success(`เปลี่ยนชื่อเป็น "${name}" แล้ว`)
+      setNameEditId(null)
     }
   }
 
@@ -160,7 +175,38 @@ export default function StaffSection({ staff, migrated }: Props) {
           <tbody className="divide-y divide-gray-50">
             {staff.map((s) => (
               <tr key={s.id} className="hover:bg-gray-50">
-                <td className="px-4 py-3 text-sm font-medium text-gray-900">{s.name}</td>
+                <td className="px-4 py-3 text-sm font-medium text-gray-900">
+                  {nameEditId === s.id ? (
+                    <div className="flex items-center gap-1">
+                      <input
+                        type="text"
+                        value={nameDraft}
+                        autoFocus
+                        onChange={(e) => setNameDraft(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') handleNameSave(s)
+                          if (e.key === 'Escape') setNameEditId(null)
+                        }}
+                        className="w-40 border border-gray-300 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                      <button onClick={() => handleNameSave(s)} disabled={loading} title="บันทึก" className="p-1.5 text-gray-400 hover:text-green-600 rounded">
+                        <Check size={15} />
+                      </button>
+                      <button onClick={() => setNameEditId(null)} title="ยกเลิก" className="p-1.5 text-gray-400 hover:text-red-600 rounded">
+                        <X size={15} />
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => { setNameEditId(s.id); setNameDraft(s.name) }}
+                      title="แก้ไขชื่อ"
+                      className="group flex items-center gap-1.5 text-left"
+                    >
+                      {s.name}
+                      <Pencil size={13} className="text-gray-300 group-hover:text-blue-600" />
+                    </button>
+                  )}
+                </td>
                 <td className="px-4 py-3 text-sm text-gray-600">{s.email}</td>
                 <td className="px-4 py-3">
                   <select
