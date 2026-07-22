@@ -194,10 +194,11 @@ export interface Pet {
   customers?: Customer
 }
 
-/** open = หมอยังบันทึกอยู่, pending_payment = รอแคชเชียร์เก็บเงิน, paid = เก็บเงินแล้ว */
-export type VisitStatus = 'open' | 'pending_payment' | 'paid' | 'cancelled'
+/** waiting = ลงทะเบียนแล้วรอหมอเรียก, open = หมอกำลังตรวจ, pending_payment = รอแคชเชียร์เก็บเงิน */
+export type VisitStatus = 'waiting' | 'open' | 'pending_payment' | 'paid' | 'cancelled'
 
 export const VISIT_STATUS_LABELS: Record<VisitStatus, string> = {
+  waiting: 'รอตรวจ',
   open: 'กำลังตรวจ',
   pending_payment: 'รอเก็บเงิน',
   paid: 'เก็บเงินแล้ว',

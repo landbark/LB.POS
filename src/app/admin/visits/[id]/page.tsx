@@ -5,6 +5,7 @@ import VisitDetail from './VisitDetail'
 export default async function VisitPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
 
   const { data: visit } = await supabase
     .from('visits')
@@ -29,13 +30,24 @@ export default async function VisitPage({ params }: { params: Promise<{ id: stri
     // ประวัติการรักษาครั้งก่อนของสัตว์ตัวนี้
     supabase
       .from('visits')
-      .select('id, visit_number, visit_date, diagnosis, treatment')
+      .select('id, visit_number, visit_date, diagnosis, treatment, weight')
       .eq('pet_id', visit.pet_id)
       .neq('id', id)
       .order('visit_date', { ascending: false })
       .limit(10),
   ])
 
+  // น้ำหนักครั้งก่อน — ไว้เทียบว่าขึ้นหรือลง
+  const previous = (history ?? []).find((h) => h.weight != null)
+
   // PostgREST คืน relation แบบ many-to-one เป็น object แต่ type ที่ infer มาเป็น array — cast เหมือนหน้าอื่นในโปรเจกต์
-  return <VisitDetail visit={visit} products={(products ?? []) as never} history={history ?? []} />
+  return (
+    <VisitDetail
+      visit={visit}
+      products={(products ?? []) as never}
+      history={history ?? []}
+      previousWeight={previous ? { weight: previous.weight, date: previous.visit_date } : null}
+      userId={user?.id ?? ''}
+    />
+  )
 }

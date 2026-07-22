@@ -212,7 +212,8 @@ CREATE TABLE visits (
   treatment TEXT,
   notes TEXT,
   follow_up_date DATE,
-  status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'pending_payment', 'paid', 'cancelled')),
+  -- waiting = แคชเชียร์ลงทะเบียนแล้วรอหมอเรียก, open = หมอกำลังตรวจ
+  status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('waiting', 'open', 'pending_payment', 'paid', 'cancelled')),
   transaction_id UUID REFERENCES transactions(id) ON DELETE SET NULL,
   created_by UUID REFERENCES profiles(id) ON DELETE SET NULL,
   created_at TIMESTAMPTZ DEFAULT NOW()

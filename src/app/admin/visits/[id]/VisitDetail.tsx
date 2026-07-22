@@ -4,7 +4,7 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { AlertTriangle, ArrowLeft, Plus, Printer, Save, Send, Trash2, X } from 'lucide-react'
+import { AlertTriangle, ArrowLeft, Plus, Printer, Save, Send, Stethoscope, Trash2, X } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { SPECIES_LABELS, VISIT_STATUS_LABELS, type Visit, type VisitItem } from '@/lib/types'
 import { petAge, petWarnings } from '@/lib/pets'
@@ -27,6 +27,7 @@ interface HistoryEntry {
   visit_date: string
   diagnosis: string | null
   treatment: string | null
+  weight?: number | null
 }
 
 const inputClass = 'w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500'
@@ -36,10 +37,14 @@ export default function VisitDetail({
   visit,
   products,
   history,
+  previousWeight,
+  userId,
 }: {
   visit: Visit
   products: DispensableProduct[]
   history: HistoryEntry[]
+  previousWeight: { weight: number; date: string } | null
+  userId: string
 }) {
   const router = useRouter()
   const [saving, setSaving] = useState(false)
@@ -59,7 +64,7 @@ export default function VisitDetail({
   const pet = visit.pets
   const items = visit.visit_items ?? []
   // ส่งไปเก็บเงินแล้วห้ามแก้รายการยา (ตะกร้าฝั่งแคชเชียร์อ่านจากตรงนี้) — บันทึกการตรวจยังแก้ได้
-  const itemsLocked = visit.status !== 'open'
+  const itemsLocked = visit.status !== 'open' && visit.status !== 'waiting'
   const warnings = pet ? petWarnings(pet) : []
   const total = items.reduce((sum, i) => sum + i.unit_price * i.quantity, 0)
 
@@ -157,6 +162,20 @@ export default function VisitDetail({
     router.refresh()
   }
 
+  // หมอเรียกตรวจจากคิว (เคสที่แคชเชียร์ลงทะเบียนไว้ให้)
+  async function startExam() {
+    const supabase = createClient()
+    const { error } = await supabase
+      .from('visits')
+      .update({ status: 'open', vet_id: visit.vet_id ?? userId })
+      .eq('id', visit.id)
+    if (error) {
+      toast.error('เริ่มตรวจไม่สำเร็จ')
+      return
+    }
+    router.refresh()
+  }
+
   async function backToOpen() {
     const supabase = createClient()
     const { error } = await supabase.from('visits').update({ status: 'open' }).eq('id', visit.id)
@@ -167,6 +186,10 @@ export default function VisitDetail({
     toast.success('ดึงกลับมาแก้ไขแล้ว')
     router.refresh()
   }
+
+  const weightDiff = previousWeight && form.weight.trim() !== ''
+    ? Number(form.weight) - previousWeight.weight
+    : null
 
   const pq = productQuery.trim().toLowerCase()
   const productMatches = pq
@@ -251,6 +274,16 @@ export default function VisitDetail({
           <div>
             <label className={labelClass}>น้ำหนัก (กก.)</label>
             <input type="number" step="0.01" value={form.weight} onChange={(e) => set('weight', e.target.value)} className={inputClass} />
+            {previousWeight && (
+              <p className="text-xs text-gray-400 mt-1">
+                ครั้งก่อน {previousWeight.weight} กก.
+                {weightDiff !== null && weightDiff !== 0 && (
+                  <span className={weightDiff > 0 ? 'text-orange-600' : 'text-blue-600'}>
+                    {' '}({weightDiff > 0 ? '+' : ''}{weightDiff.toFixed(2)})
+                  </span>
+                )}
+              </p>
+            )}
           </div>
           <div>
             <label className={labelClass}>อุณหภูมิ (°C)</label>
@@ -419,6 +452,19 @@ export default function VisitDetail({
 
       {/* ส่งไปเก็บเงิน */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 mb-4">
+        {visit.status === 'waiting' && (
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-sm text-purple-700">
+              ลงทะเบียนไว้แล้ว รอเรียกตรวจ — กดเริ่มตรวจเพื่อรับเคสนี้
+            </p>
+            <button
+              onClick={startExam}
+              className="flex items-center gap-1.5 bg-purple-600 hover:bg-purple-700 text-white text-sm font-medium px-4 py-2 rounded-lg"
+            >
+              <Stethoscope size={15} /> เริ่มตรวจ
+            </button>
+          </div>
+        )}
         {visit.status === 'open' && (
           <button
             onClick={sendToPayment}
