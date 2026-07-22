@@ -3,7 +3,8 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { Plus, Edit, Trash2, X, Check } from 'lucide-react'
+import Link from 'next/link'
+import { Plus, Edit, Trash2, X, Check, Printer } from 'lucide-react'
 import toast from 'react-hot-toast'
 import type { Promotion, Category, PromotionType, ApplyTo } from '@/lib/types'
 
@@ -125,16 +126,36 @@ export default function PromotionsClient({
       active: form.active,
     }
 
-    const { error } = editingId
-      ? await supabase.from('promotions').update(payload).eq('id', editingId)
-      : await supabase.from('promotions').insert(payload)
+    const { data, error } = editingId
+      ? await supabase.from('promotions').update(payload).eq('id', editingId).select('id').single()
+      : await supabase.from('promotions').insert(payload).select('id').single()
 
     setLoading(false)
     if (error) {
       toast.error('เกิดข้อผิดพลาด: ' + error.message)
       return
     }
-    toast.success(editingId ? 'แก้ไขแล้ว' : 'เพิ่มโปรโมชั่นแล้ว')
+
+    if (editingId) {
+      toast.success('แก้ไขแล้ว')
+    } else {
+      // เพิ่งสร้างเสร็จ = จังหวะที่มักอยากได้ป้ายไปติดหน้าร้านเลย
+      toast.success(
+        (t) => (
+          <span className="flex items-center gap-3">
+            เพิ่มโปรโมชั่นแล้ว
+            <a
+              href={`/print/promotion/${data.id}`}
+              onClick={() => toast.dismiss(t.id)}
+              className="flex items-center gap-1 text-blue-600 font-medium whitespace-nowrap"
+            >
+              <Printer size={14} /> พิมพ์ป้าย
+            </a>
+          </span>
+        ),
+        { duration: 8000 },
+      )
+    }
     cancel()
     router.refresh()
   }
@@ -322,6 +343,13 @@ export default function PromotionsClient({
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-2 justify-end">
+                      <Link
+                        href={`/print/promotion/${p.id}`}
+                        className="p-1.5 text-gray-400 hover:text-blue-600 rounded"
+                        title="พิมพ์ป้ายโปรโมชั่น"
+                      >
+                        <Printer size={15} />
+                      </Link>
                       <button onClick={() => startEdit(p)} className="p-1.5 text-gray-400 hover:text-blue-600 rounded">
                         <Edit size={15} />
                       </button>
