@@ -242,6 +242,34 @@ CREATE TABLE visit_items (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- แคตตาล็อกวัคซีน (คลินิก) — name = "English / ไทย", species NULL = ใช้ได้ทุกชนิด
+CREATE TABLE vaccines (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name TEXT NOT NULL UNIQUE,
+  name_en TEXT,
+  name_th TEXT,
+  species TEXT CHECK (species IN ('dog', 'cat', 'bird', 'rabbit', 'rodent', 'reptile', 'other')),
+  default_interval_days INT NOT NULL DEFAULT 365,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ประวัติการฉีดวัคซีนรายตัว
+CREATE TABLE pet_vaccinations (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  pet_id UUID NOT NULL REFERENCES pets(id) ON DELETE CASCADE,
+  vaccine_id UUID REFERENCES vaccines(id) ON DELETE SET NULL,
+  vaccine_name TEXT NOT NULL,
+  dose_date DATE NOT NULL,
+  dose_label TEXT,
+  next_due_date DATE,
+  lot_number TEXT,
+  vet_id UUID REFERENCES profiles(id) ON DELETE SET NULL,
+  visit_id UUID REFERENCES visits(id) ON DELETE SET NULL,
+  notes TEXT,
+  created_by UUID REFERENCES profiles(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
 -- นัดหมาย (คลินิก)
 CREATE TABLE appointments (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -453,6 +481,10 @@ CREATE POLICY "auth manage visits" ON visits FOR ALL TO authenticated USING (tru
 CREATE POLICY "auth manage visit_items" ON visit_items FOR ALL TO authenticated USING (true);
 ALTER TABLE appointments ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "auth manage appointments" ON appointments FOR ALL TO authenticated USING (true);
+ALTER TABLE vaccines ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "auth manage vaccines" ON vaccines FOR ALL TO authenticated USING (true);
+ALTER TABLE pet_vaccinations ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "auth manage pet_vaccinations" ON pet_vaccinations FOR ALL TO authenticated USING (true);
 
 -- สัตวแพทย์: อ่านได้ทุกอย่าง เขียนได้เฉพาะงานคลินิก/ลูกค้า
 -- policy ข้างบนเป็น permissive (OR กัน) เติมเงื่อนไขเข้าไปทีละอันไม่ได้ผล — ใช้ RESTRICTIVE ซ้อน (AND กับทุก policy)
@@ -491,6 +523,8 @@ CREATE INDEX idx_visit_items_visit_id ON visit_items(visit_id);
 CREATE INDEX idx_appointments_scheduled_at ON appointments(scheduled_at);
 CREATE INDEX idx_appointments_pet_id ON appointments(pet_id, scheduled_at DESC);
 CREATE INDEX idx_appointments_status ON appointments(status);
+CREATE INDEX idx_pet_vaccinations_pet_id ON pet_vaccinations(pet_id, dose_date DESC);
+CREATE INDEX idx_pet_vaccinations_next_due ON pet_vaccinations(next_due_date) WHERE next_due_date IS NOT NULL;
 
 -- Sample categories
 INSERT INTO categories (name) VALUES

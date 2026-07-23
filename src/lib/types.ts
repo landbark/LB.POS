@@ -272,6 +272,37 @@ export interface ClinicQueueVisit {
   items: ClinicQueueItem[]
 }
 
+export interface Vaccine {
+  id: string
+  /** ชื่อแสดงผล "English / ไทย" */
+  name: string
+  name_en: string | null
+  name_th: string | null
+  /** null = ใช้ได้ทุกชนิด */
+  species: PetSpecies | null
+  default_interval_days: number
+  created_at: string
+}
+
+export interface PetVaccination {
+  id: string
+  pet_id: string
+  vaccine_id: string | null
+  /** snapshot ชื่อวัคซีน ณ วันฉีด */
+  vaccine_name: string
+  dose_date: string
+  dose_label: string | null
+  next_due_date: string | null
+  lot_number: string | null
+  vet_id: string | null
+  visit_id: string | null
+  notes: string | null
+  created_by: string | null
+  created_at: string
+  pets?: Pet
+  vet?: { name: string } | null
+}
+
 export type AppointmentType = 'checkup' | 'vaccine' | 'surgery' | 'follow_up' | 'other'
 export type AppointmentStatus = 'scheduled' | 'done' | 'missed' | 'cancelled'
 

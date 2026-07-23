@@ -22,6 +22,7 @@ import {
   PawPrint,
   Stethoscope,
   CalendarClock,
+  Syringe,
 } from 'lucide-react'
 
 // vetHidden = หน้าที่หมอเข้าไม่ได้ (proxy.ts กันไว้แล้ว ตรงนี้แค่ไม่ให้เห็นเมนู)
@@ -30,6 +31,7 @@ const navItems = [
   { href: '/pos', label: 'หน้าขาย', icon: ShoppingCart, adminOnly: false, vetHidden: true },
   { href: '/admin/visits', label: 'ตรวจรักษา', icon: Stethoscope, adminOnly: false },
   { href: '/admin/appointments', label: 'นัดหมาย', icon: CalendarClock, adminOnly: false },
+  { href: '/admin/vaccines', label: 'วัคซีน', icon: Syringe, adminOnly: false },
   { href: '/admin/pets', label: 'สัตว์เลี้ยง', icon: PawPrint, adminOnly: false },
   { href: '/admin/products', label: 'สินค้า', icon: Package, adminOnly: false },
   { href: '/admin/inventory', label: 'สต็อค', icon: Layers, adminOnly: false },

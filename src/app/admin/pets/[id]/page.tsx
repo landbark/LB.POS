@@ -4,23 +4,33 @@ import { ArrowLeft, AlertTriangle, Stethoscope } from 'lucide-react'
 import { createClient } from '@/lib/supabase/server'
 import { SPECIES_LABELS, VISIT_STATUS_LABELS, type Pet, type VisitStatus } from '@/lib/types'
 import { ageAt, petAge } from '@/lib/pets'
+import VaccineSection from './VaccineSection'
 
 const fmtDate = (d: string) => new Date(d).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' })
 
 export default async function PetDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
 
   const { data: pet } = await supabase.from('pets').select('*, customers(id, name, phone)').eq('id', id).single()
   if (!pet) notFound()
   const p = pet as Pet
 
-  const { data: visits } = await supabase
-    .from('visits')
-    .select('id, visit_number, visit_date, status, diagnosis, treatment, weight')
-    .eq('pet_id', id)
-    .order('visit_date', { ascending: false })
-    .limit(50)
+  const [{ data: visits }, { data: vaccinations }, { data: vaccines }] = await Promise.all([
+    supabase
+      .from('visits')
+      .select('id, visit_number, visit_date, status, diagnosis, treatment, weight')
+      .eq('pet_id', id)
+      .order('visit_date', { ascending: false })
+      .limit(50),
+    supabase
+      .from('pet_vaccinations')
+      .select('*')
+      .eq('pet_id', id)
+      .order('dose_date', { ascending: false }),
+    supabase.from('vaccines').select('*').order('name'),
+  ])
 
   const detail = [
     p.breed,
@@ -72,6 +82,16 @@ export default async function PetDetailPage({ params }: { params: Promise<{ id: 
           </div>
         )}
         {p.notes && <p className="text-gray-600">หมายเหตุ: {p.notes}</p>}
+      </div>
+
+      <div className="mb-6">
+        <VaccineSection
+          petId={p.id}
+          species={p.species}
+          vaccinations={vaccinations ?? []}
+          vaccines={vaccines ?? []}
+          userId={user?.id ?? ''}
+        />
       </div>
 
       <h2 className="text-sm font-semibold text-gray-700 mb-2 flex items-center gap-2">

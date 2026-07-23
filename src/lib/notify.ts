@@ -1,4 +1,5 @@
 import { createAdminClient } from '@/lib/supabase/admin'
+import { dueVaccinations } from '@/lib/vaccines'
 
 const MAX_ITEMS_PER_SECTION = 15
 
@@ -156,6 +157,40 @@ export function buildAppointmentMessage(appointments: AppointmentReminder[]): st
   return [`📅 LANDBARK นัดหมายพรุ่งนี้ (${headerDate}) — ${appointments.length} นัด`, ...lines].join('\n')
 }
 
+// ---- วัคซีนครบกำหนด ----
+
+interface VaccineDueRow {
+  pet_id: string
+  vaccine_name: string
+  dose_date: string
+  next_due_date: string | null
+  pets: { name: string; active: boolean; customers: { name: string; phone: string } | null } | null
+}
+
+// วัคซีนที่ครบกำหนดกระตุ้นภายใน 7 วัน + ที่เลยกำหนดแล้ว
+export async function gatherDueVaccines(admin: ReturnType<typeof createAdminClient>) {
+  const { data } = await admin
+    .from('pet_vaccinations')
+    .select('pet_id, vaccine_name, dose_date, next_due_date, pets!inner(name, active, customers(name, phone))')
+    .eq('pets.active', true)
+    .limit(5000)
+
+  const rows = (data ?? []) as unknown as VaccineDueRow[]
+  return dueVaccinations(rows, todayThai(), 7)
+}
+
+export function buildVaccineMessage(due: Awaited<ReturnType<typeof gatherDueVaccines>>): string | null {
+  if (due.length === 0) return null
+
+  const lines = due.map((d) => {
+    const owner = [d.row.pets?.customers?.name, d.row.pets?.customers?.phone].filter(Boolean).join(' ')
+    const tag = d.overdue ? '⚠️เกินกำหนด' : '⏰'
+    return `• ${tag} ${d.row.pets?.name ?? '—'} — ${d.row.vaccine_name}${d.row.next_due_date ? ` (${dateTh(d.row.next_due_date)})` : ''}${owner ? `\n   ${owner}` : ''}`
+  })
+
+  return [`💉 LANDBARK วัคซีนครบกำหนด — ${due.length} รายการ`, ...lines].join('\n')
+}
+
 function section(title: string, lines: string[]): string {
   const shown = lines.slice(0, MAX_ITEMS_PER_SECTION)
   const more = lines.length - shown.length
@@ -241,9 +276,10 @@ export async function sendStockAlerts(
   const chatIds = (recipients ?? []).map((r) => r.chat_id)
   if (chatIds.length === 0) return { sent: false, reason: 'no_recipients' }
 
-  const [alerts, appointments] = await Promise.all([
+  const [alerts, appointments, vaccineDue] = await Promise.all([
     gatherStockAlerts(admin, settings?.expiry_days ?? 30),
     gatherTomorrowAppointments(admin),
+    gatherDueVaccines(admin),
   ])
   const counts = {
     lowStock: alerts.lowStock.length,
@@ -251,8 +287,12 @@ export async function sendStockAlerts(
     expired: alerts.expired.length,
   }
 
-  // รวมแจ้งเตือนสต็อค + นัดพรุ่งนี้ ไว้ในข้อความเดียว (ส่งถ้ามีอย่างใดอย่างหนึ่ง)
-  const parts = [buildAlertMessage(alerts), buildAppointmentMessage(appointments)].filter(Boolean) as string[]
+  // รวมแจ้งเตือนสต็อค + นัดพรุ่งนี้ + วัคซีนครบกำหนด ไว้ในข้อความเดียว (ส่งถ้ามีอย่างใดอย่างหนึ่ง)
+  const parts = [
+    buildAlertMessage(alerts),
+    buildAppointmentMessage(appointments),
+    buildVaccineMessage(vaccineDue),
+  ].filter(Boolean) as string[]
   let message: string | null = parts.length > 0 ? parts.join('\n\n———\n\n') : null
   if (!message) {
     if (!sendWhenEmpty) return { sent: false, reason: 'nothing_to_alert', counts }
