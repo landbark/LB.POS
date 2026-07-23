@@ -174,6 +174,15 @@ CREATE TABLE customers (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- พันธุ์สัตว์ให้เลือก (pets.breed เก็บเป็นชื่อ ไม่ใช่ FK — แพทเทิร์นเดียวกับ units + products.unit)
+CREATE TABLE breeds (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  species TEXT NOT NULL CHECK (species IN ('dog', 'cat', 'bird', 'rabbit', 'rodent', 'reptile', 'other')),
+  name TEXT NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE (species, name)
+);
+
 -- สัตว์เลี้ยง (คลินิก) — เจ้าของคือลูกค้าเดิมในระบบ POS
 CREATE TABLE pets (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -186,6 +195,7 @@ CREATE TABLE pets (
   color TEXT,
   microchip TEXT,
   sterilized BOOLEAN NOT NULL DEFAULT false,
+  sterilized_date DATE,
   allergies TEXT,
   chronic_conditions TEXT,
   notes TEXT,
@@ -415,6 +425,8 @@ CREATE POLICY "admin manage staff_emails" ON staff_emails FOR ALL TO authenticat
   USING (public.is_admin());
 
 -- คลินิก — หมอต้องเขียนได้ จึงไม่อยู่ในลิสต์ RESTRICTIVE ข้างล่าง
+ALTER TABLE breeds ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "auth manage breeds" ON breeds FOR ALL TO authenticated USING (true);
 ALTER TABLE pets ENABLE ROW LEVEL SECURITY;
 ALTER TABLE visits ENABLE ROW LEVEL SECURITY;
 ALTER TABLE visit_items ENABLE ROW LEVEL SECURITY;

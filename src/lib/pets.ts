@@ -1,13 +1,13 @@
 import type { Pet } from './types'
 
-/** อายุแบบอ่านง่าย เช่น "2 ปี 3 เดือน" / "5 เดือน" — ยังไม่ได้กรอกวันเกิดคืน null */
-export function petAge(birthDate: string | null): string | null {
+/** อายุ ณ วันที่กำหนด แบบอ่านง่าย เช่น "2 ปี 3 เดือน" / "5 เดือน" */
+export function ageAt(birthDate: string | null, atDate: string | Date): string | null {
   if (!birthDate) return null
 
   const born = new Date(birthDate)
-  const now = new Date()
-  let months = (now.getFullYear() - born.getFullYear()) * 12 + (now.getMonth() - born.getMonth())
-  if (now.getDate() < born.getDate()) months -= 1
+  const at = typeof atDate === 'string' ? new Date(atDate) : atDate
+  let months = (at.getFullYear() - born.getFullYear()) * 12 + (at.getMonth() - born.getMonth())
+  if (at.getDate() < born.getDate()) months -= 1
   if (months < 0) return null
 
   const years = Math.floor(months / 12)
@@ -15,6 +15,11 @@ export function petAge(birthDate: string | null): string | null {
   if (years === 0) return `${rest} เดือน`
   if (rest === 0) return `${years} ปี`
   return `${years} ปี ${rest} เดือน`
+}
+
+/** อายุตอนนี้ — ยังไม่ได้กรอกวันเกิดคืน null */
+export function petAge(birthDate: string | null): string | null {
+  return ageAt(birthDate, new Date())
 }
 
 /** ข้อมูลที่หมอต้องเห็นก่อนจ่ายยาทุกครั้ง */

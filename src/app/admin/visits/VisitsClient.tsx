@@ -6,8 +6,9 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { ArrowLeft, Clock, Plus, Search, Stethoscope, X } from 'lucide-react'
 import toast from 'react-hot-toast'
-import { SPECIES_LABELS, VISIT_STATUS_LABELS, type Pet, type PetSpecies, type Visit, type VisitStatus } from '@/lib/types'
+import { SPECIES_LABELS, VISIT_STATUS_LABELS, type Breed, type Pet, type PetSpecies, type Visit, type VisitStatus } from '@/lib/types'
 import { petAge } from '@/lib/pets'
+import BreedSelect from '@/components/BreedSelect'
 
 type OwnerOption = { id: string; name: string; phone: string }
 type LastWeight = { weight: number; date: string }
@@ -36,6 +37,7 @@ export default function VisitsClient({
   visits,
   pets,
   customers,
+  breeds,
   lastWeights,
   userId,
   role,
@@ -43,6 +45,7 @@ export default function VisitsClient({
   visits: Visit[]
   pets: Pet[]
   customers: OwnerOption[]
+  breeds: Breed[]
   lastWeights: Record<string, LastWeight>
   userId: string
   role: string
@@ -434,7 +437,13 @@ export default function VisitsClient({
                   </div>
                   <div>
                     <label className={labelClass}>พันธุ์</label>
-                    <input type="text" value={petForm.breed} onChange={(e) => setPetForm({ ...petForm, breed: e.target.value })} className={inputClass} />
+                    <BreedSelect
+                      species={petForm.species}
+                      value={petForm.breed}
+                      onChange={(breed) => setPetForm({ ...petForm, breed })}
+                      breeds={breeds}
+                      className={inputClass}
+                    />
                   </div>
                   <div>
                     <label className={labelClass}>เพศ</label>

@@ -5,7 +5,7 @@ export default async function VisitsPage() {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
 
-  const [{ data: visits }, { data: pets }, { data: customers }, { data: profile }, { data: weighed }] = await Promise.all([
+  const [{ data: visits }, { data: pets }, { data: customers }, { data: profile }, { data: weighed }, { data: breeds }] = await Promise.all([
     supabase
       .from('visits')
       .select('*, pets(id, name, species, breed), customers(id, name, phone), vet:profiles!visits_vet_id_fkey(name)')
@@ -25,6 +25,7 @@ export default async function VisitsPage() {
       .not('weight', 'is', null)
       .order('visit_date', { ascending: false })
       .limit(500),
+    supabase.from('breeds').select('*').order('name'),
   ])
 
   const lastWeights: Record<string, { weight: number; date: string }> = {}
@@ -39,6 +40,7 @@ export default async function VisitsPage() {
       visits={visits ?? []}
       pets={pets ?? []}
       customers={customers ?? []}
+      breeds={breeds ?? []}
       lastWeights={lastWeights}
       userId={user?.id ?? ''}
       role={profile?.role ?? 'cashier'}

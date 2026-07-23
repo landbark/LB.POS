@@ -5,8 +5,9 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Plus, Edit, Trash2, X, Check, Search, AlertTriangle } from 'lucide-react'
 import toast from 'react-hot-toast'
-import { SPECIES_LABELS, type Pet, type PetSpecies } from '@/lib/types'
-import { petAge } from '@/lib/pets'
+import { SPECIES_LABELS, type Breed, type Pet, type PetSpecies } from '@/lib/types'
+import { ageAt, petAge } from '@/lib/pets'
+import BreedSelect from '@/components/BreedSelect'
 
 type OwnerOption = { id: string; name: string; phone: string }
 
@@ -20,6 +21,7 @@ const emptyForm = {
   color: '',
   microchip: '',
   sterilized: false,
+  sterilized_date: '',
   allergies: '',
   chronic_conditions: '',
   notes: '',
@@ -30,7 +32,15 @@ type Form = typeof emptyForm
 const inputClass = 'w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500'
 const labelClass = 'block text-xs font-medium text-gray-600 mb-1'
 
-export default function PetsClient({ pets, customers }: { pets: Pet[]; customers: OwnerOption[] }) {
+export default function PetsClient({
+  pets,
+  customers,
+  breeds,
+}: {
+  pets: Pet[]
+  customers: OwnerOption[]
+  breeds: Breed[]
+}) {
   const router = useRouter()
   const [showAdd, setShowAdd] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -58,6 +68,7 @@ export default function PetsClient({ pets, customers }: { pets: Pet[]; customers
       color: p.color ?? '',
       microchip: p.microchip ?? '',
       sterilized: p.sterilized,
+      sterilized_date: p.sterilized_date ?? '',
       allergies: p.allergies ?? '',
       chronic_conditions: p.chronic_conditions ?? '',
       notes: p.notes ?? '',
@@ -93,6 +104,8 @@ export default function PetsClient({ pets, customers }: { pets: Pet[]; customers
       color: form.color.trim() || null,
       microchip: form.microchip.trim() || null,
       sterilized: form.sterilized,
+      // ยกเลิกติ๊กทำหมัน = ล้างวันที่ทิ้งด้วย ไม่ให้ค้างขัดกัน
+      sterilized_date: form.sterilized ? (form.sterilized_date || null) : null,
       allergies: form.allergies.trim() || null,
       chronic_conditions: form.chronic_conditions.trim() || null,
       notes: form.notes.trim() || null,
@@ -141,6 +154,7 @@ export default function PetsClient({ pets, customers }: { pets: Pet[]; customers
     ? customers.filter((c) => c.name.toLowerCase().includes(oq) || c.phone.includes(oq)).slice(0, 8)
     : []
   const selectedOwner = customers.find((c) => c.id === form.customer_id)
+  const sterilizedAge = form.sterilized_date ? ageAt(form.birth_date || null, form.sterilized_date) : null
 
   const formCard = (
     <div className="bg-gray-50 rounded-lg p-4 mb-4">
@@ -200,7 +214,13 @@ export default function PetsClient({ pets, customers }: { pets: Pet[]; customers
         </div>
         <div>
           <label className={labelClass}>พันธุ์</label>
-          <input type="text" value={form.breed} onChange={(e) => set('breed', e.target.value)} className={inputClass} placeholder="เช่น ชิวาวา" />
+          <BreedSelect
+            species={form.species}
+            value={form.breed}
+            onChange={(breed) => set('breed', breed)}
+            breeds={breeds}
+            className={inputClass}
+          />
         </div>
         <div>
           <label className={labelClass}>เพศ</label>
@@ -236,11 +256,25 @@ export default function PetsClient({ pets, customers }: { pets: Pet[]; customers
           <input type="text" value={form.notes} onChange={(e) => set('notes', e.target.value)} className={inputClass} />
         </div>
 
-        <div className="sm:col-span-3">
-          <label className="flex items-center gap-2 text-sm text-gray-700">
+        <div className="sm:col-span-3 flex flex-wrap items-end gap-4">
+          <label className="flex items-center gap-2 text-sm text-gray-700 pb-2">
             <input type="checkbox" checked={form.sterilized} onChange={(e) => set('sterilized', e.target.checked)} className="w-4 h-4" />
             ทำหมันแล้ว
           </label>
+          {form.sterilized && (
+            <div>
+              <label className={labelClass}>วันที่ทำหมัน</label>
+              <div className="flex items-center gap-2">
+                <input
+                  type="date"
+                  value={form.sterilized_date}
+                  onChange={(e) => set('sterilized_date', e.target.value)}
+                  className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                {sterilizedAge && <span className="text-xs text-gray-500">ทำตอนอายุ {sterilizedAge}</span>}
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
@@ -305,7 +339,17 @@ export default function PetsClient({ pets, customers }: { pets: Pet[]; customers
                 <tr key={p.id} className="hover:bg-gray-50">
                   <td className="px-4 py-3 text-sm font-medium text-gray-900">
                     {p.name}
-                    {p.sterilized && <span className="ml-2 text-xs text-gray-400">ทำหมันแล้ว</span>}
+                    {p.sterilized && (
+                      <span className="ml-2 text-xs text-gray-400">
+                        ทำหมันแล้ว
+                        {p.sterilized_date && (
+                          <>
+                            {' '}({new Date(p.sterilized_date).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' })}
+                            {ageAt(p.birth_date, p.sterilized_date) && ` · ตอนอายุ ${ageAt(p.birth_date, p.sterilized_date)}`})
+                          </>
+                        )}
+                      </span>
+                    )}
                   </td>
                   <td className="px-4 py-3 text-sm text-gray-600">
                     {SPECIES_LABELS[p.species]}

@@ -173,6 +173,14 @@ export const SPECIES_LABELS: Record<PetSpecies, string> = {
   other: 'อื่นๆ',
 }
 
+/** ตัวเลือกพันธุ์ต่อชนิดสัตว์ — เพิ่มเองได้จากฟอร์มลงทะเบียน (เหมือนหน่วยสินค้า) */
+export interface Breed {
+  id: string
+  species: PetSpecies
+  name: string
+  created_at: string
+}
+
 export interface Pet {
   id: string
   customer_id: string
@@ -184,6 +192,8 @@ export interface Pet {
   color: string | null
   microchip: string | null
   sterilized: boolean
+  /** วันที่ทำหมัน — ใช้คำนวณว่าทำตอนอายุเท่าไหร่ */
+  sterilized_date: string | null
   /** ขึ้นเตือนหัวฟอร์มตรวจรักษา */
   allergies: string | null
   chronic_conditions: string | null
