@@ -6,9 +6,10 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { AlertTriangle, ArrowLeft, CalendarPlus, Plus, Printer, Save, Send, Stethoscope, Trash2, X } from 'lucide-react'
 import toast from 'react-hot-toast'
-import { SPECIES_LABELS, VISIT_STATUS_LABELS, type Visit, type VisitItem } from '@/lib/types'
+import { SPECIES_LABELS, VISIT_STATUS_LABELS, type PetVaccination, type Vaccine, type Visit, type VisitItem } from '@/lib/types'
 import { petAge, petWarnings } from '@/lib/pets'
 import { isClinicOnly } from '@/lib/clinic'
+import VaccineSection from '@/app/admin/pets/[id]/VaccineSection'
 
 interface DispensableProduct {
   id: string
@@ -39,12 +40,16 @@ export default function VisitDetail({
   history,
   previousWeight,
   userId,
+  vaccinations,
+  vaccines,
 }: {
   visit: Visit
   products: DispensableProduct[]
   history: HistoryEntry[]
   previousWeight: { weight: number; date: string } | null
   userId: string
+  vaccinations: PetVaccination[]
+  vaccines: Vaccine[]
 }) {
   const router = useRouter()
   const [saving, setSaving] = useState(false)
@@ -202,6 +207,19 @@ export default function VisitDetail({
       return
     }
     router.refresh()
+  }
+
+  // ยกเลิกเวชระเบียนที่เปิดผิด (เฉพาะที่ยังไม่เก็บเงิน) — เก็บ record ไว้แต่ mark เป็นยกเลิก
+  async function cancelVisit() {
+    if (!confirm('ยกเลิกเวชระเบียนใบนี้?\nใช้กรณีเปิดผิดตัว/ผิดคน — จะหลุดจากคิวและไม่นับเป็นการรักษา')) return
+    const supabase = createClient()
+    const { error } = await supabase.from('visits').update({ status: 'cancelled' }).eq('id', visit.id)
+    if (error) {
+      toast.error('ยกเลิกไม่สำเร็จ')
+      return
+    }
+    toast.success('ยกเลิกเวชระเบียนแล้ว')
+    router.push('/admin/visits')
   }
 
   async function backToOpen() {
@@ -491,6 +509,20 @@ export default function VisitDetail({
         </table>
       </div>
 
+      {/* วัคซีน — บันทึกระหว่างตรวจได้เลย ผูกกับเวชระเบียนใบนี้ */}
+      {pet && (
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 mb-4">
+          <VaccineSection
+            petId={visit.pet_id}
+            species={pet.species}
+            vaccinations={vaccinations}
+            vaccines={vaccines}
+            userId={userId}
+            visitId={visit.id}
+          />
+        </div>
+      )}
+
       {/* ส่งไปเก็บเงิน */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 mb-4">
         {visit.status === 'waiting' && (
@@ -557,6 +589,15 @@ export default function VisitDetail({
               </Link>
             ))}
           </div>
+        </div>
+      )}
+
+      {/* ยกเลิกใบที่เปิดผิด — เฉพาะที่ยังไม่เก็บเงิน */}
+      {visit.status !== 'paid' && visit.status !== 'cancelled' && (
+        <div className="text-center mt-6">
+          <button onClick={cancelVisit} className="text-sm text-gray-400 hover:text-red-600">
+            ยกเลิกเวชระเบียนใบนี้ (เปิดผิด)
+          </button>
         </div>
       )}
     </div>

@@ -21,7 +21,7 @@ export default async function VisitPage({ params }: { params: Promise<{ id: stri
 
   if (!visit) notFound()
 
-  const [{ data: products }, { data: history }] = await Promise.all([
+  const [{ data: products }, { data: history }, { data: vaccinations }, { data: vaccines }] = await Promise.all([
     supabase
       .from('products')
       .select('id, name, unit, price, is_service, clinic_only, categories(name, clinic_only), product_lots(quantity)')
@@ -35,6 +35,8 @@ export default async function VisitPage({ params }: { params: Promise<{ id: stri
       .neq('id', id)
       .order('visit_date', { ascending: false })
       .limit(10),
+    supabase.from('pet_vaccinations').select('*').eq('pet_id', visit.pet_id).order('dose_date', { ascending: false }),
+    supabase.from('vaccines').select('*').order('name'),
   ])
 
   // น้ำหนักครั้งก่อน — ไว้เทียบว่าขึ้นหรือลง
@@ -48,6 +50,8 @@ export default async function VisitPage({ params }: { params: Promise<{ id: stri
       history={history ?? []}
       previousWeight={previous ? { weight: previous.weight, date: previous.visit_date } : null}
       userId={user?.id ?? ''}
+      vaccinations={vaccinations ?? []}
+      vaccines={vaccines ?? []}
     />
   )
 }

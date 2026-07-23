@@ -122,6 +122,31 @@ export default function AppointmentsClient({
     router.refresh()
   }
 
+  // เช็คอิน: ลูกค้ามาตามนัด → สร้างเวชระเบียนเข้าคิวรอตรวจ + ปิดนัดเป็น "มาแล้ว"
+  async function checkIn(a: Appointment) {
+    const supabase = createClient()
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const { data: visitNumber, error: numberError } = await supabase.rpc('next_visit_number')
+      if (numberError || !visitNumber) break
+      const { error } = await supabase.from('visits').insert({
+        visit_number: visitNumber,
+        pet_id: a.pet_id,
+        customer_id: a.customer_id,
+        vet_id: a.vet_id,
+        status: 'waiting',
+        created_by: userId,
+      })
+      if (!error) {
+        await supabase.from('appointments').update({ status: 'done' }).eq('id', a.id)
+        toast.success('เช็คอินแล้ว — เข้าคิวรอตรวจที่เมนูตรวจรักษา')
+        router.push('/admin/visits')
+        return
+      }
+      if (error.code !== '23505') break // ชนเลขก็ขอใหม่, error อื่นหยุด
+    }
+    toast.error('เช็คอินไม่สำเร็จ')
+  }
+
   async function remove(a: Appointment) {
     if (!confirm('ลบนัดนี้?')) return
     const supabase = createClient()
@@ -245,7 +270,8 @@ export default function AppointmentsClient({
                 <div className="flex items-center gap-1.5 mt-2">
                   {a.status === 'scheduled' ? (
                     <>
-                      <button onClick={() => setStatus(a, 'done')} className="text-xs px-2 py-1 rounded bg-green-600 hover:bg-green-700 text-white">มาแล้ว</button>
+                      <button onClick={() => checkIn(a)} className="text-xs px-2 py-1 rounded bg-purple-600 hover:bg-purple-700 text-white">เช็คอิน → คิว</button>
+                      <button onClick={() => setStatus(a, 'done')} className="text-xs px-2 py-1 rounded border border-gray-200 text-gray-600 hover:bg-gray-50">มาแล้ว</button>
                       <button onClick={() => setStatus(a, 'missed')} className="text-xs px-2 py-1 rounded border border-gray-200 text-gray-600 hover:bg-gray-50">ไม่มา</button>
                       <button onClick={() => setStatus(a, 'cancelled')} className="text-xs px-2 py-1 rounded border border-gray-200 text-gray-600 hover:bg-gray-50">ยกเลิก</button>
                     </>

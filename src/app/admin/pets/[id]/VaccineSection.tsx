@@ -20,12 +20,15 @@ export default function VaccineSection({
   vaccinations,
   vaccines,
   userId,
+  visitId,
 }: {
   petId: string
   species: Vaccine['species']
   vaccinations: PetVaccination[]
   vaccines: Vaccine[]
   userId: string
+  /** ถ้าบันทึกจากหน้าตรวจรักษา จะผูกวัคซีนกับเวชระเบียนใบนั้น */
+  visitId?: string
 }) {
   const router = useRouter()
   const [adding, setAdding] = useState(false)
@@ -64,6 +67,7 @@ export default function VaccineSection({
       next_due_date: form.next_due_date || null,
       lot_number: form.lot_number.trim() || null,
       vet_id: userId,
+      visit_id: visitId ?? null,
       created_by: userId,
     })
     setSaving(false)
