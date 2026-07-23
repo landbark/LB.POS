@@ -14,10 +14,10 @@ export default async function ReportsPage() {
       .select('*, profiles(name), customers(name)')
       .order('created_at', { ascending: false })
       .limit(20),
-    // แยกยอด VAT ต้องดูรายสินค้า ไม่ใช่ระดับบิล — ตัดบิลที่ถูกยกเลิกออก
+    // แยกยอด VAT + รายได้บริการคลินิก ต้องดูรายสินค้า ไม่ใช่ระดับบิล — ตัดบิลที่ถูกยกเลิกออก
     supabase
       .from('transaction_items')
-      .select('subtotal, vat_applicable, transactions!inner(created_at, status)')
+      .select('subtotal, vat_applicable, products(is_service), transactions!inner(created_at, status)')
       .gte('transactions.created_at', startOfMonth)
       .neq('transactions.status', 'cancelled'),
     supabase.from('store_settings').select('vat_registered, vat_rate').limit(1).single(),
@@ -25,6 +25,10 @@ export default async function ReportsPage() {
 
   const vatBase = monthItems?.reduce((s, i) => s + (i.vat_applicable ? i.subtotal : 0), 0) ?? 0
   const nonVatBase = monthItems?.reduce((s, i) => s + (i.vat_applicable ? 0 : i.subtotal), 0) ?? 0
+
+  // รายได้ค่าบริการคลินิก (สินค้าที่ตั้งเป็นบริการ เช่น ค่าตรวจ/ค่าหัตถการ/ค่าผ่าตัด) แยกจากยอดขายสินค้า
+  const serviceRevenue = monthItems?.reduce((s, i) => s + ((i.products as { is_service?: boolean } | null)?.is_service ? i.subtotal : 0), 0) ?? 0
+  const productRevenue = monthItems?.reduce((s, i) => s + ((i.products as { is_service?: boolean } | null)?.is_service ? 0 : i.subtotal), 0) ?? 0
   const vatRate = store?.vat_rate ?? 7
   const vatAmount = vatBase * (vatRate / 100)
 
@@ -76,6 +80,21 @@ export default async function ReportsPage() {
             )}
           </div>
         </div>
+      </div>
+
+      <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 mb-6">
+        <h2 className="font-semibold text-gray-900 mb-3">รายได้เดือนนี้ แยกสินค้า / บริการคลินิก</h2>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <p className="text-sm text-gray-500">ขายสินค้า</p>
+            <p className="text-xl font-bold text-gray-900 mt-0.5">฿{productRevenue.toLocaleString('th-TH', { minimumFractionDigits: 2 })}</p>
+          </div>
+          <div>
+            <p className="text-sm text-gray-500">ค่าบริการคลินิก (ค่าตรวจ/หัตถการ/ผ่าตัด)</p>
+            <p className="text-xl font-bold text-teal-600 mt-0.5">฿{serviceRevenue.toLocaleString('th-TH', { minimumFractionDigits: 2 })}</p>
+          </div>
+        </div>
+        <p className="text-xs text-gray-400 mt-3">แยกตามสินค้าที่ตั้งค่า &quot;เป็นค่าบริการ&quot; · ยอดตามราคาก่อนหักส่วนลดท้ายบิล</p>
       </div>
 
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 mb-6">
