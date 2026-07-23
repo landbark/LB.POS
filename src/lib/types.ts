@@ -177,7 +177,10 @@ export const SPECIES_LABELS: Record<PetSpecies, string> = {
 export interface Breed {
   id: string
   species: PetSpecies
+  /** ชื่อแสดงผล compose จาก "English / ไทย" (เก็บลง pets.breed) */
   name: string
+  name_en: string | null
+  name_th: string | null
   created_at: string
 }
 

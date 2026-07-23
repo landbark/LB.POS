@@ -175,10 +175,13 @@ CREATE TABLE customers (
 );
 
 -- พันธุ์สัตว์ให้เลือก (pets.breed เก็บเป็นชื่อ ไม่ใช่ FK — แพทเทิร์นเดียวกับ units + products.unit)
+-- name = ชื่อแสดงผล compose จาก "English / ไทย" (ใช้แสดง + ก็อปลง pets.breed); name_en/name_th ไว้แก้แยกภาษา
 CREATE TABLE breeds (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   species TEXT NOT NULL CHECK (species IN ('dog', 'cat', 'bird', 'rabbit', 'rodent', 'reptile', 'other')),
   name TEXT NOT NULL,
+  name_en TEXT,
+  name_th TEXT,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   UNIQUE (species, name)
 );

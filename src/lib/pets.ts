@@ -1,5 +1,13 @@
 import type { Pet } from './types'
 
+/** ชื่อพันธุ์แบบแสดงผล "English / ไทย" — มีภาษาเดียวก็ใช้ภาษานั้น (เก็บลง pets.breed ด้วย) */
+export function composeBreed(en: string, th: string): string {
+  const e = en.trim()
+  const t = th.trim()
+  if (e && t) return `${e} / ${t}`
+  return e || t
+}
+
 /** อายุ ณ วันที่กำหนด แบบอ่านง่าย เช่น "2 ปี 3 เดือน" / "5 เดือน" */
 export function ageAt(birthDate: string | null, atDate: string | Date): string | null {
   if (!birthDate) return null

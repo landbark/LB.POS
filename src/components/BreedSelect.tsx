@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import toast from 'react-hot-toast'
 import type { Breed, PetSpecies } from '@/lib/types'
+import { composeBreed } from '@/lib/pets'
 
 interface Props {
   species: PetSpecies
@@ -19,7 +20,8 @@ const ADD_OPTION = '__add__'
 export default function BreedSelect({ species, value, onChange, breeds, className = '' }: Props) {
   const [list, setList] = useState(breeds)
   const [adding, setAdding] = useState(false)
-  const [newName, setNewName] = useState('')
+  const [nameEn, setNameEn] = useState('')
+  const [nameTh, setNameTh] = useState('')
   const [saving, setSaving] = useState(false)
 
   const options = list.filter((b) => b.species === species)
@@ -27,14 +29,17 @@ export default function BreedSelect({ species, value, onChange, breeds, classNam
   const hasValue = !value || options.some((b) => b.name === value)
 
   async function addBreed() {
-    const name = newName.trim()
-    if (!name) return
+    const name = composeBreed(nameEn, nameTh)
+    if (!name) {
+      toast.error('กรอกชื่อพันธุ์อย่างน้อยหนึ่งภาษา')
+      return
+    }
 
     setSaving(true)
     const supabase = createClient()
     const { data, error } = await supabase
       .from('breeds')
-      .insert({ species, name })
+      .insert({ species, name, name_en: nameEn.trim() || null, name_th: nameTh.trim() || null })
       .select()
       .single()
     setSaving(false)
@@ -45,41 +50,54 @@ export default function BreedSelect({ species, value, onChange, breeds, classNam
     }
     setList([...list, data])
     onChange(data.name)
-    setNewName('')
+    setNameEn('')
+    setNameTh('')
     setAdding(false)
     toast.success(`เพิ่มพันธุ์ "${name}" แล้ว`)
   }
 
   if (adding) {
     return (
-      <div className="flex gap-2">
-        <input
-          type="text"
-          autoFocus
-          value={newName}
-          onChange={(e) => setNewName(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') { e.preventDefault(); addBreed() }
-            if (e.key === 'Escape') setAdding(false)
-          }}
-          placeholder="ชื่อพันธุ์ใหม่"
-          className={className}
-        />
-        <button
-          type="button"
-          onClick={addBreed}
-          disabled={saving || !newName.trim()}
-          className="shrink-0 px-3 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-lg text-xs font-medium"
-        >
-          บันทึก
-        </button>
-        <button
-          type="button"
-          onClick={() => { setAdding(false); setNewName('') }}
-          className="shrink-0 px-3 py-2 border border-gray-300 rounded-lg text-xs text-gray-600"
-        >
-          ยกเลิก
-        </button>
+      <div className="space-y-2">
+        <div className="grid grid-cols-2 gap-2">
+          <input
+            type="text"
+            autoFocus
+            value={nameEn}
+            onChange={(e) => setNameEn(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Escape') setAdding(false) }}
+            placeholder="English (เช่น Persian)"
+            className={className}
+          />
+          <input
+            type="text"
+            value={nameTh}
+            onChange={(e) => setNameTh(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') { e.preventDefault(); addBreed() }
+              if (e.key === 'Escape') setAdding(false)
+            }}
+            placeholder="ภาษาไทย (เช่น เปอร์เซีย)"
+            className={className}
+          />
+        </div>
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={addBreed}
+            disabled={saving || (!nameEn.trim() && !nameTh.trim())}
+            className="px-3 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-lg text-xs font-medium"
+          >
+            บันทึกพันธุ์
+          </button>
+          <button
+            type="button"
+            onClick={() => { setAdding(false); setNameEn(''); setNameTh('') }}
+            className="px-3 py-2 border border-gray-300 rounded-lg text-xs text-gray-600"
+          >
+            ยกเลิก
+          </button>
+        </div>
       </div>
     )
   }
