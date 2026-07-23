@@ -120,7 +120,7 @@ export default function NotificationsClient({
     <div>
       <h1 className="text-2xl font-bold text-gray-900 mb-1">แจ้งเตือน Telegram</h1>
       <p className="text-sm text-gray-500 mb-6">
-        ระบบส่งสรุปสต็อคต่ำ / สินค้าใกล้หมดอายุ เข้า Telegram ทุกเช้า 8:00 น. (เฉพาะวันที่มีรายการต้องเตือน)
+        ระบบส่งสรุปสต็อคต่ำ / สินค้าใกล้หมดอายุ / นัดหมายพรุ่งนี้ เข้า Telegram ทุกเช้า 8:00 น. (เฉพาะวันที่มีรายการต้องเตือน)
       </p>
 
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 max-w-xl mb-6">

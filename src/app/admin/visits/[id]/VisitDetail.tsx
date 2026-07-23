@@ -4,7 +4,7 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { AlertTriangle, ArrowLeft, Plus, Printer, Save, Send, Stethoscope, Trash2, X } from 'lucide-react'
+import { AlertTriangle, ArrowLeft, CalendarPlus, Plus, Printer, Save, Send, Stethoscope, Trash2, X } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { SPECIES_LABELS, VISIT_STATUS_LABELS, type Visit, type VisitItem } from '@/lib/types'
 import { petAge, petWarnings } from '@/lib/pets'
@@ -48,6 +48,7 @@ export default function VisitDetail({
 }) {
   const router = useRouter()
   const [saving, setSaving] = useState(false)
+  const [makingAppt, setMakingAppt] = useState(false)
   const [form, setForm] = useState({
     weight: visit.weight?.toString() ?? '',
     temperature: visit.temperature?.toString() ?? '',
@@ -159,6 +160,33 @@ export default function VisitDetail({
       return
     }
     toast.success('ส่งไปเก็บเงินแล้ว — แคชเชียร์จะเห็นที่หน้าขาย')
+    router.refresh()
+  }
+
+  // สร้างนัดติดตามจากวันที่กรอกไว้ — บันทึกวันติดตามลง visit ด้วยกันเผื่อยังไม่ได้กดบันทึก
+  async function createFollowUp() {
+    if (!form.follow_up_date) return
+    setMakingAppt(true)
+    const supabase = createClient()
+    // เที่ยงวันกันปัญหา timezone ขยับข้ามวัน
+    const scheduled_at = new Date(`${form.follow_up_date}T09:00`).toISOString()
+    const { error } = await supabase.from('appointments').insert({
+      pet_id: visit.pet_id,
+      customer_id: visit.customer_id,
+      vet_id: visit.vet_id,
+      scheduled_at,
+      type: 'follow_up',
+      notes: visit.diagnosis ? `ติดตามอาการ: ${visit.diagnosis}` : null,
+      visit_id: visit.id,
+      created_by: userId,
+    })
+    await supabase.from('visits').update({ follow_up_date: form.follow_up_date }).eq('id', visit.id)
+    setMakingAppt(false)
+    if (error) {
+      toast.error('สร้างนัดไม่สำเร็จ')
+      return
+    }
+    toast.success('สร้างนัดติดตามแล้ว — ดูได้ที่เมนูนัดหมาย')
     router.refresh()
   }
 
@@ -321,7 +349,20 @@ export default function VisitDetail({
           </div>
           <div>
             <label className={labelClass}>นัดติดตามอาการ</label>
-            <input type="date" value={form.follow_up_date} onChange={(e) => set('follow_up_date', e.target.value)} className={inputClass} />
+            <div className="flex items-center gap-2">
+              <input type="date" value={form.follow_up_date} onChange={(e) => set('follow_up_date', e.target.value)} className={inputClass} />
+              {form.follow_up_date && (
+                <button
+                  type="button"
+                  onClick={createFollowUp}
+                  disabled={makingAppt}
+                  title="สร้างนัดติดตามจากวันนี้"
+                  className="shrink-0 flex items-center gap-1 border border-gray-300 text-gray-600 text-xs px-2.5 py-2 rounded-lg hover:bg-gray-50 disabled:opacity-50"
+                >
+                  <CalendarPlus size={14} /> ตั้งนัด
+                </button>
+              )}
+            </div>
           </div>
         </div>
       </div>

@@ -91,6 +91,71 @@ export async function gatherStockAlerts(
   return { lowStock, expiring, expired, expiryDays }
 }
 
+// ---- นัดหมายพรุ่งนี้ ----
+
+const APPOINTMENT_TYPE_TH: Record<string, string> = {
+  checkup: 'ตรวจรักษา',
+  vaccine: 'ฉีดวัคซีน',
+  surgery: 'ผ่าตัด',
+  follow_up: 'ติดตามอาการ',
+  other: 'อื่นๆ',
+}
+
+interface AppointmentReminder {
+  time: string
+  petName: string
+  ownerName: string | null
+  ownerPhone: string | null
+  type: string
+  notes: string | null
+}
+
+// ช่วงเวลาของ "พรุ่งนี้" ตามเวลาไทย แปลงเป็น UTC ไว้ query scheduled_at (timestamptz)
+export async function gatherTomorrowAppointments(
+  admin: ReturnType<typeof createAdminClient>
+): Promise<AppointmentReminder[]> {
+  const tomorrow = addDays(todayThai(), 1)
+  // ไทย = UTC+7 → 00:00 ของพรุ่งนี้ (ไทย) = 17:00 ของวันนี้ (UTC)
+  const startUtc = new Date(`${tomorrow}T00:00:00+07:00`).toISOString()
+  const endUtc = new Date(`${addDays(tomorrow, 1)}T00:00:00+07:00`).toISOString()
+
+  const { data } = await admin
+    .from('appointments')
+    .select('scheduled_at, type, notes, pets(name), customers(name, phone)')
+    .eq('status', 'scheduled')
+    .gte('scheduled_at', startUtc)
+    .lt('scheduled_at', endUtc)
+    .order('scheduled_at')
+
+  return (data ?? []).map((a) => {
+    const pet = a.pets as unknown as { name: string } | null
+    const owner = a.customers as unknown as { name: string; phone: string } | null
+    return {
+      time: new Date(a.scheduled_at).toLocaleTimeString('th-TH', { timeZone: 'Asia/Bangkok', hour: '2-digit', minute: '2-digit' }),
+      petName: pet?.name ?? '—',
+      ownerName: owner?.name ?? null,
+      ownerPhone: owner?.phone ?? null,
+      type: a.type,
+      notes: a.notes,
+    }
+  })
+}
+
+export function buildAppointmentMessage(appointments: AppointmentReminder[]): string | null {
+  if (appointments.length === 0) return null
+
+  const headerDate = new Date(`${addDays(todayThai(), 1)}T00:00:00`).toLocaleDateString('th-TH', {
+    day: 'numeric', month: 'short', year: '2-digit',
+  })
+
+  const lines = appointments.map((a) => {
+    const who = [a.ownerName, a.ownerPhone].filter(Boolean).join(' ')
+    return `• ${a.time} — ${a.petName} (${APPOINTMENT_TYPE_TH[a.type] ?? a.type})${who ? ` · ${who}` : ''}${a.notes ? `\n   ${a.notes}` : ''}`
+  })
+
+  return [`📅 LANDBARK นัดหมายพรุ่งนี้ (${headerDate}) — ${appointments.length} นัด`, ...lines].join('\n')
+}
+
 function section(title: string, lines: string[]): string {
   const shown = lines.slice(0, MAX_ITEMS_PER_SECTION)
   const more = lines.length - shown.length
@@ -176,17 +241,22 @@ export async function sendStockAlerts(
   const chatIds = (recipients ?? []).map((r) => r.chat_id)
   if (chatIds.length === 0) return { sent: false, reason: 'no_recipients' }
 
-  const alerts = await gatherStockAlerts(admin, settings?.expiry_days ?? 30)
+  const [alerts, appointments] = await Promise.all([
+    gatherStockAlerts(admin, settings?.expiry_days ?? 30),
+    gatherTomorrowAppointments(admin),
+  ])
   const counts = {
     lowStock: alerts.lowStock.length,
     expiring: alerts.expiring.length,
     expired: alerts.expired.length,
   }
 
-  let message = buildAlertMessage(alerts)
+  // รวมแจ้งเตือนสต็อค + นัดพรุ่งนี้ ไว้ในข้อความเดียว (ส่งถ้ามีอย่างใดอย่างหนึ่ง)
+  const parts = [buildAlertMessage(alerts), buildAppointmentMessage(appointments)].filter(Boolean) as string[]
+  let message: string | null = parts.length > 0 ? parts.join('\n\n———\n\n') : null
   if (!message) {
     if (!sendWhenEmpty) return { sent: false, reason: 'nothing_to_alert', counts }
-    message = '🐾 LANDBARK — ทดสอบแจ้งเตือนสำเร็จ ✅\nตอนนี้ไม่มีสินค้าสต็อคต่ำหรือใกล้หมดอายุ'
+    message = '🐾 LANDBARK — ทดสอบแจ้งเตือนสำเร็จ ✅\nตอนนี้ไม่มีสินค้าสต็อคต่ำ/ใกล้หมดอายุ และไม่มีนัดหมายพรุ่งนี้'
   }
 
   const results = await Promise.allSettled(chatIds.map((id) => sendTelegramMessage(id, message!)))

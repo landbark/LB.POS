@@ -242,6 +242,21 @@ CREATE TABLE visit_items (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- นัดหมาย (คลินิก)
+CREATE TABLE appointments (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  pet_id UUID NOT NULL REFERENCES pets(id) ON DELETE CASCADE,
+  customer_id UUID REFERENCES customers(id) ON DELETE SET NULL,
+  vet_id UUID REFERENCES profiles(id) ON DELETE SET NULL,
+  scheduled_at TIMESTAMPTZ NOT NULL,
+  type TEXT NOT NULL DEFAULT 'checkup' CHECK (type IN ('checkup', 'vaccine', 'surgery', 'follow_up', 'other')),
+  status TEXT NOT NULL DEFAULT 'scheduled' CHECK (status IN ('scheduled', 'done', 'missed', 'cancelled')),
+  notes TEXT,
+  visit_id UUID REFERENCES visits(id) ON DELETE SET NULL,
+  created_by UUID REFERENCES profiles(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
 -- ข้อมูลร้าน (singleton) — ใส่หัวเอกสาร (ใบเสร็จ/ใบสั่งซื้อ)
 CREATE TABLE store_settings (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -436,6 +451,8 @@ ALTER TABLE visit_items ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "auth manage pets" ON pets FOR ALL TO authenticated USING (true);
 CREATE POLICY "auth manage visits" ON visits FOR ALL TO authenticated USING (true);
 CREATE POLICY "auth manage visit_items" ON visit_items FOR ALL TO authenticated USING (true);
+ALTER TABLE appointments ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "auth manage appointments" ON appointments FOR ALL TO authenticated USING (true);
 
 -- สัตวแพทย์: อ่านได้ทุกอย่าง เขียนได้เฉพาะงานคลินิก/ลูกค้า
 -- policy ข้างบนเป็น permissive (OR กัน) เติมเงื่อนไขเข้าไปทีละอันไม่ได้ผล — ใช้ RESTRICTIVE ซ้อน (AND กับทุก policy)
@@ -471,6 +488,9 @@ CREATE INDEX idx_visits_pet_id ON visits(pet_id, visit_date DESC);
 CREATE INDEX idx_visits_status ON visits(status);
 CREATE INDEX idx_visits_visit_date ON visits(visit_date DESC);
 CREATE INDEX idx_visit_items_visit_id ON visit_items(visit_id);
+CREATE INDEX idx_appointments_scheduled_at ON appointments(scheduled_at);
+CREATE INDEX idx_appointments_pet_id ON appointments(pet_id, scheduled_at DESC);
+CREATE INDEX idx_appointments_status ON appointments(status);
 
 -- Sample categories
 INSERT INTO categories (name) VALUES

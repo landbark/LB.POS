@@ -272,6 +272,41 @@ export interface ClinicQueueVisit {
   items: ClinicQueueItem[]
 }
 
+export type AppointmentType = 'checkup' | 'vaccine' | 'surgery' | 'follow_up' | 'other'
+export type AppointmentStatus = 'scheduled' | 'done' | 'missed' | 'cancelled'
+
+export const APPOINTMENT_TYPE_LABELS: Record<AppointmentType, string> = {
+  checkup: 'ตรวจรักษา',
+  vaccine: 'ฉีดวัคซีน',
+  surgery: 'ผ่าตัด',
+  follow_up: 'ติดตามอาการ',
+  other: 'อื่นๆ',
+}
+
+export const APPOINTMENT_STATUS_LABELS: Record<AppointmentStatus, string> = {
+  scheduled: 'นัดแล้ว',
+  done: 'มาแล้ว',
+  missed: 'ไม่มา',
+  cancelled: 'ยกเลิก',
+}
+
+export interface Appointment {
+  id: string
+  pet_id: string
+  customer_id: string | null
+  vet_id: string | null
+  scheduled_at: string
+  type: AppointmentType
+  status: AppointmentStatus
+  notes: string | null
+  visit_id: string | null
+  created_by: string | null
+  created_at: string
+  pets?: Pet
+  customers?: Customer
+  vet?: { name: string } | null
+}
+
 export interface PointsConfig {
   id: string
   enabled: boolean
