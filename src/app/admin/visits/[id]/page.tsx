@@ -14,7 +14,7 @@ export default async function VisitPage({ params }: { params: Promise<{ id: stri
       pets(*, customers(id, name, phone)),
       customers(id, name, phone),
       vet:profiles!visits_vet_id_fkey(name),
-      visit_items(*, products(id, name, unit, price))
+      visit_items(*, products(id, name, unit, price, is_vaccine, booster_interval_days, categories(is_vaccine)))
     `)
     .eq('id', id)
     .single()

@@ -109,6 +109,8 @@ CREATE TABLE categories (
   vat_applicable BOOLEAN NOT NULL DEFAULT false,
   -- ของคลินิก (ยา/เวชภัณฑ์) — ไม่ขึ้นในหน้าขาย เลือกจ่ายได้เฉพาะในหน้าตรวจรักษา
   clinic_only BOOLEAN NOT NULL DEFAULT false,
+  -- เป็นวัคซีน — จ่ายในหน้าตรวจแล้วลงประวัติวัคซีนของสัตว์อัตโนมัติ
+  is_vaccine BOOLEAN NOT NULL DEFAULT false,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -145,6 +147,9 @@ CREATE TABLE products (
   -- NULL = ใช้ตามหมวดหมู่
   vat_applicable BOOLEAN,
   clinic_only BOOLEAN,
+  -- เป็นวัคซีน (NULL = ตามหมวด) + ระยะกระตุ้นเข็มถัดไป (วัน)
+  is_vaccine BOOLEAN,
+  booster_interval_days INT,
   -- ค่าตรวจ/ค่าหัตถการ/ค่าผ่าตัด — ขายได้ตามปกติ แต่ไม่มีสต็อคให้ตัด
   is_service BOOLEAN NOT NULL DEFAULT false,
   image_url TEXT,
@@ -265,6 +270,8 @@ CREATE TABLE pet_vaccinations (
   lot_number TEXT,
   vet_id UUID REFERENCES profiles(id) ON DELETE SET NULL,
   visit_id UUID REFERENCES visits(id) ON DELETE SET NULL,
+  -- สินค้าที่จ่าย (ถ้าลงประวัติอัตโนมัติตอนจ่ายวัคซีน) — กันลงซ้ำ
+  product_id UUID REFERENCES products(id) ON DELETE SET NULL,
   notes TEXT,
   created_by UUID REFERENCES profiles(id) ON DELETE SET NULL,
   created_at TIMESTAMPTZ DEFAULT NOW()

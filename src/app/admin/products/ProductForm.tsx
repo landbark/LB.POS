@@ -31,6 +31,8 @@ export default function ProductForm({ categories, units, suppliers, product }: P
     // '' = ตามหมวดหมู่, 'yes'/'no' = ตั้งแยกเฉพาะสินค้าตัวนี้
     vat: product?.vat_applicable === true ? 'yes' : product?.vat_applicable === false ? 'no' : '',
     clinic: product?.clinic_only === true ? 'yes' : product?.clinic_only === false ? 'no' : '',
+    vaccine: product?.is_vaccine === true ? 'yes' : product?.is_vaccine === false ? 'no' : '',
+    booster: product?.booster_interval_days?.toString() ?? '',
     is_service: product?.is_service ?? false,
   })
 
@@ -133,6 +135,8 @@ export default function ProductForm({ categories, units, suppliers, product }: P
       min_stock: parseInt(form.min_stock),
       vat_applicable: form.vat === '' ? null : form.vat === 'yes',
       clinic_only: form.clinic === '' ? null : form.clinic === 'yes',
+      is_vaccine: form.vaccine === '' ? null : form.vaccine === 'yes',
+      booster_interval_days: form.booster.trim() ? parseInt(form.booster) : null,
       is_service: form.is_service,
     }
 
@@ -162,6 +166,11 @@ export default function ProductForm({ categories, units, suppliers, product }: P
   const categoryClinicLabel = !selectedCat
     ? 'ไม่ระบุหมวด = ขายหน้าร้านได้'
     : selectedCat.clinic_only ? 'ของคลินิก' : 'ขายหน้าร้านได้'
+  const categoryVaccineLabel = !selectedCat
+    ? 'ไม่ระบุหมวด = ไม่ใช่วัคซีน'
+    : selectedCat.is_vaccine ? 'เป็นวัคซีน' : 'ไม่ใช่วัคซีน'
+  // ตีความว่าสินค้านี้เป็นวัคซีนไหม (ค่ารายสินค้าชนะหมวด) — ใช้ตัดสินว่าจะโชว์ช่องนัดกระตุ้น
+  const effectiveVaccine = form.vaccine === 'yes' || (form.vaccine === '' && !!selectedCat?.is_vaccine)
 
   const inputClass = 'w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500'
   const labelClass = 'block text-sm font-medium text-gray-700 mb-1'
@@ -356,6 +365,32 @@ export default function ProductForm({ categories, units, suppliers, product }: P
           <p className="text-xs text-gray-400 mt-1">
             ยา/เวชภัณฑ์ที่ต้องให้หมอสั่งจ่าย — จะไม่ขึ้นในหน้าขาย แต่เลือกจ่ายได้จากหน้าตรวจรักษา
           </p>
+        </div>
+
+        <div>
+          <label className={labelClass}>วัคซีน</label>
+          <select value={form.vaccine} onChange={(e) => set('vaccine', e.target.value)} className={inputClass}>
+            <option value="">ตามหมวดหมู่ ({categoryVaccineLabel})</option>
+            <option value="yes">ใช่ — เป็นวัคซีน</option>
+            <option value="no">ไม่ใช่</option>
+          </select>
+          <p className="text-xs text-gray-400 mt-1">
+            จ่ายในหน้าตรวจรักษาแล้วจะลงประวัติวัคซีนของสัตว์ให้อัตโนมัติ
+          </p>
+          {effectiveVaccine && (
+            <div className="mt-2 flex items-center gap-2">
+              <span className="text-sm text-gray-600">นัดกระตุ้นเข็มถัดไปทุก</span>
+              <input
+                type="number"
+                min="0"
+                value={form.booster}
+                onChange={(e) => set('booster', e.target.value)}
+                className="w-24 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                placeholder="เช่น 365"
+              />
+              <span className="text-sm text-gray-600">วัน (เว้นว่าง = ไม่ตั้งวันนัด)</span>
+            </div>
+          )}
         </div>
 
         <div>

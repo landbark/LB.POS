@@ -34,6 +34,8 @@ export interface Category {
   vat_applicable: boolean
   /** ของคลินิก (ยา/เวชภัณฑ์) — ไม่ขึ้นในหน้าขาย จ่ายได้จากหน้าตรวจรักษาเท่านั้น */
   clinic_only: boolean
+  /** เป็นวัคซีน — จ่ายในหน้าตรวจแล้วลงประวัติวัคซีนอัตโนมัติ */
+  is_vaccine: boolean
   created_at: string
 }
 
@@ -58,6 +60,10 @@ export interface Product {
   vat_applicable: boolean | null
   /** null = ใช้ตามหมวดหมู่ */
   clinic_only: boolean | null
+  /** เป็นวัคซีน (null = ตามหมวด) */
+  is_vaccine: boolean | null
+  /** ระยะกระตุ้นเข็มถัดไป (วัน) สำหรับสินค้าวัคซีน */
+  booster_interval_days: number | null
   /** ค่าตรวจ/ค่าหัตถการ — ขายได้ตามปกติ แต่ไม่มีสต็อคให้ตัด */
   is_service: boolean
   image_url: string | null
@@ -296,6 +302,7 @@ export interface PetVaccination {
   lot_number: string | null
   vet_id: string | null
   visit_id: string | null
+  product_id: string | null
   notes: string | null
   created_by: string | null
   created_at: string

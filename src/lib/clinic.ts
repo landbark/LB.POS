@@ -15,3 +15,16 @@ export function isClinicOnly(product: ClinicProduct): boolean {
   }
   return product.categories?.clinic_only ?? false
 }
+
+interface VaccineProduct {
+  is_vaccine?: boolean | null
+  categories?: { is_vaccine?: boolean | null } | null
+}
+
+/** สินค้าตัวนี้เป็นวัคซีนไหม — ค่ารายสินค้าชนะค่าของหมวด (จ่ายแล้วลงประวัติวัคซีนอัตโนมัติ) */
+export function isVaccine(product: VaccineProduct): boolean {
+  if (product.is_vaccine !== null && product.is_vaccine !== undefined) {
+    return product.is_vaccine
+  }
+  return product.categories?.is_vaccine ?? false
+}

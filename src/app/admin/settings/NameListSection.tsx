@@ -6,13 +6,14 @@ import { createClient } from '@/lib/supabase/client'
 import { Ruler, Tag, Plus, Trash2 } from 'lucide-react'
 import toast from 'react-hot-toast'
 
-type Flag = 'vat_applicable' | 'clinic_only'
+type Flag = 'vat_applicable' | 'clinic_only' | 'is_vaccine'
 
 interface Item {
   id: string
   name: string
   vat_applicable?: boolean
   clinic_only?: boolean
+  is_vaccine?: boolean
 }
 
 interface Props {
@@ -137,6 +138,18 @@ export default function NameListSection({ title, table, items, placeholder, dele
                       className="w-3.5 h-3.5 accent-blue-600"
                     />
                     ของคลินิก
+                  </label>
+                  <label
+                    className="flex items-center gap-1.5 text-xs text-gray-500 cursor-pointer"
+                    title="วัคซีน — จ่ายในหน้าตรวจรักษาแล้วลงประวัติวัคซีนของสัตว์อัตโนมัติ"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={flagOf(item, 'is_vaccine')}
+                      onChange={(e) => toggleFlag(item, 'is_vaccine', e.target.checked)}
+                      className="w-3.5 h-3.5 accent-blue-600"
+                    />
+                    วัคซีน
                   </label>
                 </>
               )}

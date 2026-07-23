@@ -8,7 +8,8 @@ import { AlertTriangle, ArrowLeft, CalendarPlus, Plus, Printer, Save, Send, Stet
 import toast from 'react-hot-toast'
 import { SPECIES_LABELS, VISIT_STATUS_LABELS, type PetVaccination, type Vaccine, type Visit, type VisitItem } from '@/lib/types'
 import { petAge, petWarnings } from '@/lib/pets'
-import { isClinicOnly } from '@/lib/clinic'
+import { isClinicOnly, isVaccine } from '@/lib/clinic'
+import { addDaysISO } from '@/lib/vaccines'
 import VaccineSection from '@/app/admin/pets/[id]/VaccineSection'
 
 interface DispensableProduct {
@@ -155,6 +156,35 @@ export default function VisitDetail({
     if (!await saveVisit(true)) return
 
     const supabase = createClient()
+
+    // ลงประวัติวัคซีนอัตโนมัติสำหรับรายการที่เป็นวัคซีน (กันซ้ำด้วย visit_id + product_id)
+    const vaccineItems = items.filter((i) => i.products && isVaccine(i.products as never))
+    if (vaccineItems.length > 0) {
+      const { data: existing } = await supabase
+        .from('pet_vaccinations')
+        .select('product_id')
+        .eq('visit_id', visit.id)
+        .not('product_id', 'is', null)
+      const already = new Set((existing ?? []).map((e) => e.product_id))
+      const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Bangkok' })
+      const rows = vaccineItems
+        .filter((i) => !already.has(i.product_id))
+        .map((i) => {
+          const p = i.products as { name: string; booster_interval_days?: number | null }
+          return {
+            pet_id: visit.pet_id,
+            vaccine_name: p.name,
+            dose_date: today,
+            next_due_date: p.booster_interval_days ? addDaysISO(today, p.booster_interval_days) : null,
+            vet_id: visit.vet_id,
+            visit_id: visit.id,
+            product_id: i.product_id,
+            created_by: userId,
+          }
+        })
+      if (rows.length > 0) await supabase.from('pet_vaccinations').insert(rows)
+    }
+
     const { error } = await supabase
       .from('visits')
       .update({ status: 'pending_payment' })
