@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
-import { ArrowLeft, AlertTriangle, Stethoscope } from 'lucide-react'
+import { ArrowLeft, AlertTriangle, Stethoscope, FileText, FileSignature, Send } from 'lucide-react'
 import { createClient } from '@/lib/supabase/server'
 import { SPECIES_LABELS, VISIT_STATUS_LABELS, type Pet, type VisitStatus } from '@/lib/types'
 import { ageAt, petAge } from '@/lib/pets'
@@ -82,6 +82,24 @@ export default async function PetDetailPage({ params }: { params: Promise<{ id: 
           </div>
         )}
         {p.notes && <p className="text-gray-600">หมายเหตุ: {p.notes}</p>}
+      </div>
+
+      {/* เอกสารคลินิก — พิมพ์/กรอกเองได้ ดึงข้อมูลสัตว์+เจ้าของมาให้ */}
+      <div className="bg-white rounded-xl border border-gray-100 p-4 mb-6">
+        <h2 className="text-sm font-semibold text-gray-700 mb-2 flex items-center gap-2">
+          <FileText size={15} className="text-gray-400" /> เอกสาร (พิมพ์ได้)
+        </h2>
+        <div className="flex flex-wrap gap-2">
+          <a href={`/print/treatment-form/${p.id}`} target="_blank" className="flex items-center gap-1.5 border border-gray-300 text-gray-700 text-sm px-3 py-2 rounded-lg hover:bg-gray-50">
+            <FileText size={15} /> ใบสรุปการรักษา
+          </a>
+          <a href={`/print/consent/${p.id}`} target="_blank" className="flex items-center gap-1.5 border border-gray-300 text-gray-700 text-sm px-3 py-2 rounded-lg hover:bg-gray-50">
+            <FileSignature size={15} /> ใบยินยอมวางยา/ผ่าตัด
+          </a>
+          <a href={`/print/referral/${p.id}`} target="_blank" className="flex items-center gap-1.5 border border-gray-300 text-gray-700 text-sm px-3 py-2 rounded-lg hover:bg-gray-50">
+            <Send size={15} /> ใบส่งตัว
+          </a>
+        </div>
       </div>
 
       <div className="mb-6">
