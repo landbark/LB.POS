@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Plus, Edit, Trash2, X, Check, Search, AlertTriangle } from 'lucide-react'
@@ -338,7 +339,7 @@ export default function PetsClient({
               ) : (
                 <tr key={p.id} className="hover:bg-gray-50">
                   <td className="px-4 py-3 text-sm font-medium text-gray-900">
-                    {p.name}
+                    <Link href={`/admin/pets/${p.id}`} className="hover:text-blue-600">{p.name}</Link>
                     {p.sterilized && (
                       <span className="ml-2 text-xs text-gray-400">
                         ทำหมันแล้ว

@@ -155,7 +155,11 @@ export default function CustomersClient({
                 </tr>
               ) : (
                 <tr key={c.id} className="hover:bg-gray-50">
-                  <td className="px-4 py-3 text-sm font-medium text-gray-900">{c.name}</td>
+                  <td className="px-4 py-3 text-sm font-medium">
+                    <Link href={`/admin/customers/${c.id}`} className="text-gray-900 hover:text-blue-600" onClick={(e) => e.stopPropagation()}>
+                      {c.name}
+                    </Link>
+                  </td>
                   <td className="px-4 py-3 text-sm text-gray-600 font-mono">{c.phone}</td>
                   <td className="px-4 py-3 text-sm text-gray-600">
                     {petNames[c.id]?.length
