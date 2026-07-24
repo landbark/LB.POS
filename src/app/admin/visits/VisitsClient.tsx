@@ -214,17 +214,28 @@ export default function VisitsClient({
     .slice()
     .sort((a, b) => a.visit_date.localeCompare(b.visit_date))
 
+  // เรียงตามสถานะ: รอตรวจ → กำลังตรวจ → รอเก็บเงิน → เก็บเงินแล้ว → ยกเลิก (ล่างสุด)
+  const STATUS_ORDER: Record<VisitStatus, number> = {
+    waiting: 0, open: 1, pending_payment: 2, paid: 3, cancelled: 4,
+  }
   const q = query.trim().toLowerCase()
-  const filtered = visits.filter((v) => {
-    const matchStatus = !statusFilter || v.status === statusFilter
-    const matchQuery = !q
-      || v.visit_number.toLowerCase().includes(q)
-      || (v.pets?.name ?? '').toLowerCase().includes(q)
-      || (v.customers?.name ?? '').toLowerCase().includes(q)
-      || (v.customers?.phone ?? '').includes(q)
-      || (v.diagnosis ?? '').toLowerCase().includes(q)
-    return matchStatus && matchQuery
-  })
+  const filtered = visits
+    .filter((v) => {
+      const matchStatus = !statusFilter || v.status === statusFilter
+      const matchQuery = !q
+        || v.visit_number.toLowerCase().includes(q)
+        || (v.pets?.name ?? '').toLowerCase().includes(q)
+        || (v.customers?.name ?? '').toLowerCase().includes(q)
+        || (v.customers?.phone ?? '').includes(q)
+        || (v.diagnosis ?? '').toLowerCase().includes(q)
+      return matchStatus && matchQuery
+    })
+    .slice()
+    .sort((a, b) => {
+      const d = (STATUS_ORDER[a.status] ?? 99) - (STATUS_ORDER[b.status] ?? 99)
+      if (d !== 0) return d
+      return b.visit_date.localeCompare(a.visit_date) // สถานะเดียวกัน: ใหม่ก่อน
+    })
 
   const pq = petQuery.trim().toLowerCase()
   const petMatches = pets.filter((p) =>
