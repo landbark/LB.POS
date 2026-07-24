@@ -7,7 +7,7 @@ import { createClient } from '@/lib/supabase/client'
 import { ArrowLeft, Clock, Plus, Search, Stethoscope, X } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { SPECIES_LABELS, VISIT_STATUS_LABELS, type Breed, type Pet, type PetSpecies, type Visit, type VisitStatus } from '@/lib/types'
-import { petAge } from '@/lib/pets'
+import { ageAt, petAge } from '@/lib/pets'
 import BreedSelect from '@/components/BreedSelect'
 
 type OwnerOption = { id: string; name: string; phone: string }
@@ -30,6 +30,8 @@ const emptyPetForm = {
   breed: '',
   sex: '',
   birth_date: '',
+  sterilized: false,
+  sterilized_date: '',
   allergies: '',
 }
 
@@ -129,6 +131,8 @@ export default function VisitsClient({
         breed: petForm.breed.trim() || null,
         sex: petForm.sex || null,
         birth_date: petForm.birth_date || null,
+        sterilized: petForm.sterilized,
+        sterilized_date: petForm.sterilized ? (petForm.sterilized_date || null) : null,
         allergies: petForm.allergies.trim() || null,
       })
       .select('*, customers(id, name, phone)')
@@ -460,6 +464,23 @@ export default function VisitsClient({
                   <div>
                     <label className={labelClass}>แพ้ยา / แพ้อาหาร</label>
                     <input type="text" value={petForm.allergies} onChange={(e) => setPetForm({ ...petForm, allergies: e.target.value })} className={inputClass} />
+                  </div>
+                  <div className="col-span-2 flex flex-wrap items-end gap-4">
+                    <label className="flex items-center gap-2 text-sm text-gray-700 pb-2">
+                      <input type="checkbox" checked={petForm.sterilized} onChange={(e) => setPetForm({ ...petForm, sterilized: e.target.checked })} className="w-4 h-4" />
+                      ทำหมันแล้ว
+                    </label>
+                    {petForm.sterilized && (
+                      <div>
+                        <label className={labelClass}>วันที่ทำหมัน</label>
+                        <div className="flex items-center gap-2">
+                          <input type="date" value={petForm.sterilized_date} onChange={(e) => setPetForm({ ...petForm, sterilized_date: e.target.value })} className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                          {petForm.sterilized_date && ageAt(petForm.birth_date || null, petForm.sterilized_date) && (
+                            <span className="text-xs text-gray-500">ทำตอนอายุ {ageAt(petForm.birth_date || null, petForm.sterilized_date)}</span>
+                          )}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
 
