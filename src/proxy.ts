@@ -76,6 +76,11 @@ export async function proxy(request: NextRequest) {
     if (profile?.role === 'vet' && vetBlockedPaths.some((p) => pathname === p || pathname.startsWith(p + '/'))) {
       return NextResponse.redirect(new URL(homePath('vet'), request.url))
     }
+
+    // แคชเชียร์: ลงทะเบียน/ดูคิวได้ (/admin/visits) แต่เปิดเวชระเบียนตรวจรักษา (/admin/visits/<id>) ไม่ได้ — เป็นงานสัตวแพทย์
+    if (profile?.role === 'cashier' && /^\/admin\/visits\/[^/]+$/.test(pathname)) {
+      return NextResponse.redirect(new URL('/admin/visits', request.url))
+    }
   }
 
   return supabaseResponse

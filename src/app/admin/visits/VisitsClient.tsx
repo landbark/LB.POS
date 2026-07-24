@@ -208,7 +208,11 @@ export default function VisitsClient({
     router.push(`/admin/visits/${visit.id}`)
   }
 
-  const waiting = visits.filter((v) => v.status === 'waiting')
+  // คิวรอตรวจ: มาก่อนตรวจก่อน (เรียงตามเวลาลงทะเบียนจากเก่าไปใหม่)
+  const waiting = visits
+    .filter((v) => v.status === 'waiting')
+    .slice()
+    .sort((a, b) => a.visit_date.localeCompare(b.visit_date))
 
   const q = query.trim().toLowerCase()
   const filtered = visits.filter((v) => {
@@ -258,26 +262,33 @@ export default function VisitsClient({
             <Clock size={15} className="text-purple-500" /> คิวรอตรวจ ({waiting.length})
           </h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            {waiting.map((v) => (
+            {waiting.map((v, i) => (
               <div key={v.id} className="bg-white rounded-xl border-2 border-purple-100 p-3 flex flex-col gap-2">
-                <div>
-                  <p className="text-sm font-semibold text-gray-900">
-                    {v.pets?.name ?? '—'}
-                    {v.pets && <span className="ml-1.5 text-xs font-normal text-gray-400">{SPECIES_LABELS[v.pets.species]}</span>}
-                  </p>
-                  <p className="text-xs text-gray-500">{v.customers?.name ?? 'ไม่ระบุเจ้าของ'}</p>
-                  <p className="text-xs text-gray-400 mt-1">
-                    {v.weight != null && <span className="text-gray-600">{v.weight} กก. · </span>}
-                    ลงทะเบียน {new Date(v.visit_date).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })} น.
-                  </p>
+                <div className="flex items-start gap-2">
+                  <span className="shrink-0 w-6 h-6 rounded-full bg-purple-600 text-white text-xs font-bold flex items-center justify-center">{i + 1}</span>
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold text-gray-900">
+                      {v.pets?.name ?? '—'}
+                      {v.pets && <span className="ml-1.5 text-xs font-normal text-gray-400">{SPECIES_LABELS[v.pets.species]}</span>}
+                    </p>
+                    <p className="text-xs text-gray-500">{v.customers?.name ?? 'ไม่ระบุเจ้าของ'}</p>
+                    <p className="text-xs text-gray-400 mt-1">
+                      {v.weight != null && <span className="text-gray-600">{v.weight} กก. · </span>}
+                      ลงทะเบียน {new Date(v.visit_date).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })} น.
+                    </p>
+                  </div>
                 </div>
-                <button
-                  onClick={() => startExam(v)}
-                  disabled={busy}
-                  className="w-full flex items-center justify-center gap-1.5 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white text-sm font-medium py-2 rounded-lg transition-colors"
-                >
-                  <Stethoscope size={15} /> เริ่มตรวจ
-                </button>
+                {canExamine ? (
+                  <button
+                    onClick={() => startExam(v)}
+                    disabled={busy}
+                    className="w-full flex items-center justify-center gap-1.5 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white text-sm font-medium py-2 rounded-lg transition-colors"
+                  >
+                    <Stethoscope size={15} /> เริ่มตรวจ
+                  </button>
+                ) : (
+                  <p className="text-center text-xs text-gray-400 py-1.5">รอสัตวแพทย์เรียกตรวจ</p>
+                )}
               </div>
             ))}
           </div>
@@ -322,9 +333,13 @@ export default function VisitsClient({
           </thead>
           <tbody className="divide-y divide-gray-50">
             {filtered.map((v) => (
-              <tr key={v.id} className="hover:bg-gray-50 cursor-pointer" onClick={() => router.push(`/admin/visits/${v.id}`)}>
+              <tr
+                key={v.id}
+                className={`hover:bg-gray-50 ${canExamine ? 'cursor-pointer' : ''}`}
+                onClick={canExamine ? () => router.push(`/admin/visits/${v.id}`) : undefined}
+              >
                 <td className="px-4 py-3 text-sm font-mono text-blue-600">
-                  <Link href={`/admin/visits/${v.id}`}>{v.visit_number}</Link>
+                  {canExamine ? <Link href={`/admin/visits/${v.id}`}>{v.visit_number}</Link> : <span className="text-gray-600">{v.visit_number}</span>}
                 </td>
                 <td className="px-4 py-3 text-sm text-gray-600">
                   {new Date(v.visit_date).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' })}
