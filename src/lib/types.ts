@@ -62,7 +62,9 @@ export interface Product {
   clinic_only: boolean | null
   /** เป็นวัคซีน (null = ตามหมวด) */
   is_vaccine: boolean | null
-  /** ระยะกระตุ้นเข็มถัดไป (วัน) สำหรับสินค้าวัคซีน */
+  /** ประเภทนัดกระตุ้น: 4w=4 สัปดาห์, annual=วันเดิมปีถัดไป, custom=ใช้ booster_interval_days */
+  booster_type: BoosterType | null
+  /** จำนวนวัน (เฉพาะ booster_type = custom) */
   booster_interval_days: number | null
   /** ค่าตรวจ/ค่าหัตถการ — ขายได้ตามปกติ แต่ไม่มีสต็อคให้ตัด */
   is_service: boolean
@@ -276,6 +278,14 @@ export interface ClinicQueueVisit {
   pet_name: string
   customer: Customer | null
   items: ClinicQueueItem[]
+}
+
+export type BoosterType = '4w' | 'annual' | 'custom'
+
+export const BOOSTER_LABELS: Record<BoosterType, string> = {
+  '4w': 'ห่าง 4 สัปดาห์',
+  annual: 'ประจำปี (วันเดิมปีถัดไป)',
+  custom: 'กำหนดเอง (วัน)',
 }
 
 export interface Vaccine {

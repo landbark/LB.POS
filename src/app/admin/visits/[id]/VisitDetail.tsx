@@ -9,7 +9,7 @@ import toast from 'react-hot-toast'
 import { SPECIES_LABELS, VISIT_STATUS_LABELS, type PetVaccination, type Vaccine, type Visit, type VisitItem } from '@/lib/types'
 import { petAge, petWarnings } from '@/lib/pets'
 import { isClinicOnly, isVaccine } from '@/lib/clinic'
-import { addDaysISO } from '@/lib/vaccines'
+import { computeNextDue } from '@/lib/vaccines'
 import VaccineSection from '@/app/admin/pets/[id]/VaccineSection'
 
 interface DispensableProduct {
@@ -170,12 +170,12 @@ export default function VisitDetail({
       const rows = vaccineItems
         .filter((i) => !already.has(i.product_id))
         .map((i) => {
-          const p = i.products as { name: string; booster_interval_days?: number | null }
+          const p = i.products as { name: string; booster_type?: string | null; booster_interval_days?: number | null }
           return {
             pet_id: visit.pet_id,
             vaccine_name: p.name,
             dose_date: today,
-            next_due_date: p.booster_interval_days ? addDaysISO(today, p.booster_interval_days) : null,
+            next_due_date: computeNextDue(today, p.booster_type ?? null, p.booster_interval_days ?? null),
             vet_id: visit.vet_id,
             visit_id: visit.id,
             product_id: i.product_id,

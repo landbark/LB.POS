@@ -78,6 +78,15 @@ export default function VaccineSection({
     router.refresh()
   }
 
+  // เลื่อนวันนัดกระตุ้นของเข็มที่ลงไว้แล้ว
+  async function updateNextDue(v: PetVaccination, date: string) {
+    const supabase = createClient()
+    const { error } = await supabase.from('pet_vaccinations').update({ next_due_date: date || null }).eq('id', v.id)
+    if (error) { toast.error('เลื่อนวันนัดไม่สำเร็จ'); return }
+    toast.success('เลื่อนวันนัดแล้ว')
+    router.refresh()
+  }
+
   async function remove(v: PetVaccination) {
     if (!confirm(`ลบประวัติวัคซีน "${v.vaccine_name}" (${fmtDate(v.dose_date)})?`)) return
     const supabase = createClient()
@@ -162,13 +171,24 @@ export default function VaccineSection({
               </p>
               <p className="text-xs text-gray-400">
                 ฉีด {fmtDate(v.dose_date)}
-                {v.next_due_date && ` · นัดถัดไป ${fmtDate(v.next_due_date)}`}
                 {v.lot_number && ` · Lot ${v.lot_number}`}
               </p>
             </div>
-            <button onClick={() => remove(v)} className="p-1.5 text-gray-300 hover:text-red-600 rounded shrink-0">
-              <Trash2 size={14} />
-            </button>
+            <div className="flex items-center gap-2 shrink-0">
+              {/* เลื่อนวันนัดกระตุ้นได้ตรงนี้ */}
+              <label className="flex items-center gap-1 text-xs text-gray-500">
+                นัดถัดไป
+                <input
+                  type="date"
+                  defaultValue={v.next_due_date ?? ''}
+                  onChange={(e) => updateNextDue(v, e.target.value)}
+                  className="border border-gray-200 rounded px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </label>
+              <button onClick={() => remove(v)} className="p-1.5 text-gray-300 hover:text-red-600 rounded">
+                <Trash2 size={14} />
+              </button>
+            </div>
           </div>
         ))}
         {vaccinations.length === 0 && <p className="px-4 py-6 text-center text-sm text-gray-400">ยังไม่มีประวัติวัคซีน</p>}

@@ -147,8 +147,9 @@ CREATE TABLE products (
   -- NULL = ใช้ตามหมวดหมู่
   vat_applicable BOOLEAN,
   clinic_only BOOLEAN,
-  -- เป็นวัคซีน (NULL = ตามหมวด) + ระยะกระตุ้นเข็มถัดไป (วัน)
+  -- เป็นวัคซีน (NULL = ตามหมวด) + ประเภทนัดกระตุ้น: 4w=4 สัปดาห์, annual=วันเดิมปีถัดไป, custom=ใช้ booster_interval_days
   is_vaccine BOOLEAN,
+  booster_type TEXT CHECK (booster_type IN ('4w', 'annual', 'custom')),
   booster_interval_days INT,
   -- ค่าตรวจ/ค่าหัตถการ/ค่าผ่าตัด — ขายได้ตามปกติ แต่ไม่มีสต็อคให้ตัด
   is_service BOOLEAN NOT NULL DEFAULT false,

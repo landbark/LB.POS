@@ -32,6 +32,7 @@ export default function ProductForm({ categories, units, suppliers, product }: P
     vat: product?.vat_applicable === true ? 'yes' : product?.vat_applicable === false ? 'no' : '',
     clinic: product?.clinic_only === true ? 'yes' : product?.clinic_only === false ? 'no' : '',
     vaccine: product?.is_vaccine === true ? 'yes' : product?.is_vaccine === false ? 'no' : '',
+    boosterType: product?.booster_type ?? '',
     booster: product?.booster_interval_days?.toString() ?? '',
     is_service: product?.is_service ?? false,
   })
@@ -136,7 +137,8 @@ export default function ProductForm({ categories, units, suppliers, product }: P
       vat_applicable: form.vat === '' ? null : form.vat === 'yes',
       clinic_only: form.clinic === '' ? null : form.clinic === 'yes',
       is_vaccine: form.vaccine === '' ? null : form.vaccine === 'yes',
-      booster_interval_days: form.booster.trim() ? parseInt(form.booster) : null,
+      booster_type: form.boosterType || null,
+      booster_interval_days: form.boosterType === 'custom' && form.booster.trim() ? parseInt(form.booster) : null,
       is_service: form.is_service,
     }
 
@@ -378,17 +380,31 @@ export default function ProductForm({ categories, units, suppliers, product }: P
             จ่ายในหน้าตรวจรักษาแล้วจะลงประวัติวัคซีนของสัตว์ให้อัตโนมัติ
           </p>
           {effectiveVaccine && (
-            <div className="mt-2 flex items-center gap-2">
-              <span className="text-sm text-gray-600">นัดกระตุ้นเข็มถัดไปทุก</span>
-              <input
-                type="number"
-                min="0"
-                value={form.booster}
-                onChange={(e) => set('booster', e.target.value)}
-                className="w-24 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                placeholder="เช่น 365"
-              />
-              <span className="text-sm text-gray-600">วัน (เว้นว่าง = ไม่ตั้งวันนัด)</span>
+            <div className="mt-2 space-y-2">
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">นัดกระตุ้นเข็มถัดไป</label>
+                <select value={form.boosterType} onChange={(e) => set('boosterType', e.target.value)} className={inputClass}>
+                  <option value="">ไม่ตั้งวันนัด</option>
+                  <option value="4w">ห่าง 4 สัปดาห์ (ชุดเข็มลูกสัตว์)</option>
+                  <option value="annual">ประจำปี (วันเดิมของปีถัดไป)</option>
+                  <option value="custom">กำหนดเอง (จำนวนวัน)</option>
+                </select>
+              </div>
+              {form.boosterType === 'custom' && (
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-gray-600">ทุก</span>
+                  <input
+                    type="number"
+                    min="0"
+                    value={form.booster}
+                    onChange={(e) => set('booster', e.target.value)}
+                    className="w-24 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="เช่น 180"
+                  />
+                  <span className="text-sm text-gray-600">วัน</span>
+                </div>
+              )}
+              <p className="text-xs text-gray-400">ระบบจะตั้งวันนัดให้ตอนจ่ายวัคซีน — เลื่อนวันเองได้ทีหลังในประวัติวัคซีน</p>
             </div>
           )}
         </div>
