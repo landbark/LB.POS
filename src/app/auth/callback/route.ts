@@ -1,6 +1,7 @@
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 import { NextResponse, type NextRequest } from 'next/server'
+import { homePath } from '@/lib/home-path'
 
 export async function GET(request: NextRequest) {
   const { searchParams, origin } = new URL(request.url)
@@ -27,10 +28,11 @@ export async function GET(request: NextRequest) {
     if (!error) {
       // สร้าง profile ถ้ายังไม่มี
       const { data: { user } } = await supabase.auth.getUser()
+      let role: string | null = 'cashier'
       if (user) {
         const { data: profile } = await supabase
           .from('profiles')
-          .select('id')
+          .select('role')
           .eq('id', user.id)
           .single()
 
@@ -40,10 +42,13 @@ export async function GET(request: NextRequest) {
             role: 'cashier',
             name: user.user_metadata?.full_name ?? user.email ?? 'User',
           })
+        } else {
+          role = profile.role
         }
       }
 
-      return NextResponse.redirect(`${origin}/pos`)
+      // หน้าแรกตาม role — admin/หมอ ไป dashboard, แคชเชียร์ไปหน้าขาย
+      return NextResponse.redirect(`${origin}${homePath(role)}`)
     }
   }
 

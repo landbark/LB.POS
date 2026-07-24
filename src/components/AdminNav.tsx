@@ -27,7 +27,7 @@ import {
 
 // vetHidden = หน้าที่หมอเข้าไม่ได้ (proxy.ts กันไว้แล้ว ตรงนี้แค่ไม่ให้เห็นเมนู)
 const navItems = [
-  { href: '/admin/dashboard', label: 'ภาพรวม', icon: LayoutDashboard, adminOnly: true },
+  { href: '/admin/dashboard', label: 'ภาพรวม', icon: LayoutDashboard, cashierHidden: true },
   { href: '/pos', label: 'หน้าขาย', icon: ShoppingCart, adminOnly: false, vetHidden: true },
   { href: '/admin/visits', label: 'ตรวจรักษา', icon: Stethoscope, adminOnly: false },
   { href: '/admin/appointments', label: 'นัดหมาย', icon: CalendarClock, adminOnly: false },
@@ -71,6 +71,7 @@ export default function AdminNav({ userName, role }: { userName: string; role: s
         {navItems
           .filter((item) => role === 'admin' || !item.adminOnly)
           .filter((item) => role !== 'vet' || !item.vetHidden)
+          .filter((item) => role !== 'cashier' || !item.cashierHidden)
           .map(({ href, label, icon: Icon }) => {
           const active = (pathname.startsWith(href) && href !== '/pos') || pathname === href
           return (

@@ -1,8 +1,6 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
-
-// หน้าแรกหลังเข้าระบบ — หมอเข้าหน้าขายไม่ได้ ให้ไปเมนูคลินิกแทน
-const homePath = (role?: string) => (role === 'vet' ? '/admin/pets' : '/pos')
+import { homePath } from '@/lib/home-path'
 
 export async function proxy(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request })
@@ -45,7 +43,12 @@ export async function proxy(request: NextRequest) {
   }
 
   if (user && pathname === '/login') {
-    return NextResponse.redirect(new URL('/pos', request.url))
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('role')
+      .eq('id', user.id)
+      .single()
+    return NextResponse.redirect(new URL(homePath(profile?.role), request.url))
   }
 
   if (user && pathname !== '/login' && !pathname.startsWith('/auth')) {
@@ -64,9 +67,14 @@ export async function proxy(request: NextRequest) {
       return NextResponse.redirect(new URL(homePath(profile?.role), request.url))
     }
 
-    // เฉพาะ admin: ภาพรวม / รายงาน / ตั้งค่า / โปรโมชั่น (RLS ก็บังคับ admin เท่านั้นอยู่แล้ว) — หน้าอื่นใต้ /admin cashier เข้าได้
-    const adminOnlyPaths = ['/admin/dashboard', '/admin/reports', '/admin/settings', '/admin/promotions']
+    // เฉพาะ admin: รายงาน / ตั้งค่า / โปรโมชั่น (RLS ก็บังคับ admin เท่านั้นอยู่แล้ว) — หน้าอื่นใต้ /admin cashier เข้าได้
+    const adminOnlyPaths = ['/admin/reports', '/admin/settings', '/admin/promotions']
     if (adminOnlyPaths.some((p) => pathname.startsWith(p)) && profile?.role !== 'admin') {
+      return NextResponse.redirect(new URL(homePath(profile?.role), request.url))
+    }
+
+    // Dashboard (ภาพรวม): admin + หมอ เข้าได้ (เป็นหน้าแรกของทั้งคู่) — แคชเชียร์ให้ไปหน้าขาย
+    if (pathname.startsWith('/admin/dashboard') && profile?.role !== 'admin' && profile?.role !== 'vet') {
       return NextResponse.redirect(new URL(homePath(profile?.role), request.url))
     }
 

@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import { homePath } from '@/lib/home-path'
 import Image from 'next/image'
 import toast from 'react-hot-toast'
 
@@ -30,13 +31,19 @@ export default function LoginPage() {
     e.preventDefault()
     setLoading(true)
     const supabase = createClient()
-    const { error } = await supabase.auth.signInWithPassword({ email, password })
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password })
     if (error) {
       toast.error('อีเมลหรือรหัสผ่านไม่ถูกต้อง')
       setLoading(false)
       return
     }
-    router.push('/pos')
+    // หน้าแรกตาม role — admin/หมอ ไป dashboard, แคชเชียร์ไปหน้าขาย
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('role')
+      .eq('id', data.user.id)
+      .single()
+    router.push(homePath(profile?.role))
     router.refresh()
   }
 
