@@ -28,7 +28,7 @@ export default function VisitPrintView({ visit, store }: { visit: Visit; store: 
 
   const vitals = [
     visit.weight != null && `น้ำหนัก ${visit.weight} กก.`,
-    visit.temperature != null && `อุณหภูมิ ${visit.temperature} °C`,
+    visit.temperature != null && `อุณหภูมิ ${visit.temperature} °F`,
     visit.heart_rate != null && `ชีพจร ${visit.heart_rate}/นาที`,
     visit.resp_rate != null && `การหายใจ ${visit.resp_rate}/นาที`,
   ].filter(Boolean) as string[]

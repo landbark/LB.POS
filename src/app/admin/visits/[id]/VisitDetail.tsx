@@ -536,7 +536,7 @@ export default function VisitDetail({
             )}
           </div>
           <div>
-            <label className={labelClass}>Temperature (°C)</label>
+            <label className={labelClass}>Temperature (°F)</label>
             <input type="number" step="0.1" value={form.temperature} onChange={(e) => set('temperature', e.target.value)} className={inputClass} />
           </div>
           <div>

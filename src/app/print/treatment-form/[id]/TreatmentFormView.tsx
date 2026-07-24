@@ -69,7 +69,7 @@ export default function TreatmentFormView({ pet, store, weight }: { pet: Pet; st
 
           {/* สัญญาณชีพ */}
           <div className="grid grid-cols-4 gap-3 mb-3" style={{ fontSize: '0.92em' }}>
-            <p><span className="text-gray-600">อุณหภูมิ</span> <input className={field} style={{ width: '48px' }} /> °C</p>
+            <p><span className="text-gray-600">อุณหภูมิ</span> <input className={field} style={{ width: '48px' }} /> °F</p>
             <p><span className="text-gray-600">ชีพจร</span> <input className={field} style={{ width: '48px' }} /></p>
             <p><span className="text-gray-600">หายใจ</span> <input className={field} style={{ width: '48px' }} /></p>
             <p><span className="text-gray-600">อื่นๆ</span> <input className={field} style={{ width: '56px' }} /></p>
