@@ -4,7 +4,7 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { AlertTriangle, ArrowLeft, CalendarPlus, Eye, Plus, Printer, Save, Send, Stethoscope, Trash2, X } from 'lucide-react'
+import { AlertTriangle, ArrowLeft, CalendarPlus, Check, Eye, Plus, Printer, Save, Send, Stethoscope, Trash2, X } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { SPECIES_LABELS, VISIT_STATUS_LABELS, type PetVaccination, type Vaccine, type Visit, type VisitItem } from '@/lib/types'
 import { petAge, petWarnings } from '@/lib/pets'
@@ -167,6 +167,35 @@ export default function VisitDetail({
     router.refresh()
   }
 
+  // ลงประวัติวัคซีนอัตโนมัติสำหรับรายการที่เป็นวัคซีน (กันซ้ำด้วย visit_id + product_id)
+  async function logVaccineItems(supabase: ReturnType<typeof createClient>) {
+    const vaccineItems = items.filter((i) => i.products && isVaccine(i.products as never))
+    if (vaccineItems.length === 0) return
+    const { data: existing } = await supabase
+      .from('pet_vaccinations')
+      .select('product_id')
+      .eq('visit_id', visit.id)
+      .not('product_id', 'is', null)
+    const already = new Set((existing ?? []).map((e) => e.product_id))
+    const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Bangkok' })
+    const rows = vaccineItems
+      .filter((i) => !already.has(i.product_id))
+      .map((i) => {
+        const p = i.products as { name: string; booster_type?: string | null; booster_interval_days?: number | null }
+        return {
+          pet_id: visit.pet_id,
+          vaccine_name: p.name,
+          dose_date: today,
+          next_due_date: computeNextDue(today, p.booster_type ?? null, p.booster_interval_days ?? null),
+          vet_id: visit.vet_id,
+          visit_id: visit.id,
+          product_id: i.product_id,
+          created_by: userId,
+        }
+      })
+    if (rows.length > 0) await supabase.from('pet_vaccinations').insert(rows)
+  }
+
   // ส่งเข้าคิวเก็บเงิน — แคชเชียร์จะเห็นที่หน้าขายแล้วกดดึงเข้าตะกร้า
   async function sendToPayment() {
     if (items.length === 0) {
@@ -176,34 +205,7 @@ export default function VisitDetail({
     if (!await saveVisit(true)) return
 
     const supabase = createClient()
-
-    // ลงประวัติวัคซีนอัตโนมัติสำหรับรายการที่เป็นวัคซีน (กันซ้ำด้วย visit_id + product_id)
-    const vaccineItems = items.filter((i) => i.products && isVaccine(i.products as never))
-    if (vaccineItems.length > 0) {
-      const { data: existing } = await supabase
-        .from('pet_vaccinations')
-        .select('product_id')
-        .eq('visit_id', visit.id)
-        .not('product_id', 'is', null)
-      const already = new Set((existing ?? []).map((e) => e.product_id))
-      const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Bangkok' })
-      const rows = vaccineItems
-        .filter((i) => !already.has(i.product_id))
-        .map((i) => {
-          const p = i.products as { name: string; booster_type?: string | null; booster_interval_days?: number | null }
-          return {
-            pet_id: visit.pet_id,
-            vaccine_name: p.name,
-            dose_date: today,
-            next_due_date: computeNextDue(today, p.booster_type ?? null, p.booster_interval_days ?? null),
-            vet_id: visit.vet_id,
-            visit_id: visit.id,
-            product_id: i.product_id,
-            created_by: userId,
-          }
-        })
-      if (rows.length > 0) await supabase.from('pet_vaccinations').insert(rows)
-    }
+    await logVaccineItems(supabase)
 
     const { error } = await supabase
       .from('visits')
@@ -215,6 +217,32 @@ export default function VisitDetail({
       return
     }
     toast.success('ส่งไปเก็บเงินแล้ว — แคชเชียร์จะเห็นที่หน้าขาย')
+    router.refresh()
+  }
+
+  // จบการรักษาโดยไม่คิดเงิน — เคสที่ไม่มีค่าใช้จ่าย (เช่น ตรวจติดตามอาการ)
+  // ปิดใบเลยไม่ต้องส่งแคชเชียร์ (mark เป็น paid, ไม่มี transaction)
+  async function finishNoCharge() {
+    if (total > 0) {
+      toast.error('มีรายการที่ต้องเก็บเงิน — ใช้ปุ่มส่งไปเก็บเงินแทน')
+      return
+    }
+    if (!confirm('จบการรักษาโดยไม่คิดเงิน?\nใบนี้จะปิดเลยโดยไม่ส่งไปเก็บเงิน')) return
+    if (!await saveVisit(true)) return
+
+    const supabase = createClient()
+    await logVaccineItems(supabase)
+
+    const { error } = await supabase
+      .from('visits')
+      .update({ status: 'paid' })
+      .eq('id', visit.id)
+
+    if (error) {
+      toast.error('จบการรักษาไม่สำเร็จ')
+      return
+    }
+    toast.success('จบการรักษาแล้ว (ไม่คิดเงิน)')
     router.refresh()
   }
 
@@ -660,12 +688,21 @@ export default function VisitDetail({
         )}
         {visit.status === 'open' && (
           canEdit ? (
-            <button
-              onClick={sendToPayment}
-              className="w-full flex items-center justify-center gap-2 bg-green-600 hover:bg-green-700 text-white font-bold py-3 rounded-xl transition-colors"
-            >
-              <Send size={18} /> ส่งไปเก็บเงิน (฿{total.toLocaleString('th-TH', { minimumFractionDigits: 2 })})
-            </button>
+            total > 0 ? (
+              <button
+                onClick={sendToPayment}
+                className="w-full flex items-center justify-center gap-2 bg-green-600 hover:bg-green-700 text-white font-bold py-3 rounded-xl transition-colors"
+              >
+                <Send size={18} /> ส่งไปเก็บเงิน (฿{total.toLocaleString('th-TH', { minimumFractionDigits: 2 })})
+              </button>
+            ) : (
+              <button
+                onClick={finishNoCharge}
+                className="w-full flex items-center justify-center gap-2 bg-green-600 hover:bg-green-700 text-white font-bold py-3 rounded-xl transition-colors"
+              >
+                <Check size={18} /> จบการรักษา (ไม่คิดเงิน)
+              </button>
+            )
           ) : (
             <p className="text-sm text-gray-500">กำลังตรวจอยู่</p>
           )
@@ -687,7 +724,7 @@ export default function VisitDetail({
         )}
         {visit.status === 'paid' && (
           <div className="flex items-center justify-between gap-3">
-            <p className="text-sm text-green-700">เก็บเงินเรียบร้อยแล้ว</p>
+            <p className="text-sm text-green-700">{visit.transaction_id ? 'เก็บเงินเรียบร้อยแล้ว' : 'จบการรักษาแล้ว (ไม่คิดเงิน)'}</p>
             {visit.transaction_id && (
               <a
                 href={`/print/receipt/${visit.transaction_id}`}
