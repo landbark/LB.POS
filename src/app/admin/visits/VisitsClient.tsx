@@ -333,13 +333,9 @@ export default function VisitsClient({
           </thead>
           <tbody className="divide-y divide-gray-50">
             {filtered.map((v) => (
-              <tr
-                key={v.id}
-                className={`hover:bg-gray-50 ${canExamine ? 'cursor-pointer' : ''}`}
-                onClick={canExamine ? () => router.push(`/admin/visits/${v.id}`) : undefined}
-              >
+              <tr key={v.id} className="hover:bg-gray-50 cursor-pointer" onClick={() => router.push(`/admin/visits/${v.id}`)}>
                 <td className="px-4 py-3 text-sm font-mono text-blue-600">
-                  {canExamine ? <Link href={`/admin/visits/${v.id}`}>{v.visit_number}</Link> : <span className="text-gray-600">{v.visit_number}</span>}
+                  <Link href={`/admin/visits/${v.id}`}>{v.visit_number}</Link>
                 </td>
                 <td className="px-4 py-3 text-sm text-gray-600">
                   {new Date(v.visit_date).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' })}

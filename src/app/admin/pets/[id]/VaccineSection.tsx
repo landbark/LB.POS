@@ -21,6 +21,7 @@ export default function VaccineSection({
   vaccines,
   userId,
   visitId,
+  readOnly = false,
 }: {
   petId: string
   species: Vaccine['species']
@@ -29,6 +30,8 @@ export default function VaccineSection({
   userId: string
   /** ถ้าบันทึกจากหน้าตรวจรักษา จะผูกวัคซีนกับเวชระเบียนใบนั้น */
   visitId?: string
+  /** ดูอย่างเดียว — ซ่อนปุ่มเพิ่ม/ลบ/แก้วันนัด */
+  readOnly?: boolean
 }) {
   const router = useRouter()
   const [adding, setAdding] = useState(false)
@@ -109,7 +112,7 @@ export default function VaccineSection({
         <h2 className="text-sm font-semibold text-gray-700 flex items-center gap-2">
           <Syringe size={15} className="text-gray-400" /> ประวัติวัคซีน ({vaccinations.length})
         </h2>
-        {!adding && (
+        {!adding && !readOnly && (
           <button onClick={() => setAdding(true)} className="flex items-center gap-1.5 text-sm text-blue-600 hover:text-blue-700 font-medium">
             <Plus size={15} /> บันทึกวัคซีน
           </button>
@@ -175,19 +178,25 @@ export default function VaccineSection({
               </p>
             </div>
             <div className="flex items-center gap-2 shrink-0">
-              {/* เลื่อนวันนัดกระตุ้นได้ตรงนี้ */}
-              <label className="flex items-center gap-1 text-xs text-gray-500">
-                นัดถัดไป
-                <input
-                  type="date"
-                  defaultValue={v.next_due_date ?? ''}
-                  onChange={(e) => updateNextDue(v, e.target.value)}
-                  className="border border-gray-200 rounded px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </label>
-              <button onClick={() => remove(v)} className="p-1.5 text-gray-300 hover:text-red-600 rounded">
-                <Trash2 size={14} />
-              </button>
+              {readOnly ? (
+                v.next_due_date && <span className="text-xs text-gray-500">นัดถัดไป {fmtDate(v.next_due_date)}</span>
+              ) : (
+                <>
+                  {/* เลื่อนวันนัดกระตุ้นได้ตรงนี้ */}
+                  <label className="flex items-center gap-1 text-xs text-gray-500">
+                    นัดถัดไป
+                    <input
+                      type="date"
+                      defaultValue={v.next_due_date ?? ''}
+                      onChange={(e) => updateNextDue(v, e.target.value)}
+                      className="border border-gray-200 rounded px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </label>
+                  <button onClick={() => remove(v)} className="p-1.5 text-gray-300 hover:text-red-600 rounded">
+                    <Trash2 size={14} />
+                  </button>
+                </>
+              )}
             </div>
           </div>
         ))}

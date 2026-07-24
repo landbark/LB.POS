@@ -4,7 +4,7 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { AlertTriangle, ArrowLeft, CalendarPlus, Plus, Printer, Save, Send, Stethoscope, Trash2, X } from 'lucide-react'
+import { AlertTriangle, ArrowLeft, CalendarPlus, Eye, Plus, Printer, Save, Send, Stethoscope, Trash2, X } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { SPECIES_LABELS, VISIT_STATUS_LABELS, type PetVaccination, type Vaccine, type Visit, type VisitItem } from '@/lib/types'
 import { petAge, petWarnings } from '@/lib/pets'
@@ -41,6 +41,7 @@ export default function VisitDetail({
   history,
   previousWeight,
   userId,
+  role,
   vaccinations,
   vaccines,
 }: {
@@ -49,6 +50,7 @@ export default function VisitDetail({
   history: HistoryEntry[]
   previousWeight: { weight: number; date: string } | null
   userId: string
+  role: string
   vaccinations: PetVaccination[]
   vaccines: Vaccine[]
 }) {
@@ -70,8 +72,17 @@ export default function VisitDetail({
 
   const pet = visit.pets
   const items = visit.visit_items ?? []
-  // ส่งไปเก็บเงินแล้วห้ามแก้รายการยา (ตะกร้าฝั่งแคชเชียร์อ่านจากตรงนี้) — บันทึกการตรวจยังแก้ได้
-  const itemsLocked = visit.status !== 'open' && visit.status !== 'waiting'
+
+  // สิทธิ์แก้ไข:
+  // - แคชเชียร์: ดูอย่างเดียว
+  // - หมอ/แอดมิน: แก้ได้ ยกเว้นใบที่ "หมอคนอื่นกำลังตรวจ" (status=open + เจ้าของเป็นคนอื่น) และใบที่ยกเลิก
+  // - ตรวจเสร็จแล้ว (pending_payment/paid): หมอคนไหนก็แก้บันทึกได้
+  const examinedByOther = visit.status === 'open' && !!visit.vet_id && visit.vet_id !== userId
+  const canEdit = (role === 'vet' || role === 'admin') && visit.status !== 'cancelled' && !examinedByOther
+  const readOnly = !canEdit
+
+  // ส่งไปเก็บเงินแล้วห้ามแก้รายการยา (ตะกร้าฝั่งแคชเชียร์อ่านจากตรงนี้) + ต้องมีสิทธิ์แก้
+  const itemsLocked = readOnly || (visit.status !== 'open' && visit.status !== 'waiting')
   const warnings = pet ? petWarnings(pet) : []
   const total = items.reduce((sum, i) => sum + i.unit_price * i.quantity, 0)
 
@@ -299,15 +310,31 @@ export default function VisitDetail({
           >
             <Printer size={15} /> พิมพ์
           </a>
-          <button
-            onClick={() => saveVisit()}
-            disabled={saving}
-            className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-sm font-medium px-4 py-2 rounded-lg"
-          >
-            <Save size={15} /> {saving ? 'บันทึก...' : 'บันทึก'}
-          </button>
+          {canEdit && (
+            <button
+              onClick={() => saveVisit()}
+              disabled={saving}
+              className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-sm font-medium px-4 py-2 rounded-lg"
+            >
+              <Save size={15} /> {saving ? 'บันทึก...' : 'บันทึก'}
+            </button>
+          )}
         </div>
       </div>
+
+      {/* แถบบอกโหมดดูอย่างเดียว */}
+      {readOnly && (
+        <div className="flex items-center gap-2 bg-gray-100 border border-gray-200 rounded-lg px-4 py-2.5 mb-4 text-sm text-gray-600">
+          <Eye size={16} className="shrink-0" />
+          {examinedByOther
+            ? `${visit.vet?.name ?? 'สัตวแพทย์อีกท่าน'} กำลังตรวจอยู่ — ดูได้อย่างเดียว จนกว่าจะตรวจเสร็จ`
+            : role === 'cashier'
+              ? 'โหมดดูอย่างเดียว — แคชเชียร์ดูเวชระเบียนได้แต่แก้ไขไม่ได้'
+              : visit.status === 'cancelled'
+                ? 'เวชระเบียนนี้ถูกยกเลิกแล้ว'
+                : 'ดูได้อย่างเดียว'}
+        </div>
+      )}
 
       {/* ข้อมูลสัตว์ + คำเตือน */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 mb-4">
@@ -343,7 +370,8 @@ export default function VisitDetail({
         )}
       </div>
 
-      {/* สัญญาณชีพ */}
+      {/* สัญญาณชีพ + บันทึกการตรวจ — ปิดทั้งชุดเมื่อดูอย่างเดียว */}
+      <fieldset disabled={readOnly} className="contents">
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 mb-4">
         <h2 className="text-sm font-semibold text-gray-900 mb-3">สัญญาณชีพ</h2>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -414,6 +442,7 @@ export default function VisitDetail({
           </div>
         </div>
       </div>
+      </fieldset>
 
       {/* ยา / ค่าบริการ */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 mb-4">
@@ -549,6 +578,7 @@ export default function VisitDetail({
             vaccines={vaccines}
             userId={userId}
             visitId={visit.id}
+            readOnly={readOnly}
           />
         </div>
       )}
@@ -558,35 +588,43 @@ export default function VisitDetail({
         {visit.status === 'waiting' && (
           <div className="flex items-center justify-between gap-3">
             <p className="text-sm text-purple-700">
-              ลงทะเบียนไว้แล้ว รอเรียกตรวจ — กดเริ่มตรวจเพื่อรับเคสนี้
+              ลงทะเบียนไว้แล้ว รอเรียกตรวจ{canEdit ? ' — กดเริ่มตรวจเพื่อรับเคสนี้' : ''}
             </p>
-            <button
-              onClick={startExam}
-              className="flex items-center gap-1.5 bg-purple-600 hover:bg-purple-700 text-white text-sm font-medium px-4 py-2 rounded-lg"
-            >
-              <Stethoscope size={15} /> เริ่มตรวจ
-            </button>
+            {canEdit && (
+              <button
+                onClick={startExam}
+                className="flex items-center gap-1.5 bg-purple-600 hover:bg-purple-700 text-white text-sm font-medium px-4 py-2 rounded-lg"
+              >
+                <Stethoscope size={15} /> เริ่มตรวจ
+              </button>
+            )}
           </div>
         )}
         {visit.status === 'open' && (
-          <button
-            onClick={sendToPayment}
-            className="w-full flex items-center justify-center gap-2 bg-green-600 hover:bg-green-700 text-white font-bold py-3 rounded-xl transition-colors"
-          >
-            <Send size={18} /> ส่งไปเก็บเงิน (฿{total.toLocaleString('th-TH', { minimumFractionDigits: 2 })})
-          </button>
+          canEdit ? (
+            <button
+              onClick={sendToPayment}
+              className="w-full flex items-center justify-center gap-2 bg-green-600 hover:bg-green-700 text-white font-bold py-3 rounded-xl transition-colors"
+            >
+              <Send size={18} /> ส่งไปเก็บเงิน (฿{total.toLocaleString('th-TH', { minimumFractionDigits: 2 })})
+            </button>
+          ) : (
+            <p className="text-sm text-gray-500">กำลังตรวจอยู่</p>
+          )
         )}
         {visit.status === 'pending_payment' && (
           <div className="flex items-center justify-between gap-3">
             <p className="text-sm text-amber-700">
               ส่งไปเก็บเงินแล้ว — รอแคชเชียร์ดึงเข้าตะกร้าที่หน้าขาย
             </p>
-            <button
-              onClick={backToOpen}
-              className="flex items-center gap-1.5 border border-gray-300 text-gray-600 text-sm px-3 py-2 rounded-lg hover:bg-gray-50"
-            >
-              <X size={15} /> ดึงกลับมาแก้ไข
-            </button>
+            {canEdit && (
+              <button
+                onClick={backToOpen}
+                className="flex items-center gap-1.5 border border-gray-300 text-gray-600 text-sm px-3 py-2 rounded-lg hover:bg-gray-50"
+              >
+                <X size={15} /> ดึงกลับมาแก้ไข
+              </button>
+            )}
           </div>
         )}
         {visit.status === 'paid' && (
@@ -622,8 +660,8 @@ export default function VisitDetail({
         </div>
       )}
 
-      {/* ยกเลิกใบที่เปิดผิด — เฉพาะที่ยังไม่เก็บเงิน */}
-      {visit.status !== 'paid' && visit.status !== 'cancelled' && (
+      {/* ยกเลิกใบที่เปิดผิด — เฉพาะที่ยังไม่เก็บเงิน + มีสิทธิ์แก้ */}
+      {canEdit && visit.status !== 'paid' && visit.status !== 'cancelled' && (
         <div className="text-center mt-6">
           <button onClick={cancelVisit} className="text-sm text-gray-400 hover:text-red-600">
             ยกเลิกเวชระเบียนใบนี้ (เปิดผิด)
