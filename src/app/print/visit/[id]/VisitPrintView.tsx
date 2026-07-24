@@ -23,6 +23,8 @@ export default function VisitPrintView({ visit, store }: { visit: Visit; store: 
   const pet = visit.pets
   const items = visit.visit_items ?? []
   const total = items.reduce((sum, it) => sum + it.quantity * it.unit_price, 0)
+  const serviceItems = items.filter((it) => it.products?.is_service)
+  const rxItems = items.filter((it) => !it.products?.is_service)
 
   const vitals = [
     visit.weight != null && `น้ำหนัก ${visit.weight} กก.`,
@@ -106,24 +108,50 @@ export default function VisitPrintView({ visit, store }: { visit: Visit; store: 
             </p>
           )}
 
-          {section('อาการที่พามา', visit.symptoms)}
-          {section('การวินิจฉัย', visit.diagnosis)}
-          {section('การรักษา / หัตถการ', visit.treatment)}
+          {section('Chief Complaint', visit.symptoms)}
+          {section('History Taking', visit.history_taking)}
+          {section('Physical Examination', visit.physical_exam)}
+          {section('Assessment / Diagnosis', visit.diagnosis)}
+          {section('Treatment', visit.treatment)}
 
-          {items.length > 0 && (
+          {serviceItems.length > 0 && (
             <div className="mt-4">
-              <p className="text-gray-500 mb-1" style={{ fontSize: '0.85em' }}>ยา / ค่าบริการ</p>
+              <p className="text-gray-500 mb-1" style={{ fontSize: '0.85em' }}>Service Fee</p>
               <table className="w-full" style={{ fontSize: '0.9em' }}>
                 <thead>
                   <tr className="border-b border-gray-300">
-                    <th className="text-left py-1 font-medium">รายการ</th>
-                    <th className="text-left py-1 font-medium">วิธีใช้</th>
-                    <th className="text-center py-1 font-medium w-16">จำนวน</th>
-                    <th className="text-right py-1 font-medium w-20">รวม</th>
+                    <th className="text-left py-1 font-medium">Item</th>
+                    <th className="text-center py-1 font-medium w-16">Qty</th>
+                    <th className="text-right py-1 font-medium w-20">Total</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {items.map((it, i) => (
+                  {serviceItems.map((it, i) => (
+                    <tr key={i} className="border-b border-gray-100">
+                      <td className="py-1">{it.products?.name ?? '—'}</td>
+                      <td className="py-1 text-center">{it.quantity} {it.products?.unit}</td>
+                      <td className="py-1 text-right">{money(it.quantity * it.unit_price)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {rxItems.length > 0 && (
+            <div className="mt-4">
+              <p className="text-gray-500 mb-1" style={{ fontSize: '0.85em' }}>Prescription (Rx)</p>
+              <table className="w-full" style={{ fontSize: '0.9em' }}>
+                <thead>
+                  <tr className="border-b border-gray-300">
+                    <th className="text-left py-1 font-medium">Item</th>
+                    <th className="text-left py-1 font-medium">Dosage / Sig</th>
+                    <th className="text-center py-1 font-medium w-16">Qty</th>
+                    <th className="text-right py-1 font-medium w-20">Total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rxItems.map((it, i) => (
                     <tr key={i} className="border-b border-gray-100">
                       <td className="py-1">{it.products?.name ?? '—'}</td>
                       <td className="py-1 text-gray-600">{it.dosage ?? ''}</td>
@@ -132,15 +160,15 @@ export default function VisitPrintView({ visit, store }: { visit: Visit; store: 
                     </tr>
                   ))}
                 </tbody>
-                <tfoot>
-                  <tr>
-                    <td colSpan={3} className="py-1.5 text-right font-medium">รวมทั้งสิ้น</td>
-                    <td className="py-1.5 text-right font-bold">฿{money(total)}</td>
-                  </tr>
-                </tfoot>
               </table>
             </div>
           )}
+
+          {items.length > 0 && (
+            <p className="mt-2 text-right font-bold" style={{ fontSize: '0.95em' }}>รวมทั้งสิ้น ฿{money(total)}</p>
+          )}
+
+          {section('Client Education', visit.client_education)}
 
           {visit.follow_up_date && (
             <p className="mt-4 font-medium" style={{ fontSize: '0.95em' }}>

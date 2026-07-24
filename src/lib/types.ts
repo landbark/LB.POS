@@ -238,8 +238,11 @@ export interface Visit {
   heart_rate: number | null
   resp_rate: number | null
   symptoms: string | null
+  history_taking: string | null
+  physical_exam: string | null
   diagnosis: string | null
   treatment: string | null
+  client_education: string | null
   notes: string | null
   follow_up_date: string | null
   status: VisitStatus

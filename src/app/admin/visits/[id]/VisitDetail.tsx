@@ -63,12 +63,17 @@ export default function VisitDetail({
     heart_rate: visit.heart_rate?.toString() ?? '',
     resp_rate: visit.resp_rate?.toString() ?? '',
     symptoms: visit.symptoms ?? '',
+    history_taking: visit.history_taking ?? '',
+    physical_exam: visit.physical_exam ?? '',
     diagnosis: visit.diagnosis ?? '',
     treatment: visit.treatment ?? '',
+    client_education: visit.client_education ?? '',
     notes: visit.notes ?? '',
     follow_up_date: visit.follow_up_date ?? '',
   })
-  const [productQuery, setProductQuery] = useState('')
+  // ช่องเพิ่มรายการ แยกกัน: Service Fee (บริการ/หัตถการ) กับ Prescription (ยา)
+  const [serviceQuery, setServiceQuery] = useState('')
+  const [rxQuery, setRxQuery] = useState('')
 
   const pet = visit.pets
   const items = visit.visit_items ?? []
@@ -103,8 +108,11 @@ export default function VisitDetail({
         heart_rate: numberOrNull(form.heart_rate),
         resp_rate: numberOrNull(form.resp_rate),
         symptoms: form.symptoms.trim() || null,
+        history_taking: form.history_taking.trim() || null,
+        physical_exam: form.physical_exam.trim() || null,
         diagnosis: form.diagnosis.trim() || null,
         treatment: form.treatment.trim() || null,
+        client_education: form.client_education.trim() || null,
         notes: form.notes.trim() || null,
         follow_up_date: form.follow_up_date || null,
       })
@@ -134,7 +142,8 @@ export default function VisitDetail({
       toast.error('เพิ่มรายการไม่สำเร็จ')
       return
     }
-    setProductQuery('')
+    setServiceQuery('')
+    setRxQuery('')
     router.refresh()
   }
 
@@ -278,13 +287,150 @@ export default function VisitDetail({
     ? Number(form.weight) - previousWeight.weight
     : null
 
-  const pq = productQuery.trim().toLowerCase()
-  const productMatches = pq
-    ? products.filter((p) => p.name.toLowerCase().includes(pq)).slice(0, 8)
-    : []
-
   const stockOf = (p: DispensableProduct) =>
     p.is_service ? null : (p.product_lots ?? []).reduce((s, l) => s + l.quantity, 0)
+
+  // ค้นหาแยกตามชนิด: บริการ (is_service) กับ ยา (ไม่ใช่บริการ)
+  const matchProducts = (query: string, wantService: boolean) => {
+    const q = query.trim().toLowerCase()
+    if (!q) return []
+    return products.filter((p) => p.is_service === wantService && p.name.toLowerCase().includes(q)).slice(0, 8)
+  }
+  const serviceMatches = matchProducts(serviceQuery, true)
+  const rxMatches = matchProducts(rxQuery, false)
+
+  // แยกรายการที่จ่ายแล้วออกเป็น 2 กลุ่ม
+  const serviceItems = items.filter((i) => i.products?.is_service)
+  const rxItems = items.filter((i) => !i.products?.is_service)
+
+  // ช่องค้นหา + dropdown เพิ่มรายการ (ใช้ร่วมกันทั้ง Service Fee และ Prescription)
+  const renderAddBox = (
+    query: string,
+    setQuery: (v: string) => void,
+    matches: DispensableProduct[],
+    placeholder: string,
+  ) => (
+    <div className="relative mb-3">
+      <div className="flex items-center gap-2">
+        <Plus size={15} className="text-gray-400" />
+        <input
+          type="text"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder={placeholder}
+          className={inputClass}
+        />
+      </div>
+      {matches.length > 0 && (
+        <div className="absolute z-10 left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg overflow-hidden">
+          {matches.map((p) => {
+            const stock = stockOf(p)
+            return (
+              <button
+                key={p.id}
+                onClick={() => addItem(p)}
+                className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50 flex items-center justify-between gap-2"
+              >
+                <span>
+                  {p.name}
+                  {isClinicOnly(p) && <span className="ml-1.5 text-xs text-amber-600">ของคลินิก</span>}
+                </span>
+                <span className="text-xs text-gray-400 shrink-0">
+                  ฿{p.price.toLocaleString('th-TH')} {stock !== null && `· เหลือ ${stock}`}
+                </span>
+              </button>
+            )
+          })}
+        </div>
+      )}
+      {query.trim() && matches.length === 0 && (
+        <p className="text-xs text-gray-400 mt-1">ไม่พบสินค้า</p>
+      )}
+    </div>
+  )
+
+  // ตารางรายการ — showDosage=true สำหรับยา (มีช่องวิธีใช้), false สำหรับค่าบริการ
+  const renderItemsTable = (list: VisitItem[], showDosage: boolean, emptyText: string) => {
+    const colCount = showDosage ? 6 : 5
+    return (
+      <table className="w-full">
+        <thead className="border-b border-gray-100">
+          <tr>
+            <th className="text-left text-xs font-medium text-gray-500 py-2">Item</th>
+            {showDosage && <th className="text-left text-xs font-medium text-gray-500 py-2 w-56">Dosage / Sig</th>}
+            <th className="text-center text-xs font-medium text-gray-500 py-2 w-20">Qty</th>
+            <th className="text-right text-xs font-medium text-gray-500 py-2 w-24">Price</th>
+            <th className="text-right text-xs font-medium text-gray-500 py-2 w-24">Total</th>
+            <th className="w-8"></th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-gray-50">
+          {list.map((item) => (
+            <tr key={item.id}>
+              <td className="py-2 text-sm text-gray-900">{item.products?.name ?? 'สินค้าถูกลบแล้ว'}</td>
+              {showDosage && (
+                <td className="py-2">
+                  <input
+                    type="text"
+                    defaultValue={item.dosage ?? ''}
+                    disabled={itemsLocked}
+                    onBlur={(e) => {
+                      const value = e.target.value.trim() || null
+                      if (value !== (item.dosage ?? null)) updateItem(item, { dosage: value })
+                    }}
+                    placeholder="เช่น 1 เม็ด เช้า-เย็น หลังอาหาร"
+                    className="w-full border border-gray-200 rounded px-2 py-1 text-sm disabled:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </td>
+              )}
+              <td className="py-2">
+                <input
+                  type="number"
+                  min="1"
+                  defaultValue={item.quantity}
+                  disabled={itemsLocked}
+                  onBlur={(e) => {
+                    const value = parseInt(e.target.value)
+                    if (value > 0 && value !== item.quantity) updateItem(item, { quantity: value })
+                  }}
+                  className="w-full border border-gray-200 rounded px-2 py-1 text-sm text-center disabled:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </td>
+              <td className="py-2">
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  defaultValue={item.unit_price}
+                  disabled={itemsLocked}
+                  onBlur={(e) => {
+                    const value = parseFloat(e.target.value)
+                    if (value >= 0 && value !== item.unit_price) updateItem(item, { unit_price: value })
+                  }}
+                  className="w-full border border-gray-200 rounded px-2 py-1 text-sm text-right disabled:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </td>
+              <td className="py-2 text-sm text-right text-gray-900">
+                ฿{(item.unit_price * item.quantity).toLocaleString('th-TH', { minimumFractionDigits: 2 })}
+              </td>
+              <td className="py-2 text-right">
+                {!itemsLocked && (
+                  <button onClick={() => removeItem(item)} className="p-1 text-gray-300 hover:text-red-600">
+                    <Trash2 size={14} />
+                  </button>
+                )}
+              </td>
+            </tr>
+          ))}
+          {list.length === 0 && (
+            <tr>
+              <td colSpan={colCount} className="py-6 text-center text-sm text-gray-400">{emptyText}</td>
+            </tr>
+          )}
+        </tbody>
+      </table>
+    )
+  }
 
   return (
     <div className="max-w-4xl">
@@ -373,10 +519,10 @@ export default function VisitDetail({
       {/* สัญญาณชีพ + บันทึกการตรวจ — ปิดทั้งชุดเมื่อดูอย่างเดียว */}
       <fieldset disabled={readOnly} className="contents">
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 mb-4">
-        <h2 className="text-sm font-semibold text-gray-900 mb-3">สัญญาณชีพ</h2>
+        <h2 className="text-sm font-semibold text-gray-900 mb-3">Vital Signs</h2>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           <div>
-            <label className={labelClass}>น้ำหนัก (กก.)</label>
+            <label className={labelClass}>Weight (kg)</label>
             <input type="number" step="0.01" value={form.weight} onChange={(e) => set('weight', e.target.value)} className={inputClass} />
             {previousWeight && (
               <p className="text-xs text-gray-400 mt-1">
@@ -390,41 +536,49 @@ export default function VisitDetail({
             )}
           </div>
           <div>
-            <label className={labelClass}>อุณหภูมิ (°C)</label>
+            <label className={labelClass}>Temperature (°C)</label>
             <input type="number" step="0.1" value={form.temperature} onChange={(e) => set('temperature', e.target.value)} className={inputClass} />
           </div>
           <div>
-            <label className={labelClass}>ชีพจร (ครั้ง/นาที)</label>
+            <label className={labelClass}>Heart Rate (bpm)</label>
             <input type="number" value={form.heart_rate} onChange={(e) => set('heart_rate', e.target.value)} className={inputClass} />
           </div>
           <div>
-            <label className={labelClass}>การหายใจ (ครั้ง/นาที)</label>
+            <label className={labelClass}>Respiratory Rate (/min)</label>
             <input type="number" value={form.resp_rate} onChange={(e) => set('resp_rate', e.target.value)} className={inputClass} />
           </div>
         </div>
       </div>
 
-      {/* บันทึกการตรวจ */}
+      {/* บันทึกการตรวจ — หัวข้อภาษาอังกฤษ (SOAP) */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 mb-4 space-y-3">
         <div>
-          <label className={labelClass}>อาการที่พามา</label>
+          <label className={labelClass}>Chief Complaint</label>
           <textarea rows={2} value={form.symptoms} onChange={(e) => set('symptoms', e.target.value)} className={inputClass} />
         </div>
         <div>
-          <label className={labelClass}>การวินิจฉัย</label>
+          <label className={labelClass}>History Taking</label>
+          <textarea rows={2} value={form.history_taking} onChange={(e) => set('history_taking', e.target.value)} className={inputClass} />
+        </div>
+        <div>
+          <label className={labelClass}>Physical Examination</label>
+          <textarea rows={2} value={form.physical_exam} onChange={(e) => set('physical_exam', e.target.value)} className={inputClass} />
+        </div>
+        <div>
+          <label className={labelClass}>Assessment / Diagnosis</label>
           <textarea rows={2} value={form.diagnosis} onChange={(e) => set('diagnosis', e.target.value)} className={inputClass} />
         </div>
         <div>
-          <label className={labelClass}>การรักษา / หัตถการ</label>
+          <label className={labelClass}>Treatment</label>
           <textarea rows={2} value={form.treatment} onChange={(e) => set('treatment', e.target.value)} className={inputClass} />
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
-            <label className={labelClass}>หมายเหตุ</label>
+            <label className={labelClass}>Notes</label>
             <input type="text" value={form.notes} onChange={(e) => set('notes', e.target.value)} className={inputClass} />
           </div>
           <div>
-            <label className={labelClass}>นัดติดตามอาการ</label>
+            <label className={labelClass}>Follow-up Date</label>
             <div className="flex items-center gap-2">
               <input type="date" value={form.follow_up_date} onChange={(e) => set('follow_up_date', e.target.value)} className={inputClass} />
               {form.follow_up_date && (
@@ -444,128 +598,32 @@ export default function VisitDetail({
       </div>
       </fieldset>
 
-      {/* ยา / ค่าบริการ */}
+      {/* Service Fee — ค่าบริการ/ค่าหัตถการ (สินค้าที่ตั้ง is_service) */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 mb-4">
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="text-sm font-semibold text-gray-900">ยา / ค่าบริการที่จ่าย</h2>
-          <p className="text-sm font-semibold text-gray-900">รวม ฿{total.toLocaleString('th-TH', { minimumFractionDigits: 2 })}</p>
-        </div>
+        <h2 className="text-sm font-semibold text-gray-900 mb-3">Service Fee</h2>
+        {!itemsLocked && renderAddBox(serviceQuery, setServiceQuery, serviceMatches, 'พิมพ์ชื่อค่าบริการ / หัตถการ เพื่อเพิ่มรายการ...')}
+        {renderItemsTable(serviceItems, false, 'ยังไม่มีรายการค่าบริการ')}
+      </div>
 
-        {!itemsLocked && (
-          <div className="relative mb-3">
-            <div className="flex items-center gap-2">
-              <Plus size={15} className="text-gray-400" />
-              <input
-                type="text"
-                value={productQuery}
-                onChange={(e) => setProductQuery(e.target.value)}
-                placeholder="พิมพ์ชื่อยา / ค่าบริการ เพื่อเพิ่มรายการ..."
-                className={inputClass}
-              />
-            </div>
-            {productMatches.length > 0 && (
-              <div className="absolute z-10 left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg overflow-hidden">
-                {productMatches.map((p) => {
-                  const stock = stockOf(p)
-                  return (
-                    <button
-                      key={p.id}
-                      onClick={() => addItem(p)}
-                      className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50 flex items-center justify-between gap-2"
-                    >
-                      <span>
-                        {p.name}
-                        {isClinicOnly(p) && <span className="ml-1.5 text-xs text-amber-600">ของคลินิก</span>}
-                        {p.is_service && <span className="ml-1.5 text-xs text-gray-400">บริการ</span>}
-                      </span>
-                      <span className="text-xs text-gray-400 shrink-0">
-                        ฿{p.price.toLocaleString('th-TH')} {stock !== null && `· เหลือ ${stock}`}
-                      </span>
-                    </button>
-                  )
-                })}
-              </div>
-            )}
-            {pq && productMatches.length === 0 && (
-              <p className="text-xs text-gray-400 mt-1">ไม่พบสินค้า</p>
-            )}
-          </div>
-        )}
+      {/* Prescription (Rx) — ยา (สินค้าที่ไม่ใช่ service) */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 mb-4">
+        <h2 className="text-sm font-semibold text-gray-900 mb-3">Prescription (Rx)</h2>
+        {!itemsLocked && renderAddBox(rxQuery, setRxQuery, rxMatches, 'พิมพ์ชื่อยา เพื่อเพิ่มรายการ...')}
+        {renderItemsTable(rxItems, true, 'ยังไม่มีรายการยา')}
+      </div>
 
-        <table className="w-full">
-          <thead className="border-b border-gray-100">
-            <tr>
-              <th className="text-left text-xs font-medium text-gray-500 py-2">รายการ</th>
-              <th className="text-left text-xs font-medium text-gray-500 py-2 w-56">วิธีใช้</th>
-              <th className="text-center text-xs font-medium text-gray-500 py-2 w-20">จำนวน</th>
-              <th className="text-right text-xs font-medium text-gray-500 py-2 w-24">ราคา</th>
-              <th className="text-right text-xs font-medium text-gray-500 py-2 w-24">รวม</th>
-              <th className="w-8"></th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-50">
-            {items.map((item) => (
-              <tr key={item.id}>
-                <td className="py-2 text-sm text-gray-900">{item.products?.name ?? 'สินค้าถูกลบแล้ว'}</td>
-                <td className="py-2">
-                  <input
-                    type="text"
-                    defaultValue={item.dosage ?? ''}
-                    disabled={itemsLocked}
-                    onBlur={(e) => {
-                      const value = e.target.value.trim() || null
-                      if (value !== (item.dosage ?? null)) updateItem(item, { dosage: value })
-                    }}
-                    placeholder="เช่น 1 เม็ด เช้า-เย็น หลังอาหาร"
-                    className="w-full border border-gray-200 rounded px-2 py-1 text-sm disabled:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </td>
-                <td className="py-2">
-                  <input
-                    type="number"
-                    min="1"
-                    defaultValue={item.quantity}
-                    disabled={itemsLocked}
-                    onBlur={(e) => {
-                      const value = parseInt(e.target.value)
-                      if (value > 0 && value !== item.quantity) updateItem(item, { quantity: value })
-                    }}
-                    className="w-full border border-gray-200 rounded px-2 py-1 text-sm text-center disabled:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </td>
-                <td className="py-2">
-                  <input
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    defaultValue={item.unit_price}
-                    disabled={itemsLocked}
-                    onBlur={(e) => {
-                      const value = parseFloat(e.target.value)
-                      if (value >= 0 && value !== item.unit_price) updateItem(item, { unit_price: value })
-                    }}
-                    className="w-full border border-gray-200 rounded px-2 py-1 text-sm text-right disabled:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </td>
-                <td className="py-2 text-sm text-right text-gray-900">
-                  ฿{(item.unit_price * item.quantity).toLocaleString('th-TH', { minimumFractionDigits: 2 })}
-                </td>
-                <td className="py-2 text-right">
-                  {!itemsLocked && (
-                    <button onClick={() => removeItem(item)} className="p-1 text-gray-300 hover:text-red-600">
-                      <Trash2 size={14} />
-                    </button>
-                  )}
-                </td>
-              </tr>
-            ))}
-            {items.length === 0 && (
-              <tr>
-                <td colSpan={6} className="py-6 text-center text-sm text-gray-400">ยังไม่มีรายการ</td>
-              </tr>
-            )}
-          </tbody>
-        </table>
+      {/* Client Education — คำแนะนำ/ให้ความรู้เจ้าของ */}
+      <fieldset disabled={readOnly} className="contents">
+      <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 mb-4">
+        <h2 className="text-sm font-semibold text-gray-900 mb-3">Client Education</h2>
+        <textarea rows={3} value={form.client_education} onChange={(e) => set('client_education', e.target.value)} className={inputClass} />
+      </div>
+      </fieldset>
+
+      {/* ยอดรวมยา + ค่าบริการ */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-100 px-4 py-3 mb-4 flex items-center justify-between">
+        <span className="text-sm text-gray-500">Total (Service Fee + Rx)</span>
+        <span className="text-sm font-semibold text-gray-900">฿{total.toLocaleString('th-TH', { minimumFractionDigits: 2 })}</span>
       </div>
 
       {/* วัคซีน — บันทึกระหว่างตรวจได้เลย ผูกกับเวชระเบียนใบนี้ */}
