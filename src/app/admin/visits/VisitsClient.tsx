@@ -1,8 +1,8 @@
 'use client'
 
 import { useState } from 'react'
-import Link from 'next/link'
-import { useRouter } from 'next/navigation'
+import Link from '@/components/ProgressLink'
+import { useProgress } from '@/lib/use-progress'
 import { createClient } from '@/lib/supabase/client'
 import { ArrowLeft, Clock, Plus, Search, Stethoscope, X } from 'lucide-react'
 import toast from 'react-hot-toast'
@@ -52,7 +52,7 @@ export default function VisitsClient({
   userId: string
   role: string
 }) {
-  const router = useRouter()
+  const { refresh, push } = useProgress()
   const [query, setQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState<VisitStatus | ''>('')
   const [busy, setBusy] = useState(false)
@@ -147,7 +147,7 @@ export default function VisitsClient({
     toast.success(`ลงทะเบียน "${pet.name}" แล้ว`)
     setSelectedPet(pet as Pet)
     setAddingPet(false)
-    router.refresh()
+    refresh()
   }
 
   // เปิดเวชระเบียน — แคชเชียร์ส่งเข้าคิว (waiting), หมอกดเริ่มตรวจได้เลย (open)
@@ -175,13 +175,13 @@ export default function VisitsClient({
 
       if (!error && data) {
         if (startExam) {
-          router.push(`/admin/visits/${data.id}`)
+          push(`/admin/visits/${data.id}`)
           return
         }
         setBusy(false)
         closeModal()
         toast.success(`ส่ง "${pet.name}" เข้าคิวรอตรวจแล้ว`)
-        router.refresh()
+        refresh()
         return
       }
       // ชนเลขกับอีกเครื่อง — ขอเลขใหม่แล้วลองซ้ำ
@@ -205,7 +205,7 @@ export default function VisitsClient({
       toast.error('เริ่มตรวจไม่สำเร็จ')
       return
     }
-    router.push(`/admin/visits/${visit.id}`)
+    push(`/admin/visits/${visit.id}`)
   }
 
   // คิวรอตรวจ: มาก่อนตรวจก่อน (เรียงตามเวลาลงทะเบียนจากเก่าไปใหม่)
@@ -344,7 +344,7 @@ export default function VisitsClient({
           </thead>
           <tbody className="divide-y divide-gray-50">
             {filtered.map((v) => (
-              <tr key={v.id} className="hover:bg-gray-50 cursor-pointer" onClick={() => router.push(`/admin/visits/${v.id}`)}>
+              <tr key={v.id} className="hover:bg-gray-50 cursor-pointer" onClick={() => push(`/admin/visits/${v.id}`)}>
                 <td className="px-4 py-3 text-sm font-mono text-blue-600">
                   <Link href={`/admin/visits/${v.id}`}>{v.visit_number}</Link>
                 </td>

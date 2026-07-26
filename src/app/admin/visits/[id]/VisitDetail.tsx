@@ -1,8 +1,8 @@
 'use client'
 
 import { useState } from 'react'
-import Link from 'next/link'
-import { useRouter } from 'next/navigation'
+import Link from '@/components/ProgressLink'
+import { useProgress } from '@/lib/use-progress'
 import { createClient } from '@/lib/supabase/client'
 import { AlertTriangle, ArrowLeft, CalendarPlus, Check, Eye, Plus, Printer, Save, Send, Stethoscope, Trash2, X } from 'lucide-react'
 import toast from 'react-hot-toast'
@@ -54,7 +54,7 @@ export default function VisitDetail({
   vaccinations: PetVaccination[]
   vaccines: Vaccine[]
 }) {
-  const router = useRouter()
+  const { refresh, push } = useProgress()
   const [saving, setSaving] = useState(false)
   const [makingAppt, setMakingAppt] = useState(false)
   const [form, setForm] = useState({
@@ -125,7 +125,7 @@ export default function VisitDetail({
     }
     if (!silent) {
       toast.success('บันทึกแล้ว')
-      router.refresh()
+      refresh()
     }
     return true
   }
@@ -144,7 +144,7 @@ export default function VisitDetail({
     }
     setServiceQuery('')
     setRxQuery('')
-    router.refresh()
+    refresh()
   }
 
   async function updateItem(item: VisitItem, patch: Partial<Pick<VisitItem, 'quantity' | 'unit_price' | 'dosage'>>) {
@@ -154,7 +154,7 @@ export default function VisitDetail({
       toast.error('แก้ไขรายการไม่สำเร็จ')
       return
     }
-    router.refresh()
+    refresh()
   }
 
   async function removeItem(item: VisitItem) {
@@ -164,7 +164,7 @@ export default function VisitDetail({
       toast.error('ลบรายการไม่สำเร็จ')
       return
     }
-    router.refresh()
+    refresh()
   }
 
   // ลงประวัติวัคซีนอัตโนมัติสำหรับรายการที่เป็นวัคซีน (กันซ้ำด้วย visit_id + product_id)
@@ -217,7 +217,7 @@ export default function VisitDetail({
       return
     }
     toast.success('ส่งไปเก็บเงินแล้ว — แคชเชียร์จะเห็นที่หน้าขาย')
-    router.refresh()
+    refresh()
   }
 
   // จบการรักษาโดยไม่คิดเงิน — เคสที่ไม่มีค่าใช้จ่าย (เช่น ตรวจติดตามอาการ)
@@ -243,7 +243,7 @@ export default function VisitDetail({
       return
     }
     toast.success('จบการรักษาแล้ว (ไม่คิดเงิน)')
-    router.refresh()
+    refresh()
   }
 
   // สร้างนัดติดตามจากวันที่กรอกไว้ — บันทึกวันติดตามลง visit ด้วยกันเผื่อยังไม่ได้กดบันทึก
@@ -270,7 +270,7 @@ export default function VisitDetail({
       return
     }
     toast.success('สร้างนัดติดตามแล้ว — ดูได้ที่เมนูนัดหมาย')
-    router.refresh()
+    refresh()
   }
 
   // หมอเรียกตรวจจากคิว (เคสที่แคชเชียร์ลงทะเบียนไว้ให้)
@@ -284,7 +284,7 @@ export default function VisitDetail({
       toast.error('เริ่มตรวจไม่สำเร็จ')
       return
     }
-    router.refresh()
+    refresh()
   }
 
   // ยกเลิกเวชระเบียนที่เปิดผิด (เฉพาะที่ยังไม่เก็บเงิน) — เก็บ record ไว้แต่ mark เป็นยกเลิก
@@ -297,7 +297,7 @@ export default function VisitDetail({
       return
     }
     toast.success('ยกเลิกเวชระเบียนแล้ว')
-    router.push('/admin/visits')
+    push('/admin/visits')
   }
 
   async function backToOpen() {
@@ -308,7 +308,7 @@ export default function VisitDetail({
       return
     }
     toast.success('ดึงกลับมาแก้ไขแล้ว')
-    router.refresh()
+    refresh()
   }
 
   const weightDiff = previousWeight && form.weight.trim() !== ''
