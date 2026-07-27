@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/server'
 import { SPECIES_LABELS, VISIT_STATUS_LABELS, type Pet, type VisitStatus } from '@/lib/types'
 import { ageAt, petAge } from '@/lib/pets'
 import VaccineSection from './VaccineSection'
+import TransferOwnerButton from './TransferOwnerButton'
 
 const fmtDate = (d: string) => new Date(d).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' })
 
@@ -17,7 +18,7 @@ export default async function PetDetailPage({ params }: { params: Promise<{ id: 
   if (!pet) notFound()
   const p = pet as Pet
 
-  const [{ data: visits }, { data: vaccinations }, { data: vaccines }] = await Promise.all([
+  const [{ data: visits }, { data: vaccinations }, { data: vaccines }, { data: customers }] = await Promise.all([
     supabase
       .from('visits')
       .select('id, visit_number, visit_date, status, diagnosis, treatment, weight')
@@ -30,6 +31,7 @@ export default async function PetDetailPage({ params }: { params: Promise<{ id: 
       .eq('pet_id', id)
       .order('dose_date', { ascending: false }),
     supabase.from('vaccines').select('*').order('name'),
+    supabase.from('customers').select('id, name, phone').order('name'),
   ])
 
   const detail = [
@@ -52,13 +54,23 @@ export default async function PetDetailPage({ params }: { params: Promise<{ id: 
       </div>
 
       <div className="bg-white rounded-xl border border-gray-100 p-4 mb-6 space-y-2 text-sm">
-        <div className="flex justify-between">
-          <span className="text-gray-500">เจ้าของ</span>
-          {p.customers ? (
-            <Link href={`/admin/customers/${p.customers.id}`} className="text-blue-600 hover:underline">
-              {p.customers.name} <span className="text-gray-400 font-mono">{p.customers.phone}</span>
-            </Link>
-          ) : <span className="text-gray-400">—</span>}
+        <div>
+          <div className="flex justify-between items-center gap-2">
+            <span className="text-gray-500">เจ้าของ</span>
+            <div className="flex items-center gap-2">
+              {p.customers ? (
+                <Link href={`/admin/customers/${p.customers.id}`} className="text-blue-600 hover:underline">
+                  {p.customers.name} <span className="text-gray-400 font-mono">{p.customers.phone}</span>
+                </Link>
+              ) : <span className="text-gray-400">—</span>}
+              <TransferOwnerButton
+                petId={p.id}
+                petName={p.name}
+                currentOwnerId={p.customer_id}
+                customers={customers ?? []}
+              />
+            </div>
+          </div>
         </div>
         {p.microchip && (
           <div className="flex justify-between"><span className="text-gray-500">ไมโครชิป</span><span className="font-mono">{p.microchip}</span></div>
