@@ -46,11 +46,19 @@ export default function TransferOwnerButton({
     setLoading(true)
     const supabase = createClient()
     const { error } = await supabase.from('pets').update({ customer_id: newOwnerId }).eq('id', petId)
-    setLoading(false)
     if (error) {
+      setLoading(false)
       toast.error('ย้ายเจ้าของไม่สำเร็จ')
       return
     }
+    // นัดในอนาคตที่ยังไม่เกิดขึ้น (scheduled) ย้ายตามเจ้าของใหม่ด้วย — นัดที่ทำไปแล้ว/ขาดนัดคงไว้กับเจ้าของตอนนั้น
+    await supabase
+      .from('appointments')
+      .update({ customer_id: newOwnerId })
+      .eq('pet_id', petId)
+      .eq('status', 'scheduled')
+      .gte('scheduled_at', new Date().toISOString())
+    setLoading(false)
     toast.success(`ย้าย "${petName}" ไปเป็นของ ${ownerLabel} แล้ว`)
     reset()
     router.refresh()
