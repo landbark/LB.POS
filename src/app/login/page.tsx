@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { homePath } from '@/lib/home-path'
 import Image from 'next/image'
+import Link from 'next/link'
 import toast from 'react-hot-toast'
 
 export default function LoginPage() {
@@ -140,6 +141,13 @@ export default function LoginPage() {
             </button>
           </form>
         </div>
+
+        {/* ทางกลับหน้าเว็บร้าน (หน้าสาธารณะ) — ลูกค้าที่หลงเข้ามาหน้านี้จะได้ไม่ตัน */}
+        <p className="text-center mt-5">
+          <Link href="/" className="text-sm hover:underline" style={{ color: '#D4A87A' }}>
+            ← กลับหน้าเว็บร้าน
+          </Link>
+        </p>
       </div>
     </div>
   )

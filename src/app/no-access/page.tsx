@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import Image from 'next/image'
 import { LogOut } from 'lucide-react'
+import Link from 'next/link'
 
 export default function NoAccessPage() {
   const router = useRouter()
@@ -38,6 +39,12 @@ export default function NoAccessPage() {
             ออกจากระบบ
           </button>
         </div>
+
+        <p className="mt-5">
+          <Link href="/" className="text-sm hover:underline" style={{ color: '#D4A87A' }}>
+            ← กลับหน้าเว็บร้าน
+          </Link>
+        </p>
       </div>
     </div>
   )
