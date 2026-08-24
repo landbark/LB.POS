@@ -23,6 +23,9 @@ import {
   Stethoscope,
   CalendarClock,
   Syringe,
+  ShoppingBag,
+  Megaphone,
+  Globe,
 } from 'lucide-react'
 
 // vetHidden = หน้าที่หมอเข้าไม่ได้ (proxy.ts กันไว้แล้ว ตรงนี้แค่ไม่ให้เห็นเมนู)
@@ -38,6 +41,9 @@ const navItems = [
   { href: '/admin/receiving', label: 'นำเข้าสินค้า', icon: PackagePlus, adminOnly: false, vetHidden: true },
   { href: '/admin/suppliers', label: 'ซัพพลายเออร์', icon: Truck, adminOnly: false, vetHidden: true },
   { href: '/admin/customers', label: 'ลูกค้า / เจ้าของสัตว์', icon: Users, adminOnly: false },
+  { href: '/admin/orders', label: 'ออเดอร์ออนไลน์', icon: ShoppingBag, adminOnly: false, vetHidden: true },
+  { href: '/admin/announcements', label: 'ประกาศข่าว', icon: Megaphone, adminOnly: true },
+  { href: '/admin/website', label: 'เว็บร้าน / ค่าส่ง', icon: Globe, adminOnly: true },
   { href: '/admin/promotions', label: 'โปรโมชั่น', icon: Tag, adminOnly: true },
   { href: '/admin/documents', label: 'เอกสาร', icon: FileText, adminOnly: false, vetHidden: true },
   { href: '/admin/shift', label: 'ปิดกะ/เงินสด', icon: Wallet, adminOnly: false, vetHidden: true },

@@ -10,6 +10,8 @@ interface Props {
   hint?: string
   // preview ปัจจุบัน (URL เดิมจาก storage หรือ object URL ของรูปใหม่)
   preview: string | null
+  /** สัดส่วนกรอบ crop — 1 = จัตุรัส (ค่าเริ่มต้น), 16/9 = ภาพแนวนอนสำหรับหัวข่าว */
+  aspect?: number
   onChange: (blob: Blob | null, previewUrl: string | null) => void
 }
 
@@ -42,7 +44,7 @@ async function cropAndCompress(imageSrc: string, area: Area): Promise<Blob> {
   return blob
 }
 
-export default function ImageInput({ label = 'รูปภาพ', hint, preview, onChange }: Props) {
+export default function ImageInput({ label = 'รูปภาพ', hint, preview, aspect = 1, onChange }: Props) {
   const fileRef = useRef<HTMLInputElement>(null)
   // รูปต้นฉบับที่กำลัง crop (data URL) — null = modal ปิด
   const [cropSrc, setCropSrc] = useState<string | null>(null)
@@ -130,7 +132,7 @@ export default function ImageInput({ label = 'รูปภาพ', hint, preview
                 image={cropSrc}
                 crop={crop}
                 zoom={zoom}
-                aspect={1}
+                aspect={aspect}
                 onCropChange={setCrop}
                 onZoomChange={setZoom}
                 onCropComplete={(_, areaPixels) => setCroppedArea(areaPixels)}

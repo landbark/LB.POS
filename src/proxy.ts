@@ -29,8 +29,12 @@ export async function proxy(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser()
   const { pathname } = request.nextUrl
 
+  // เว็บสาธารณะ (ข่าว/ร้านค้าออนไลน์/บัญชีลูกค้า) — ลูกค้าใช้เซสชันของตัวเอง ไม่ใช่ login พนักงาน
+  const publicSitePaths = ['/news', '/shop', '/cart', '/checkout', '/orders', '/account', '/api/shop']
+
   // หน้าลูกค้า (ผ่าน LINE LIFF เช็คแต้มเอง) ไม่ต้อง login พนักงาน
-  const isPublicPath = pathname === '/login' || pathname.startsWith('/auth')
+  const isPublicPath = pathname === '/' || pathname === '/login' || pathname.startsWith('/auth')
+    || publicSitePaths.some((p) => pathname === p || pathname.startsWith(p + '/'))
     || pathname === '/member' || pathname.startsWith('/api/member')
     || pathname.startsWith('/print/receipt')
     // Vercel Cron ไม่มี session พนักงาน — route เช็ค CRON_SECRET เอง
@@ -68,7 +72,7 @@ export async function proxy(request: NextRequest) {
     }
 
     // เฉพาะ admin: รายงาน / ตั้งค่า / โปรโมชั่น (RLS ก็บังคับ admin เท่านั้นอยู่แล้ว) — หน้าอื่นใต้ /admin cashier เข้าได้
-    const adminOnlyPaths = ['/admin/reports', '/admin/settings', '/admin/promotions']
+    const adminOnlyPaths = ['/admin/reports', '/admin/settings', '/admin/promotions', '/admin/announcements', '/admin/website']
     if (adminOnlyPaths.some((p) => pathname.startsWith(p)) && profile?.role !== 'admin') {
       return NextResponse.redirect(new URL(homePath(profile?.role), request.url))
     }
@@ -80,7 +84,7 @@ export async function proxy(request: NextRequest) {
 
     // สัตวแพทย์: ทำงานคลินิก + ดูสินค้า/สต็อค/ลูกค้าได้ แต่ไม่ยุ่งกับการขาย/จัดซื้อ/เงิน
     // (RLS ฝั่ง DB กันการเขียนไว้อีกชั้น — ตรงนี้แค่ไม่ให้หลงเข้าหน้าที่ใช้ไม่ได้)
-    const vetBlockedPaths = ['/pos', '/admin/receiving', '/admin/suppliers', '/admin/shift', '/admin/daily', '/admin/documents']
+    const vetBlockedPaths = ['/pos', '/admin/receiving', '/admin/suppliers', '/admin/shift', '/admin/daily', '/admin/documents', '/admin/orders']
     if (profile?.role === 'vet' && vetBlockedPaths.some((p) => pathname === p || pathname.startsWith(p + '/'))) {
       return NextResponse.redirect(new URL(homePath('vet'), request.url))
     }

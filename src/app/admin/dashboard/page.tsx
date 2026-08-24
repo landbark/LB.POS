@@ -22,6 +22,7 @@ export default async function DashboardPage() {
     { count: waitingCount },
     { data: todayAppts },
     { data: vaxRows },
+    { data: openOrders },
   ] = await Promise.all([
     supabase.from('products').select('*', { count: 'exact', head: true }).eq('active', true),
     supabase.from('transactions').select('total').gte('created_at', today),
@@ -49,7 +50,18 @@ export default async function DashboardPage() {
       .select('pet_id, vaccine_name, dose_date, next_due_date, pets!inner(active)')
       .eq('pets.active', true)
       .limit(5000),
+    // ออเดอร์ออนไลน์ที่ยังค้างอยู่
+    supabase
+      .from('orders')
+      .select('status')
+      .in('status', ['pending_payment', 'awaiting_confirm', 'confirmed']),
   ])
+
+  const orderCounts = {
+    awaiting: (openOrders ?? []).filter((o) => o.status === 'awaiting_confirm').length,
+    packing: (openOrders ?? []).filter((o) => o.status === 'confirmed').length,
+    unpaid: (openOrders ?? []).filter((o) => o.status === 'pending_payment').length,
+  }
 
   const vaxDue = dueVaccinations(
     ((vaxRows ?? []) as unknown as { pet_id: string; vaccine_name: string; dose_date: string; next_due_date: string | null }[]),
@@ -107,6 +119,30 @@ export default async function DashboardPage() {
           </div>
         ))}
       </div>
+
+      {/* ร้านค้าออนไลน์ — โชว์เฉพาะตอนมีออเดอร์ค้าง */}
+      {(orderCounts.awaiting + orderCounts.packing + orderCounts.unpaid) > 0 && (
+        <>
+          <h2 className="text-sm font-semibold text-gray-700 mb-3">ออเดอร์ออนไลน์</h2>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
+            <Link href="/admin/orders" className="bg-white rounded-xl p-5 shadow-sm border border-gray-100 hover:border-orange-200 transition-colors">
+              <div className="inline-flex p-2 rounded-lg text-orange-600 bg-orange-50 mb-3"><ShoppingBag size={20} /></div>
+              <p className="text-2xl font-bold text-gray-900">{orderCounts.awaiting}</p>
+              <p className="text-sm text-gray-600 mt-1">รอตรวจสลิป</p>
+            </Link>
+            <Link href="/admin/orders" className="bg-white rounded-xl p-5 shadow-sm border border-gray-100 hover:border-blue-200 transition-colors">
+              <div className="inline-flex p-2 rounded-lg text-blue-600 bg-blue-50 mb-3"><Package size={20} /></div>
+              <p className="text-2xl font-bold text-gray-900">{orderCounts.packing}</p>
+              <p className="text-sm text-gray-600 mt-1">รอจัดของ/ส่ง</p>
+            </Link>
+            <Link href="/admin/orders" className="bg-white rounded-xl p-5 shadow-sm border border-gray-100 hover:border-gray-200 transition-colors">
+              <div className="inline-flex p-2 rounded-lg text-gray-500 bg-gray-100 mb-3"><Clock size={20} /></div>
+              <p className="text-2xl font-bold text-gray-900">{orderCounts.unpaid}</p>
+              <p className="text-sm text-gray-600 mt-1">รอลูกค้าโอน</p>
+            </Link>
+          </div>
+        </>
+      )}
 
       {/* คลินิก */}
       <h2 className="text-sm font-semibold text-gray-700 mb-3">คลินิกวันนี้</h2>

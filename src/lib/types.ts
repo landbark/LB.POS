@@ -68,6 +68,12 @@ export interface Product {
   booster_interval_days: number | null
   /** ค่าตรวจ/ค่าหัตถการ — ขายได้ตามปกติ แต่ไม่มีสต็อคให้ตัด */
   is_service: boolean
+  /** น้ำหนักต่อหน่วย (กรัม) — ใช้คิดค่าส่งบนเว็บ */
+  weight_grams: number | null
+  /** ขึ้นขายบนหน้าเว็บร้านค้าออนไลน์ */
+  online_available: boolean
+  /** คำอธิบายสินค้าสำหรับหน้าเว็บ (ไม่ใส่ = โชว์แค่ชื่อ) */
+  online_description: string | null
   image_url: string | null
   active: boolean
   created_at: string
@@ -130,6 +136,16 @@ export interface StoreSettings {
   /** ร้านจดทะเบียน VAT แล้วหรือยัง — ปิดอยู่ = ไม่แสดง VAT บนใบเสร็จเลย */
   vat_registered: boolean
   vat_rate: number
+  /** ช่องทางติดต่อที่โชว์บนเว็บสาธารณะ */
+  line_url: string | null
+  facebook_url: string | null
+  instagram_url: string | null
+  /** ปิดอยู่ = เว็บโชว์แค่ข่าว/ช่องทางติดต่อ ยังสั่งซื้อไม่ได้ */
+  shop_enabled: boolean
+  shop_intro: string | null
+  pickup_note: string | null
+  /** ยอดซื้อขั้นต่ำที่ส่งฟรี (null = ไม่มี) */
+  free_shipping_min: number | null
   updated_at: string
 }
 
@@ -473,6 +489,147 @@ export interface ProductMarketplaceLink {
   last_synced_stock: number | null
   last_synced_at: string | null
   created_at: string
+}
+
+// ================= เว็บสาธารณะ + ร้านค้าออนไลน์ =================
+
+export interface Announcement {
+  id: string
+  title: string
+  body: string
+  image_url: string | null
+  /** ปิด = ร่าง ไม่ขึ้นหน้าเว็บ */
+  published: boolean
+  /** ปักหมุดขึ้นบนสุด */
+  pinned: boolean
+  published_at: string
+  created_by: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface ShippingZone {
+  id: string
+  name: string
+  provinces: string[]
+  /** โซนสำรองของจังหวัดที่ไม่ได้ระบุไว้ที่ไหน */
+  is_default: boolean
+  sort_order: number
+  created_at: string
+}
+
+export interface ShippingRate {
+  id: string
+  zone_id: string
+  max_weight_grams: number
+  price: number
+  created_at: string
+}
+
+export interface ShippingZoneWithRates extends ShippingZone {
+  shipping_rates?: ShippingRate[]
+}
+
+export interface CustomerAddress {
+  id: string
+  customer_id: string
+  label: string | null
+  recipient_name: string
+  phone: string
+  address_line: string
+  subdistrict: string | null
+  district: string | null
+  province: string
+  postal_code: string | null
+  note: string | null
+  is_default: boolean
+  created_at: string
+}
+
+export type OrderStatus =
+  | 'pending_payment'
+  | 'awaiting_confirm'
+  | 'confirmed'
+  | 'shipped'
+  | 'ready_pickup'
+  | 'completed'
+  | 'cancelled'
+
+export type Fulfillment = 'delivery' | 'pickup'
+
+export const FULFILLMENT_LABELS: Record<Fulfillment, string> = {
+  delivery: 'จัดส่งตามที่อยู่',
+  pickup: 'มารับที่ร้าน',
+}
+
+export interface OrderItem {
+  id: string
+  order_id: string
+  product_id: string | null
+  product_name: string
+  unit: string | null
+  unit_price: number
+  quantity: number
+  subtotal: number
+  weight_grams: number
+  created_at: string
+  products?: Product
+}
+
+export interface Order {
+  id: string
+  order_number: string
+  customer_id: string | null
+  status: OrderStatus
+  fulfillment: Fulfillment
+  subtotal: number
+  shipping_fee: number
+  discount: number
+  total: number
+  total_weight_grams: number
+  recipient_name: string | null
+  phone: string | null
+  address_line: string | null
+  subdistrict: string | null
+  district: string | null
+  province: string | null
+  postal_code: string | null
+  shipping_zone_name: string | null
+  customer_note: string | null
+  staff_note: string | null
+  /** path ในบัคเก็ต payment-slips (บัคเก็ตส่วนตัว — ต้องออก signed URL ฝั่ง server) */
+  payment_slip_path: string | null
+  paid_reported_at: string | null
+  confirmed_at: string | null
+  confirmed_by: string | null
+  shipped_at: string | null
+  tracking_carrier: string | null
+  tracking_number: string | null
+  completed_at: string | null
+  cancelled_at: string | null
+  cancelled_by: string | null
+  cancel_reason: string | null
+  transaction_id: string | null
+  created_at: string
+  customers?: Customer | null
+  order_items?: OrderItem[]
+}
+
+/** สินค้าที่ขึ้นหน้าร้านออนไลน์ (ตัดข้อมูลต้นทุน/ซัพพลายเออร์ออก) */
+export interface ShopProduct {
+  id: string
+  name: string
+  sku: string | null
+  price: number
+  unit: string
+  image_url: string | null
+  online_description: string | null
+  weight_grams: number | null
+  is_service: boolean
+  category_id: string | null
+  category_name: string | null
+  /** สต็อคคงเหลือรวมทุกล็อต (บริการ = null คือไม่จำกัด) */
+  stock: number | null
 }
 
 // Cart types for POS

@@ -35,6 +35,9 @@ export default function ProductForm({ categories, units, suppliers, product }: P
     boosterType: product?.booster_type ?? '',
     booster: product?.booster_interval_days?.toString() ?? '',
     is_service: product?.is_service ?? false,
+    weight_grams: product?.weight_grams?.toString() ?? '',
+    online_available: product?.online_available ?? false,
+    online_description: product?.online_description ?? '',
   })
 
   // รูปใหม่ที่ crop/บีบอัดแล้วรออัปโหลด; preview = URL เดิมหรือ object URL ของรูปใหม่
@@ -94,6 +97,13 @@ export default function ProductForm({ categories, units, suppliers, product }: P
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
+
+    // ขายบนเว็บแล้วต้องมีน้ำหนัก ไม่งั้นคิดค่าส่งไม่ได้ (ยกเว้นค่าบริการที่ไม่ได้ส่งของ)
+    if (form.online_available && !form.is_service && !form.weight_grams.trim()) {
+      toast.error('สินค้าที่ขายบนเว็บต้องใส่น้ำหนัก เพื่อคิดค่าจัดส่ง')
+      return
+    }
+
     setLoading(true)
 
     // อัปโหลดรูปใหม่ (ถ้ามี) ก่อนบันทึกสินค้า
@@ -140,6 +150,9 @@ export default function ProductForm({ categories, units, suppliers, product }: P
       booster_type: form.boosterType || null,
       booster_interval_days: form.boosterType === 'custom' && form.booster.trim() ? parseInt(form.booster) : null,
       is_service: form.is_service,
+      weight_grams: form.weight_grams.trim() ? parseInt(form.weight_grams) : null,
+      online_available: form.online_available,
+      online_description: form.online_description.trim() || null,
     }
 
     const { error } = product
@@ -422,6 +435,51 @@ export default function ProductForm({ categories, units, suppliers, product }: P
           <p className="text-xs text-gray-400 mt-1">
             เช่น ค่าตรวจ ค่าหัตถการ ค่าผ่าตัด — ขายได้ไม่จำกัดจำนวน ไม่ต้องรับเข้าสต็อค
           </p>
+        </div>
+
+        {!form.is_service && (
+          <div>
+            <label className={labelClass}>น้ำหนักต่อหน่วย (กรัม)</label>
+            <input
+              type="number"
+              min="0"
+              value={form.weight_grams}
+              onChange={(e) => set('weight_grams', e.target.value)}
+              className={inputClass}
+              placeholder="เช่น 1500"
+            />
+            <p className="text-xs text-gray-400 mt-1">
+              ใช้คิดค่าจัดส่งบนเว็บ — รวมน้ำหนักกล่อง/ถุงด้วยจะแม่นกว่า
+            </p>
+          </div>
+        )}
+
+        <div className="rounded-lg border border-gray-200 p-4 space-y-3">
+          <label className="flex items-center gap-2 text-sm font-medium text-gray-700">
+            <input
+              type="checkbox"
+              checked={form.online_available}
+              onChange={(e) => setForm((prev) => ({ ...prev, online_available: e.target.checked }))}
+              className="w-4 h-4 accent-blue-600"
+            />
+            ขายบนเว็บร้านค้าออนไลน์
+          </label>
+          <p className="text-xs text-gray-400">
+            ลูกค้าจะเห็นสินค้านี้ที่หน้าเว็บและสั่งซื้อได้เอง (ของคลินิกจะไม่ขึ้นเว็บถึงจะติ๊กไว้)
+          </p>
+
+          {form.online_available && (
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">รายละเอียดสำหรับหน้าเว็บ</label>
+              <textarea
+                value={form.online_description}
+                onChange={(e) => set('online_description', e.target.value)}
+                className={inputClass}
+                rows={3}
+                placeholder="ส่วนผสม / วิธีใช้ / ขนาดบรรจุ"
+              />
+            </div>
+          )}
         </div>
 
         {!form.is_service && (
