@@ -19,7 +19,14 @@ export interface PricedLine {
 }
 
 export type PricedCart =
-  | { ok: true; lines: PricedLine[]; subtotal: number; weightGrams: number }
+  | {
+      ok: true
+      lines: PricedLine[]
+      subtotal: number
+      weightGrams: number
+      /** สินค้าที่ยังไม่ได้ตั้งน้ำหนัก — คิดค่าส่งไม่ได้ (ยังให้มารับที่ร้านได้) */
+      missingWeight: string[]
+    }
   | { ok: false; error: string }
 
 interface Row {
@@ -55,6 +62,7 @@ export async function priceCart(items: CartInput[]): Promise<PricedCart> {
 
   const rows = (data ?? []) as unknown as Row[]
   const lines: PricedLine[] = []
+  const missingWeight: string[] = []
 
   for (const item of wanted) {
     const row = rows.find((r) => r.id === item.productId)
@@ -68,6 +76,8 @@ export async function priceCart(items: CartInput[]): Promise<PricedCart> {
         return { ok: false, error: `"${row.name}" เหลือ ${stock} ${row.unit} — กรุณาลดจำนวน` }
       }
     }
+
+    if (!row.is_service && row.weight_grams == null) missingWeight.push(row.name)
 
     const price = Number(row.price)
     lines.push({
@@ -86,5 +96,6 @@ export async function priceCart(items: CartInput[]): Promise<PricedCart> {
     lines,
     subtotal: lines.reduce((sum, l) => sum + l.subtotal, 0),
     weightGrams: lines.reduce((sum, l) => sum + l.weight_grams, 0),
+    missingWeight,
   }
 }

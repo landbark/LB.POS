@@ -20,6 +20,17 @@ export async function POST(request: NextRequest) {
     })
   }
 
+  // สินค้าไม่มีน้ำหนัก = คิดค่าส่งไม่ได้ (ไม่งั้นจะคิดค่าส่งต่ำกว่าจริงเงียบๆ)
+  if (priced.missingWeight.length > 0) {
+    return NextResponse.json({
+      subtotal: priced.subtotal,
+      weightGrams: priced.weightGrams,
+      shippingFee: null,
+      total: null,
+      shippingError: `"${priced.missingWeight.join('", "')}" ยังไม่ได้ตั้งน้ำหนัก — เลือกรับที่ร้านหรือติดต่อร้านเพื่อสั่งจัดส่ง`,
+    })
+  }
+
   const province = String(body.province ?? '').trim()
   if (!province) {
     return NextResponse.json({

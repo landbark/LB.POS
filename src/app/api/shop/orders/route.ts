@@ -51,6 +51,13 @@ export async function POST(request: NextRequest) {
   let address: AddressInput = {}
 
   if (fulfillment === 'delivery') {
+    if (priced.missingWeight.length > 0) {
+      return NextResponse.json(
+        { error: `"${priced.missingWeight.join('", "')}" ยังไม่ได้ตั้งน้ำหนัก — เลือกรับที่ร้านหรือติดต่อร้าน` },
+        { status: 400 }
+      )
+    }
+
     if (body.addressId) {
       const { data: saved } = await admin
         .from('customer_addresses')
