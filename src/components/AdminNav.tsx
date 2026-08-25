@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import Link from '@/components/ProgressLink'
 import { usePathname, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
@@ -61,6 +61,31 @@ export default function AdminNav({ userName, role }: { userName: string; role: s
   const router = useRouter()
   // มือถือ: เมนูซ่อนไว้เป็นลิ้นชัก เปิดด้วยปุ่มบนแถบด้านบน (จอ md ขึ้นไปโชว์ค้างเหมือนเดิม)
   const [open, setOpen] = useState(false)
+  // จำนวนออเดอร์ค้างข้างเมนู — แดง = ร้านต้องทำอะไรสักอย่าง, จาง = รอลูกค้าโอน
+  const [orderCounts, setOrderCounts] = useState({ todo: 0, waiting: 0 })
+
+  useEffect(() => {
+    if (role === 'vet') return
+    let cancelled = false
+
+    async function loadCounts() {
+      const supabase = createClient()
+      const { data } = await supabase
+        .from('orders')
+        .select('status')
+        .in('status', ['pending_payment', 'awaiting_confirm', 'confirmed'])
+      if (cancelled || !data) return
+      setOrderCounts({
+        todo: data.filter((o) => o.status !== 'pending_payment').length,
+        waiting: data.filter((o) => o.status === 'pending_payment').length,
+      })
+    }
+
+    loadCounts()
+    // เช็คซ้ำทุกนาที เผื่อเปิดหน้าค้างไว้แล้วมีออเดอร์เข้ามาใหม่
+    const timer = setInterval(loadCounts, 60_000)
+    return () => { cancelled = true; clearInterval(timer) }
+  }, [pathname, role])
 
   async function handleLogout() {
     const supabase = createClient()
@@ -79,10 +104,18 @@ export default function AdminNav({ userName, role }: { userName: string; role: s
         <button
           onClick={() => setOpen(true)}
           aria-label="เปิดเมนู"
-          className="p-2 rounded-lg"
+          className="relative p-2 rounded-lg"
           style={{ color: '#F0E8DC' }}
         >
           <Menu size={22} />
+          {orderCounts.todo > 0 && (
+            <span
+              className="absolute top-0 right-0 min-w-4.5 h-4.5 px-1 rounded-full text-[10px] font-bold flex items-center justify-center"
+              style={{ background: '#D9534F', color: '#fff' }}
+            >
+              {orderCounts.todo}
+            </span>
+          )}
         </button>
         <span className="font-bold truncate" style={{ color: '#F0E8DC' }}>LANDBARK</span>
         <span className="text-xs truncate ml-auto" style={{ color: '#D4A87A' }}>{userName}</span>
@@ -136,7 +169,29 @@ export default function AdminNav({ userName, role }: { userName: string; role: s
               onMouseLeave={(e) => { if (!active) { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#D4A87A' } }}
             >
               <Icon size={18} />
-              {label}
+              <span className="flex-1">{label}</span>
+              {href === '/admin/orders' && (
+                <span className="flex items-center gap-1">
+                  {orderCounts.todo > 0 && (
+                    <span
+                      title="ออเดอร์ที่ร้านต้องจัดการ (รอตรวจสลิป / รอจัดส่ง)"
+                      className="min-w-5 h-5 px-1.5 rounded-full text-[11px] font-bold flex items-center justify-center"
+                      style={{ background: '#D9534F', color: '#fff' }}
+                    >
+                      {orderCounts.todo}
+                    </span>
+                  )}
+                  {orderCounts.waiting > 0 && (
+                    <span
+                      title="รอลูกค้าโอนเงิน — ยังไม่ต้องทำอะไร"
+                      className="min-w-5 h-5 px-1.5 rounded-full text-[11px] font-medium flex items-center justify-center"
+                      style={{ background: '#6B5F4F', color: '#E8D9C5' }}
+                    >
+                      {orderCounts.waiting}
+                    </span>
+                  )}
+                </span>
+              )}
             </Link>
           )
         })}

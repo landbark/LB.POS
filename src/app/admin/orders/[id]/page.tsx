@@ -13,7 +13,7 @@ export default async function AdminOrderPage({ params }: { params: Promise<{ id:
 
   const { data } = await supabase
     .from('orders')
-    .select('*, customers(id, name, phone), order_items(*)')
+    .select('*, customers(id, name, phone), order_items(*, products(sku))')
     .eq('id', id)
     .maybeSingle()
 

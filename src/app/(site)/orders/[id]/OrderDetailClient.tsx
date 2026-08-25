@@ -176,10 +176,14 @@ export default function OrderDetailClient({ order, slipUrl, promptpayId, payment
           </label>
 
           {slipUrl && (
-            <div>
+            <div className="text-center">
               <p className="text-xs text-gray-400 mb-1">สลิปที่ส่งแล้ว</p>
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={slipUrl} alt="สลิปโอนเงิน" className="max-h-64 rounded-lg border border-brand-muted/30" />
+              <img
+                src={slipUrl}
+                alt="สลิปโอนเงิน"
+                className="mx-auto max-h-64 rounded-lg border border-brand-muted/30"
+              />
             </div>
           )}
 

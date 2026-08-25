@@ -125,7 +125,13 @@ export default function OrderDetail({ order, slipUrl, userId }: { order: Order; 
           <tbody className="divide-y divide-gray-100">
             {(order.order_items ?? []).map((item) => (
               <tr key={item.id}>
-                <td className="py-2 text-gray-900">{item.product_name}</td>
+                <td className="py-2 text-gray-900">
+                  {item.product_name}
+                  {/* SKU ไว้เทียบตอนหยิบของ กันหยิบผิดรุ่น/ผิดขนาด */}
+                  {item.products?.sku && (
+                    <span className="ml-2 text-xs font-mono text-gray-400">{item.products.sku}</span>
+                  )}
+                </td>
                 <td className="py-2 text-gray-500 text-right whitespace-nowrap">
                   {item.quantity} {item.unit ?? ''} × ฿{money(item.unit_price)}
                 </td>
