@@ -78,6 +78,8 @@ export default function ReceiptView({
 
       <PrintToolbar
         backHref={backHref}
+        // ลูกค้าเปิดจากหน้าเช็คแต้มในแท็บเดิม — ให้ปุ่มพากลับ ไม่ใช่ปิดแท็บ
+        variant={isCustomer ? 'back' : 'close'}
         size={size}
         onSizeChange={(v) => setSize(v as PaperSize)}
         sizes={

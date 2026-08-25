@@ -147,6 +147,8 @@ export default function PromotionsClient({
             เพิ่มโปรโมชั่นแล้ว
             <a
               href={`/print/promotion/${data.id}`}
+              target="_blank"
+              rel="noopener noreferrer"
               onClick={() => toast.dismiss(t.id)}
               className="flex items-center gap-1 text-blue-600 font-medium whitespace-nowrap"
             >
@@ -346,6 +348,8 @@ export default function PromotionsClient({
                     <div className="flex items-center gap-2 justify-end">
                       <Link
                         href={`/print/promotion/${p.id}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
                         className="p-1.5 text-gray-400 hover:text-blue-600 rounded"
                         title="พิมพ์ป้ายโปรโมชั่น"
                       >

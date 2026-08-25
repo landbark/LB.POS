@@ -176,6 +176,8 @@ export default function OrderDetail({ order, slipUrl, userId }: { order: Order; 
           <div className="mt-3 flex items-center gap-3 text-sm">
             <Link
               href={`/print/receipt/${order.transaction_id}`}
+              target="_blank"
+              rel="noopener noreferrer"
               className="inline-flex items-center gap-1.5 text-blue-600 hover:underline"
             >
               <Printer size={14} /> ใบเสร็จของออเดอร์นี้
