@@ -80,7 +80,7 @@ export default function OrdersClient({ orders }: { orders: Order[] }) {
         </div>
       </div>
 
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+      <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-x-auto">
         {filtered.length === 0 ? (
           <div className="p-12 text-center text-gray-400">
             <PackageCheck size={32} className="mx-auto mb-2" />

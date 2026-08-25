@@ -43,7 +43,7 @@ export default async function ProductsPage() {
         </div>
       </div>
 
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+      <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-x-auto">
         <table className="w-full">
           <thead className="bg-gray-50 border-b border-gray-100">
             <tr>
@@ -54,6 +54,7 @@ export default async function ProductsPage() {
               <th className="text-right text-xs font-medium text-gray-500 uppercase px-4 py-3">ราคา</th>
               <th className="text-right text-xs font-medium text-gray-500 uppercase px-4 py-3">คงเหลือ</th>
               <th className="text-center text-xs font-medium text-gray-500 uppercase px-4 py-3">สถานะ</th>
+              <th className="text-center text-xs font-medium text-gray-500 uppercase px-4 py-3">ขายออนไลน์</th>
               <th className="px-4 py-3"></th>
             </tr>
           </thead>
@@ -63,7 +64,7 @@ export default async function ProductsPage() {
             ))}
             {(!products || products.length === 0) && (
               <tr>
-                <td colSpan={8} className="px-4 py-10 text-center text-sm text-gray-400">
+                <td colSpan={9} className="px-4 py-10 text-center text-sm text-gray-400">
                   ยังไม่มีสินค้า — กด &quot;เพิ่มสินค้า&quot; เพื่อเริ่มต้น
                 </td>
               </tr>

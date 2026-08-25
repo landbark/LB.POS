@@ -67,7 +67,7 @@ export default function DocumentsClient({
       <h1 className="text-2xl font-bold text-gray-900 mb-1">เอกสาร</h1>
       <p className="text-sm text-gray-500 mb-6">รวมใบเสร็จและใบสั่งซื้อทั้งหมด พร้อมพิมพ์ย้อนหลังได้</p>
 
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+      <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-x-auto">
         <div className="flex items-center justify-between border-b border-gray-100 px-2">
           <div className="flex">
             <button className={tabClass(tab === 'receipt')} onClick={() => setTab('receipt')}>

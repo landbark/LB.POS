@@ -126,7 +126,7 @@ export default async function ReportsPage() {
         )}
       </div>
 
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+      <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-x-auto">
         <div className="px-4 py-3 border-b border-gray-100">
           <h2 className="font-semibold text-gray-900">รายการขายล่าสุด</h2>
         </div>

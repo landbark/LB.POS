@@ -15,7 +15,7 @@ type Movement = Omit<StockMovement, 'profiles'> & {
 
 export default function StockHistory({ movements, unit }: { movements: Movement[]; unit: string }) {
   return (
-    <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+    <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-x-auto">
       <div className="flex items-center gap-2 px-6 py-4 border-b border-gray-100">
         <History size={18} className="text-gray-400" />
         <h2 className="font-semibold text-gray-900">ประวัติสต็อค</h2>

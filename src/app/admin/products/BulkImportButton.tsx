@@ -318,7 +318,7 @@ export default function BulkImportButton({ categories, units, suppliers, userId 
                     </p>
                     <button onClick={reset} className="text-xs text-blue-600 hover:text-blue-700 font-medium">เลือกไฟล์ใหม่</button>
                   </div>
-                  <div className="border border-gray-100 rounded-lg overflow-hidden">
+                  <div className="border border-gray-100 rounded-lg overflow-x-auto">
                     <table className="w-full text-sm">
                       <thead className="bg-gray-50 text-xs text-gray-500 uppercase">
                         <tr>
@@ -364,7 +364,7 @@ export default function BulkImportButton({ categories, units, suppliers, userId 
                       <> · ล้มเหลว <span className="font-semibold text-red-500">{results.filter((r) => !r.ok).length}</span> รายการ</>
                     )}
                   </p>
-                  <div className="border border-gray-100 rounded-lg overflow-hidden">
+                  <div className="border border-gray-100 rounded-lg overflow-x-auto">
                     <table className="w-full text-sm">
                       <thead className="bg-gray-50 text-xs text-gray-500 uppercase">
                         <tr>

@@ -4,7 +4,9 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { ChevronDown, ChevronRight, Edit } from 'lucide-react'
 import DeleteProductButton from './DeleteProductButton'
+import OnlineToggle from './OnlineToggle'
 import { isClinicOnly } from '@/lib/clinic'
+import { formatWeight } from '@/lib/shop'
 import type { Product } from '@/lib/types'
 
 export default function ProductRow({ product }: { product: Product }) {
@@ -48,6 +50,11 @@ export default function ProductRow({ product }: { product: Product }) {
                 {product.unit}
                 {clinicOnly && <span className="ml-1.5 text-amber-600">· ของคลินิก</span>}
                 {product.is_service && <span className="ml-1.5 text-gray-400">· บริการ</span>}
+                {!product.is_service && !clinicOnly && (
+                  product.weight_grams != null
+                    ? <span className="ml-1.5 text-gray-400">· {formatWeight(product.weight_grams)}</span>
+                    : <span className="ml-1.5 text-amber-600">· ยังไม่ใส่น้ำหนัก</span>
+                )}
               </p>
             </div>
           </button>
@@ -78,6 +85,9 @@ export default function ProductRow({ product }: { product: Product }) {
             {product.active ? 'ใช้งาน' : 'ปิด'}
           </span>
         </td>
+        <td className="px-4 py-3 text-center">
+          <OnlineToggle product={product} clinicOnly={clinicOnly} />
+        </td>
         <td className="px-4 py-3">
           <div className="flex items-center gap-2 justify-end">
             <Link
@@ -92,7 +102,7 @@ export default function ProductRow({ product }: { product: Product }) {
       </tr>
       {expanded && (
         <tr className="bg-gray-50/60">
-          <td colSpan={8} className="px-4 py-3">
+          <td colSpan={9} className="px-4 py-3">
             {lots.length === 0 ? (
               <p className="text-sm text-gray-400 py-1">ยังไม่มี lot</p>
             ) : (
