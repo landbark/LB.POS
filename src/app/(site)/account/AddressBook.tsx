@@ -5,6 +5,7 @@ import { MapPin, Plus, Trash2 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { confirmDialog } from '@/lib/confirm'
 import { PROVINCES } from '@/lib/provinces'
+import PostcodeLookup, { type PostcodeMatch } from '@/components/PostcodeLookup'
 import { formatAddress } from '@/lib/shop'
 import type { CustomerAddress } from '@/lib/types'
 
@@ -28,6 +29,15 @@ export default function AddressBook({ initialAddresses }: { initialAddresses: Cu
   const [adding, setAdding] = useState(false)
   const [saving, setSaving] = useState(false)
   const [form, setForm] = useState(emptyForm)
+
+  function fillFromPostcode(match: PostcodeMatch) {
+    setForm((prev) => ({
+      ...prev,
+      subdistrict: match.subdistrict,
+      district: match.district,
+      province: match.province,
+    }))
+  }
 
   async function save() {
     setSaving(true)
@@ -123,12 +133,17 @@ export default function AddressBook({ initialAddresses }: { initialAddresses: Cu
             value={form.phone}
             onChange={(e) => setForm({ ...form, phone: e.target.value })}
           />
-          <input
-            className={inputClass}
-            placeholder="รหัสไปรษณีย์"
-            value={form.postal_code}
-            onChange={(e) => setForm({ ...form, postal_code: e.target.value })}
-          />
+          <div className="space-y-2">
+            <input
+              className={inputClass}
+              inputMode="numeric"
+              maxLength={5}
+              placeholder="รหัสไปรษณีย์"
+              value={form.postal_code}
+              onChange={(e) => setForm({ ...form, postal_code: e.target.value.replace(/\D/g, '') })}
+            />
+            <PostcodeLookup postcode={form.postal_code} onPick={fillFromPostcode} />
+          </div>
           <textarea
             className={`${inputClass} sm:col-span-2`}
             rows={2}

@@ -8,6 +8,7 @@ import toast from 'react-hot-toast'
 import { useCart } from '@/lib/use-cart'
 import { formatWeightApprox } from '@/lib/shop'
 import { PROVINCES } from '@/lib/provinces'
+import PostcodeLookup, { type PostcodeMatch } from '@/components/PostcodeLookup'
 import type { CustomerAddress, Fulfillment } from '@/lib/types'
 
 const money = (n: number) => n.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -62,6 +63,15 @@ export default function CheckoutClient({
     province: '',
     postal_code: '',
   })
+
+  function fillFromPostcode(match: PostcodeMatch) {
+    setForm((prev) => ({
+      ...prev,
+      subdistrict: match.subdistrict,
+      district: match.district,
+      province: match.province,
+    }))
+  }
 
   const usingNewAddress = addressId === '' || addressId === 'new'
   const selectedAddress = addresses.find((a) => a.id === addressId)
@@ -227,6 +237,18 @@ export default function CheckoutClient({
                 value={form.address_line}
                 onChange={(e) => setForm({ ...form, address_line: e.target.value })}
               />
+              {/* กรอกรหัสไปรษณีย์ก่อน แล้วเลือกตำบล/อำเภอจากรายการ ไม่ต้องพิมพ์เอง */}
+              <div className="sm:col-span-2 space-y-2">
+                <input
+                  className={inputClass}
+                  inputMode="numeric"
+                  maxLength={5}
+                  placeholder="รหัสไปรษณีย์ (กรอกแล้วเลือกตำบล/อำเภอได้เลย)"
+                  value={form.postal_code}
+                  onChange={(e) => setForm({ ...form, postal_code: e.target.value.replace(/\D/g, '') })}
+                />
+                <PostcodeLookup postcode={form.postal_code} onPick={fillFromPostcode} />
+              </div>
               <input
                 className={inputClass}
                 placeholder="ตำบล / แขวง"
@@ -240,7 +262,7 @@ export default function CheckoutClient({
                 onChange={(e) => setForm({ ...form, district: e.target.value })}
               />
               <select
-                className={inputClass}
+                className={`${inputClass} sm:col-span-2`}
                 value={form.province}
                 onChange={(e) => setForm({ ...form, province: e.target.value })}
               >
@@ -249,12 +271,6 @@ export default function CheckoutClient({
                   <option key={p} value={p}>{p}</option>
                 ))}
               </select>
-              <input
-                className={inputClass}
-                placeholder="รหัสไปรษณีย์"
-                value={form.postal_code}
-                onChange={(e) => setForm({ ...form, postal_code: e.target.value })}
-              />
               <label className="sm:col-span-2 flex items-center gap-2 text-sm text-gray-600">
                 <input
                   type="checkbox"
