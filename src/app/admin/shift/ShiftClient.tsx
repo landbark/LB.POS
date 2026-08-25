@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { Wallet, Lock, Unlock } from 'lucide-react'
+import { Wallet, Lock, Unlock, Pencil } from 'lucide-react'
 import toast from 'react-hot-toast'
 import type { Shift } from '@/lib/types'
 
@@ -48,16 +48,25 @@ export default function ShiftClient({
   openShift,
   history,
   currentUserId,
+  currentUserName,
+  canEditClosed,
 }: {
   openShift: ShiftRow | null
   history: ShiftRow[]
   currentUserId: string
+  currentUserName: string
+  canEditClosed: boolean
 }) {
   const router = useRouter()
   const [openingCash, setOpeningCash] = useState('')
   const [counts, setCounts] = useState<Record<number, string>>({})
   const [ownerCounts, setOwnerCounts] = useState<Record<number, string>>({})
   const [reopenNext, setReopenNext] = useState(true)
+  // กะที่ปิดไปแล้วแต่กรอกยอดผิด — เปิดกล่องแก้ไขจากตารางประวัติ
+  const [editing, setEditing] = useState<ShiftRow | null>(null)
+  const [editCounted, setEditCounted] = useState('')
+  const [editOwner, setEditOwner] = useState('')
+  const [editNote, setEditNote] = useState('')
   const [notes, setNotes] = useState('')
   const [loading, setLoading] = useState(false)
   const [loadingSummary, setLoadingSummary] = useState(true)
@@ -182,6 +191,62 @@ export default function ShiftClient({
     setCounts({})
     setOwnerCounts({})
     setNotes('')
+    router.refresh()
+  }
+
+  function startEdit(shift: ShiftRow) {
+    setEditing(shift)
+    setEditCounted(shift.closing_cash_counted != null ? String(shift.closing_cash_counted) : '')
+    setEditOwner(shift.cash_to_owner != null ? String(shift.cash_to_owner) : '')
+    setEditNote('')
+  }
+
+  async function saveEdit() {
+    if (!editing) return
+    const counted = parseFloat(editCounted)
+    const toOwner = editOwner.trim() === '' ? 0 : parseFloat(editOwner)
+    if (Number.isNaN(counted) || counted < 0 || Number.isNaN(toOwner) || toOwner < 0) {
+      toast.error('กรอกยอดเงินให้ถูกต้อง')
+      return
+    }
+    if (toOwner > counted) {
+      toast.error('เงินที่ให้เจ้าของมากกว่ายอดที่นับได้')
+      return
+    }
+
+    const expected = Number(editing.expected_cash ?? 0)
+    const previous = editing.closing_cash_counted
+    const changedTotal = previous == null || Math.abs(Number(previous) - counted) > 0.001
+
+    // ต่อท้ายหมายเหตุไว้เสมอ — บันทึกเงินไม่ควรถูกแก้แบบไร้ร่องรอย
+    const stamp = new Date().toLocaleDateString('th-TH', {
+      day: 'numeric', month: 'short', year: '2-digit', hour: '2-digit', minute: '2-digit',
+    })
+    const auditLine = `[แก้ไข ${stamp} โดย ${currentUserName || 'พนักงาน'}] ยอดนับ ฿${money(Number(previous ?? 0))} → ฿${money(counted)}${editNote.trim() ? ` · ${editNote.trim()}` : ''}`
+    const notes = [editing.notes?.trim(), auditLine].filter(Boolean).join('\n')
+
+    setLoading(true)
+    const supabase = createClient()
+    const { error } = await supabase
+      .from('shifts')
+      .update({
+        closing_cash_counted: counted,
+        cash_difference: counted - expected,
+        cash_to_owner: toOwner,
+        // ยอดรวมถูกแก้ด้วยมือแล้ว รายละเอียดใบละที่นับไว้เดิมจึงไม่ตรงอีก
+        closing_denominations: changedTotal ? null : editing.closing_denominations,
+        owner_denominations: changedTotal ? null : editing.owner_denominations,
+        notes,
+      })
+      .eq('id', editing.id)
+    setLoading(false)
+
+    if (error) {
+      toast.error('แก้ไขไม่สำเร็จ: ' + error.message)
+      return
+    }
+    toast.success('แก้ไขยอดปิดกะแล้ว')
+    setEditing(null)
     router.refresh()
   }
 
@@ -398,16 +463,123 @@ export default function ShiftClient({
                 }`}>
                   {s.cash_difference != null ? `${s.cash_difference > 0 ? '+' : ''}฿${money(s.cash_difference)}` : '—'}
                 </td>
+                {canEditClosed && (
+                  <td className="px-4 py-3 text-right">
+                    <button
+                      onClick={() => startEdit(s)}
+                      title="แก้ไขยอดที่นับได้"
+                      className="p-1.5 text-gray-400 hover:text-blue-600 rounded"
+                    >
+                      <Pencil size={15} />
+                    </button>
+                  </td>
+                )}
               </tr>
             ))}
             {history.length === 0 && (
               <tr>
-                <td colSpan={7} className="px-4 py-10 text-center text-sm text-gray-400">ยังไม่มีประวัติกะ</td>
+                <td colSpan={canEditClosed ? 8 : 7} className="px-4 py-10 text-center text-sm text-gray-400">ยังไม่มีประวัติกะ</td>
               </tr>
             )}
           </tbody>
         </table>
       </div>
+
+      {/* แก้ยอดกะที่ปิดไปแล้ว (เจ้าของร้านเท่านั้น) */}
+      {editing && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50"
+          onClick={(e) => { if (e.target === e.currentTarget) setEditing(null) }}
+        >
+          <div className="w-full max-w-sm rounded-2xl bg-white shadow-2xl p-6">
+            <h2 className="font-semibold text-gray-900">แก้ไขยอดปิดกะ</h2>
+            <p className="text-xs text-gray-500 mt-0.5">
+              กะ {fmtDate(editing.opened_at)}
+              {editing.closed_at ? ` - ${fmtDate(editing.closed_at)}` : ''}
+            </p>
+
+            <div className="mt-4 space-y-3">
+              <div className="flex justify-between text-sm text-gray-600">
+                <span>เงินตั้งต้น</span>
+                <span>฿{money(editing.opening_cash)}</span>
+              </div>
+              <div className="flex justify-between text-sm text-gray-600">
+                <span>เงินสดที่ควรมี</span>
+                <span>฿{money(Number(editing.expected_cash ?? 0))}</span>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">ยอดที่นับได้จริง (บาท)</label>
+                <input
+                  type="number" min="0" step="0.01" autoFocus
+                  value={editCounted}
+                  onChange={(e) => setEditCounted(e.target.value)}
+                  className={inputClass}
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">เงินที่ให้เจ้าของ (บาท)</label>
+                <input
+                  type="number" min="0" step="0.01"
+                  value={editOwner}
+                  onChange={(e) => setEditOwner(e.target.value)}
+                  className={inputClass}
+                  placeholder="0"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">เหตุผลที่แก้ (ไม่ใส่ก็ได้)</label>
+                <input
+                  value={editNote}
+                  onChange={(e) => setEditNote(e.target.value)}
+                  className={inputClass}
+                  placeholder="เช่น นับเหรียญตกไป 1 ถุง"
+                />
+              </div>
+
+              {editCounted !== '' && !Number.isNaN(parseFloat(editCounted)) && (
+                <p className="text-sm text-gray-600">
+                  ผลต่างใหม่:{' '}
+                  <span className={`font-semibold ${
+                    parseFloat(editCounted) - Number(editing.expected_cash ?? 0) === 0
+                      ? 'text-green-600'
+                      : parseFloat(editCounted) - Number(editing.expected_cash ?? 0) > 0
+                        ? 'text-blue-600'
+                        : 'text-red-600'
+                  }`}>
+                    {parseFloat(editCounted) - Number(editing.expected_cash ?? 0) > 0 ? '+' : ''}
+                    ฿{money(parseFloat(editCounted) - Number(editing.expected_cash ?? 0))}
+                  </span>
+                </p>
+              )}
+
+              <p className="rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-800">
+                ระบบจะบันทึกไว้ในหมายเหตุว่าใครแก้ ตอนไหน จากยอดเท่าไหร่ — และรายละเอียดจำนวนใบ/เหรียญที่นับไว้เดิมจะถูกล้าง เพราะไม่ตรงกับยอดใหม่แล้ว
+              </p>
+            </div>
+
+            <div className="mt-6 flex gap-3">
+              <button
+                type="button"
+                onClick={() => setEditing(null)}
+                className="flex-1 py-2.5 rounded-lg border border-gray-300 text-sm text-gray-700 hover:bg-gray-50"
+              >
+                ยกเลิก
+              </button>
+              <button
+                type="button"
+                onClick={saveEdit}
+                disabled={loading}
+                className="flex-1 py-2.5 rounded-lg bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-sm font-medium"
+              >
+                {loading ? 'กำลังบันทึก...' : 'บันทึกการแก้ไข'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

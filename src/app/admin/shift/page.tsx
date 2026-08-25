@@ -4,6 +4,12 @@ import ShiftClient from './ShiftClient'
 export default async function ShiftPage() {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
+  // เฉพาะเจ้าของร้านที่แก้ยอดกะที่ปิดไปแล้วได้ (เป็นบันทึกเงิน)
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('role, name')
+    .eq('id', user?.id ?? '')
+    .maybeSingle()
 
   const [{ data: openShift }, { data: history }] = await Promise.all([
     supabase
@@ -35,6 +41,8 @@ export default async function ShiftPage() {
       openShift={(openShift as never) ?? null}
       history={(history as never[]) ?? []}
       currentUserId={user?.id ?? ''}
+      currentUserName={profile?.name ?? ''}
+      canEditClosed={profile?.role === 'admin'}
     />
   )
 }
