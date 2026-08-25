@@ -35,6 +35,7 @@ import {
 const navItems = [
   { href: '/admin/dashboard', label: 'ภาพรวม', icon: LayoutDashboard, cashierHidden: true },
   { href: '/pos', label: 'หน้าขาย', icon: ShoppingCart, adminOnly: false, vetHidden: true },
+  { href: '/admin/orders', label: 'ออเดอร์ออนไลน์', icon: ShoppingBag, adminOnly: false, vetHidden: true },
   { href: '/admin/visits', label: 'ตรวจรักษา', icon: Stethoscope, adminOnly: false },
   { href: '/admin/appointments', label: 'นัดหมาย', icon: CalendarClock, adminOnly: false },
   { href: '/admin/vaccines', label: 'วัคซีน', icon: Syringe, adminOnly: false },
@@ -44,7 +45,6 @@ const navItems = [
   { href: '/admin/receiving', label: 'นำเข้าสินค้า', icon: PackagePlus, adminOnly: false, vetHidden: true },
   { href: '/admin/suppliers', label: 'ซัพพลายเออร์', icon: Truck, adminOnly: false, vetHidden: true },
   { href: '/admin/customers', label: 'ลูกค้า / เจ้าของสัตว์', icon: Users, adminOnly: false },
-  { href: '/admin/orders', label: 'ออเดอร์ออนไลน์', icon: ShoppingBag, adminOnly: false, vetHidden: true },
   { href: '/admin/announcements', label: 'ประกาศข่าว', icon: Megaphone, adminOnly: true },
   { href: '/admin/website', label: 'เว็บร้าน / ค่าส่ง', icon: Globe, adminOnly: true },
   { href: '/admin/promotions', label: 'โปรโมชั่น', icon: Tag, adminOnly: true },
