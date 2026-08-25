@@ -24,6 +24,10 @@ export const ORDER_STATUS_STYLE: Record<OrderStatus, string> = {
 /** สถานะที่ยังไม่ตัดสต็อค — ยกเลิกได้โดยไม่ต้องคืนของ */
 export const ORDER_STATUSES_BEFORE_STOCK: OrderStatus[] = ['pending_payment', 'awaiting_confirm']
 
+/** น้ำหนักแบบคร่าวๆ สำหรับหน้าลูกค้า — ทศนิยม 1 ตำแหน่งพอ ไม่ต้องเป๊ะ */
+export const formatWeightApprox = (grams: number) =>
+  grams >= 1000 ? `${(Math.round(grams / 100) / 10).toFixed(1)} กก.` : `${grams} ก.`
+
 export const formatWeight = (grams: number) =>
   grams >= 1000
     ? `${(grams / 1000).toFixed(2).replace(/\.?0+$/, '')} กก.`

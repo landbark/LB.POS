@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation'
 import { Loader2, MapPin, Store } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { useCart } from '@/lib/use-cart'
-import { formatWeight } from '@/lib/shop'
+import { formatWeightApprox } from '@/lib/shop'
 import { PROVINCES } from '@/lib/provinces'
 import type { CustomerAddress, Fulfillment } from '@/lib/types'
 
@@ -299,8 +299,8 @@ export default function CheckoutClient({
             <span>฿{money(quote?.subtotal ?? cart.subtotal)}</span>
           </div>
           <div className="flex justify-between text-gray-600">
-            <span>น้ำหนักรวม</span>
-            <span>{formatWeight(quote?.weightGrams ?? cart.weightGrams)}</span>
+            <span>น้ำหนักรวมโดยประมาณ</span>
+            <span>{formatWeightApprox(quote?.weightGrams ?? cart.weightGrams)}</span>
           </div>
 
           {fulfillment === 'delivery' && (

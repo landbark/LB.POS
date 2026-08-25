@@ -2,7 +2,6 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { ArrowLeft, PackageSearch } from 'lucide-react'
 import { getShopProduct, getStorefront } from '@/lib/shop-data'
-import { formatWeight } from '@/lib/shop'
 import AddToCart from './AddToCart'
 
 export const dynamic = 'force-dynamic'
@@ -40,10 +39,7 @@ export default async function ShopProductPage({ params }: { params: Promise<{ id
           )}
           <h1 className="mt-1 text-xl font-bold text-brand-dark">{product.name}</h1>
           <p className="mt-3 text-2xl font-bold text-brand-dark">฿{money(product.price)}</p>
-          <p className="mt-1 text-sm text-gray-500">
-            ต่อ 1 {product.unit}
-            {product.weight_grams ? ` · น้ำหนัก ${formatWeight(product.weight_grams)}` : ''}
-          </p>
+          <p className="mt-1 text-sm text-gray-500">ต่อ 1 {product.unit}</p>
 
           <p className={`mt-2 text-sm ${soldOut ? 'text-red-600' : 'text-green-700'}`}>
             {product.stock === null

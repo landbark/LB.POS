@@ -7,7 +7,7 @@ import { QRCodeSVG } from 'qrcode.react'
 import generatePayload from 'promptpay-qr'
 import { ArrowLeft, Loader2, Truck, Upload } from 'lucide-react'
 import toast from 'react-hot-toast'
-import { ORDER_STATUS_LABELS, ORDER_STATUS_STYLE, formatAddress, formatWeight } from '@/lib/shop'
+import { ORDER_STATUS_LABELS, ORDER_STATUS_STYLE, formatAddress, formatWeightApprox } from '@/lib/shop'
 import { FULFILLMENT_LABELS, type Order } from '@/lib/types'
 
 const money = (n: number) => Number(n).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -114,7 +114,7 @@ export default function OrderDetailClient({ order, slipUrl, promptpayId, payment
           </div>
           {order.fulfillment === 'delivery' && (
             <div className="flex justify-between text-gray-600">
-              <span>ค่าจัดส่ง ({formatWeight(order.total_weight_grams)}{order.shipping_zone_name ? ` · ${order.shipping_zone_name}` : ''})</span>
+              <span>ค่าจัดส่ง (ประมาณ {formatWeightApprox(order.total_weight_grams)}{order.shipping_zone_name ? ` · ${order.shipping_zone_name}` : ''})</span>
               <span>{Number(order.shipping_fee) === 0 ? 'ส่งฟรี' : `฿${money(order.shipping_fee)}`}</span>
             </div>
           )}

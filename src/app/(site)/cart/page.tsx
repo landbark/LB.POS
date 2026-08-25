@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { Minus, Plus, ShoppingBag, Trash2 } from 'lucide-react'
 import { useCart } from '@/lib/use-cart'
-import { formatWeight } from '@/lib/shop'
+import { formatWeightApprox } from '@/lib/shop'
 
 const money = (n: number) => n.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
@@ -38,10 +38,7 @@ export default function CartPage() {
 
             <div className="flex-1 min-w-0">
               <p className="font-medium text-sm text-brand-dark line-clamp-2">{item.name}</p>
-              <p className="text-xs text-gray-400 mt-0.5">
-                ฿{money(item.price)} / {item.unit}
-                {item.weightGrams > 0 && ` · ${formatWeight(item.weightGrams)}`}
-              </p>
+              <p className="text-xs text-gray-400 mt-0.5">฿{money(item.price)} / {item.unit}</p>
 
               <div className="mt-2 flex items-center gap-2">
                 <div className="flex items-center border border-brand-muted/40 rounded-lg">
@@ -81,8 +78,8 @@ export default function CartPage() {
 
       <div className="rounded-xl bg-white border border-brand-muted/30 p-4 space-y-2">
         <div className="flex justify-between text-sm text-gray-600">
-          <span>น้ำหนักรวม</span>
-          <span>{formatWeight(cart.weightGrams)}</span>
+          <span>น้ำหนักรวมโดยประมาณ</span>
+          <span>{formatWeightApprox(cart.weightGrams)}</span>
         </div>
         <div className="flex justify-between font-semibold text-brand-dark">
           <span>ยอดรวมสินค้า</span>

@@ -5,7 +5,6 @@ import Link from 'next/link'
 import { PackageSearch, Plus, Search, Truck } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { useCart } from '@/lib/use-cart'
-import { formatWeight } from '@/lib/shop'
 import type { ShopProduct } from '@/lib/types'
 
 const money = (n: number) => n.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -118,8 +117,9 @@ export default function ShopClient({ products, freeShippingMin, pickupNote }: Pr
                     {product.name}
                   </Link>
                   <p className="mt-1 text-xs text-gray-400">
-                    {product.weight_grams ? formatWeight(product.weight_grams) : product.unit}
-                    {product.stock !== null && product.stock > 0 && ` · เหลือ ${product.stock} ${product.unit}`}
+                    {product.stock !== null && product.stock > 0
+                      ? `เหลือ ${product.stock} ${product.unit}`
+                      : `ต่อ 1 ${product.unit}`}
                   </p>
                   <p className="mt-2 mb-3 font-bold text-brand-dark">฿{money(product.price)}</p>
 
