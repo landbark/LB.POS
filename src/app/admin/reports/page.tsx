@@ -11,7 +11,7 @@ export default async function ReportsPage() {
     supabase.from('transactions').select('total').gte('created_at', startOfMonth),
     supabase
       .from('transactions')
-      .select('*, profiles(name), customers(name)')
+      .select('*, profiles!transactions_cashier_id_fkey(name), customers(name)')
       .order('created_at', { ascending: false })
       .limit(20),
     // แยกยอด VAT + รายได้บริการคลินิก ต้องดูรายสินค้า ไม่ใช่ระดับบิล — ตัดบิลที่ถูกยกเลิกออก
