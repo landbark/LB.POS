@@ -90,6 +90,11 @@ export default function LoginPage() {
             {googleLoading ? 'กำลังเชื่อมต่อ...' : 'เข้าสู่ระบบด้วย Google'}
           </button>
 
+          {/* พนักงานใหม่ไม่ต้องรอให้เจ้าของใส่อีเมลก่อนแล้ว — เข้า Google ได้เลย แล้วรออนุมัติ */}
+          <p className="text-xs text-center mb-5 -mt-3" style={{ color: '#D4A87A' }}>
+            พนักงานใหม่: เข้าด้วย Google ได้เลย แล้วรอเจ้าของร้านอนุมัติ
+          </p>
+
           {/* Divider */}
           <div className="flex items-center gap-3 mb-5">
             <div className="flex-1 h-px" style={{ background: '#7A6A5A' }} />

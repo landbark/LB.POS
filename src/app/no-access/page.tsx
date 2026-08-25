@@ -3,7 +3,7 @@
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import Image from 'next/image'
-import { LogOut } from 'lucide-react'
+import { LogOut, Clock } from 'lucide-react'
 import Link from 'next/link'
 
 export default function NoAccessPage() {
@@ -23,12 +23,13 @@ export default function NoAccessPage() {
           <Image src="/logo.png" alt="LANDBARK" fill className="object-contain" priority />
         </div>
         <div className="rounded-2xl shadow-xl px-8 py-7" style={{ background: '#5C5144' }}>
+          <Clock size={28} className="mx-auto mb-2" style={{ color: '#D4A87A' }} />
           <h1 className="text-lg font-bold mb-2" style={{ color: '#F0E8DC' }}>
-            บัญชีนี้ยังไม่ได้รับอนุญาต
+            ส่งคำขอเข้าใช้งานแล้ว
           </h1>
           <p className="text-sm mb-6" style={{ color: '#D4A87A' }}>
-            อีเมลของคุณยังไม่อยู่ในรายชื่อพนักงาน
-            กรุณาติดต่อเจ้าของร้านให้เพิ่มอีเมลนี้ในหน้าตั้งค่า
+            บัญชีของคุณเข้ามาอยู่ในรายการรออนุมัติของเจ้าของร้านแล้ว
+            แจ้งเจ้าของร้านให้กดอนุมัติในหน้าภาพรวม แล้วเข้าสู่ระบบอีกครั้งได้เลย
           </p>
           <button
             onClick={handleLogout}

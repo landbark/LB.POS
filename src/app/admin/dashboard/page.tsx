@@ -3,9 +3,22 @@ import { createClient } from '@/lib/supabase/server'
 import { Package, ShoppingBag, AlertTriangle, TrendingUp, Clock, CalendarClock, Syringe } from 'lucide-react'
 import { dueVaccinations } from '@/lib/vaccines'
 import { APPOINTMENT_TYPE_LABELS, type AppointmentType } from '@/lib/types'
+import StaffRequests, { type StaffRequest } from '../settings/StaffRequests'
 
 export default async function DashboardPage() {
   const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  const { data: me } = await supabase.from('profiles').select('role').eq('id', user?.id ?? '').maybeSingle()
+
+  // คำขอเข้าใช้งานที่รอเจ้าของร้านอนุมัติ (คนที่ล็อกอิน Google เข้ามาเอง)
+  const { data: staffRequests } = me?.role === 'admin'
+    ? await supabase
+        .from('profiles')
+        .select('id, name, email, created_at')
+        .eq('active', false)
+        .is('rejected_at', null)
+        .order('created_at', { ascending: false })
+    : { data: [] }
   const today = new Date().toISOString().split('T')[0]
 
   // ช่วง "วันนี้" ตามเวลาไทย → UTC ไว้ query scheduled_at (timestamptz)
@@ -106,6 +119,12 @@ export default async function DashboardPage() {
   return (
     <div>
       <h1 className="text-2xl font-bold text-gray-900 mb-6">ภาพรวม</h1>
+
+      {(staffRequests ?? []).length > 0 && (
+        <div className="mb-8">
+          <StaffRequests requests={(staffRequests ?? []) as StaffRequest[]} />
+        </div>
+      )}
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
         {stats.map((stat) => (
