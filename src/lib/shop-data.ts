@@ -1,5 +1,6 @@
 import { createAdminClient } from '@/lib/supabase/admin'
 import { isClinicOnly } from '@/lib/clinic'
+import { getReservedQuantities } from '@/lib/order-stock'
 import type { Announcement, ShopProduct, ShippingZoneWithRates } from '@/lib/types'
 
 // ตัวช่วยอ่านข้อมูลสำหรับหน้าเว็บสาธารณะ — ผู้เข้าชมไม่มี session Supabase
@@ -76,7 +77,7 @@ interface RawShopProduct {
   product_lots: { quantity: number }[] | null
 }
 
-function toShopProduct(row: RawShopProduct): ShopProduct {
+function toShopProduct(row: RawShopProduct, reserved = 0): ShopProduct {
   return {
     id: row.id,
     name: row.name,
@@ -91,23 +92,26 @@ function toShopProduct(row: RawShopProduct): ShopProduct {
     category_name: row.categories?.name ?? null,
     stock: row.is_service
       ? null
-      : (row.product_lots ?? []).reduce((sum, lot) => sum + (lot.quantity ?? 0), 0),
+      : Math.max(0, (row.product_lots ?? []).reduce((sum, lot) => sum + (lot.quantity ?? 0), 0) - reserved),
   }
 }
 
 /** สินค้าที่ขึ้นเว็บ — ต้องเปิด online_available, ยัง active และไม่ใช่ของคลินิก */
 export async function getShopProducts(): Promise<ShopProduct[]> {
   const admin = createAdminClient()
-  const { data } = await admin
-    .from('products')
-    .select(SHOP_PRODUCT_COLUMNS)
-    .eq('active', true)
-    .eq('online_available', true)
-    .order('name')
+  const [{ data }, reserved] = await Promise.all([
+    admin
+      .from('products')
+      .select(SHOP_PRODUCT_COLUMNS)
+      .eq('active', true)
+      .eq('online_available', true)
+      .order('name'),
+    getReservedQuantities(),
+  ])
 
   return ((data ?? []) as unknown as RawShopProduct[])
     .filter((row) => !isClinicOnly({ clinic_only: row.clinic_only, categories: row.categories }))
-    .map(toShopProduct)
+    .map((row) => toShopProduct(row, reserved.get(row.id) ?? 0))
 }
 
 export async function getShopProduct(id: string): Promise<ShopProduct | null> {
@@ -123,7 +127,8 @@ export async function getShopProduct(id: string): Promise<ShopProduct | null> {
   if (!data) return null
   const row = data as unknown as RawShopProduct
   if (isClinicOnly({ clinic_only: row.clinic_only, categories: row.categories })) return null
-  return toShopProduct(row)
+  const reserved = await getReservedQuantities()
+  return toShopProduct(row, reserved.get(row.id) ?? 0)
 }
 
 export async function getShippingZones(): Promise<ShippingZoneWithRates[]> {

@@ -1,5 +1,6 @@
 import { createAdminClient } from '@/lib/supabase/admin'
 import { isClinicOnly } from '@/lib/clinic'
+import { getReservedQuantities } from '@/lib/order-stock'
 
 // คิดราคา/น้ำหนักของตะกร้าใหม่ฝั่ง server เสมอ — ราคาที่ส่งมาจาก browser เชื่อไม่ได้
 
@@ -51,6 +52,7 @@ export async function priceCart(items: CartInput[]): Promise<PricedCart> {
   if (wanted.length === 0) return { ok: false, error: 'ตะกร้าว่าง' }
 
   const admin = createAdminClient()
+  const reserved = await getReservedQuantities()
   const { data, error } = await admin
     .from('products')
     .select(
@@ -71,9 +73,16 @@ export async function priceCart(items: CartInput[]): Promise<PricedCart> {
     }
 
     if (!row.is_service) {
+      // หักของที่ค้างอยู่ในออเดอร์คนอื่นที่ยังไม่ตัดสต็อคออกก่อน
       const stock = (row.product_lots ?? []).reduce((sum, lot) => sum + (lot.quantity ?? 0), 0)
-      if (stock < item.quantity) {
-        return { ok: false, error: `"${row.name}" เหลือ ${stock} ${row.unit} — กรุณาลดจำนวน` }
+      const available = Math.max(0, stock - (reserved.get(row.id) ?? 0))
+      if (available < item.quantity) {
+        return {
+          ok: false,
+          error: available === 0
+            ? `"${row.name}" หมดพอดี — กรุณาลบออกจากตะกร้า`
+            : `"${row.name}" เหลือ ${available} ${row.unit} — กรุณาลดจำนวน`,
+        }
       }
     }
 

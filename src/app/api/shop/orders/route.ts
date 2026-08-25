@@ -3,6 +3,7 @@ import { getCustomerId } from '@/lib/customer-session'
 import { priceCart } from '@/lib/order-pricing'
 import { getShippingZones, getStorefront } from '@/lib/shop-data'
 import { quoteShipping } from '@/lib/shop'
+import { expireStaleOrders } from '@/lib/order-stock'
 import { createAdminClient } from '@/lib/supabase/admin'
 
 interface AddressInput {
@@ -38,6 +39,9 @@ export async function POST(request: NextRequest) {
   if (!store?.shop_enabled) {
     return NextResponse.json({ error: 'ร้านค้าออนไลน์ปิดรับออเดอร์ชั่วคราว' }, { status: 400 })
   }
+
+  // ปล่อยออเดอร์ที่ค้างเกินกำหนดก่อน ของที่ถูกจองไว้จะได้กลับมาขายได้
+  await expireStaleOrders()
 
   const body = await request.json()
   const priced = await priceCart(body.items ?? [])

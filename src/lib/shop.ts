@@ -1,5 +1,8 @@
 import type { OrderStatus, ShippingZoneWithRates } from '@/lib/types'
 
+/** ชั่วโมงที่ปล่อยให้ออเดอร์รอโอนได้ ก่อนถูกยกเลิกอัตโนมัติ */
+export const ORDER_EXPIRY_HOURS = 24
+
 export const ORDER_STATUS_LABELS: Record<OrderStatus, string> = {
   pending_payment: 'รอชำระเงิน',
   awaiting_confirm: 'รอร้านตรวจสอบ',

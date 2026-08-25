@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server'
 import { sendStockAlerts } from '@/lib/notify'
+import { expireStaleOrders } from '@/lib/order-stock'
 
 // ยิงโดย Vercel Cron ทุกเช้า (ดู vercel.json) — Vercel แนบ Authorization: Bearer CRON_SECRET ให้เอง
 export async function GET(request: NextRequest) {
@@ -9,8 +10,9 @@ export async function GET(request: NextRequest) {
   }
 
   try {
+    const expiredOrders = await expireStaleOrders()
     const result = await sendStockAlerts()
-    return NextResponse.json(result)
+    return NextResponse.json({ ...result, expiredOrders })
   } catch (err) {
     return NextResponse.json(
       { error: err instanceof Error ? err.message : 'unknown error' },

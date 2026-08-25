@@ -8,7 +8,7 @@ import generatePayload from 'promptpay-qr'
 import { ArrowLeft, Loader2, Truck, Upload } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { confirmDialog } from '@/lib/confirm'
-import { ORDER_STATUS_LABELS, ORDER_STATUS_STYLE, formatAddress, formatWeightApprox } from '@/lib/shop'
+import { ORDER_EXPIRY_HOURS, ORDER_STATUS_LABELS, ORDER_STATUS_STYLE, formatAddress, formatWeightApprox } from '@/lib/shop'
 import { FULFILLMENT_LABELS, type Order } from '@/lib/types'
 
 const money = (n: number) => Number(n).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -152,6 +152,12 @@ export default function OrderDetailClient({ order, slipUrl, promptpayId, payment
           <p className="text-sm text-gray-600">
             โอนเงิน ฿{money(order.total)} มาที่ร้าน {storeName} แล้วแนบสลิปเพื่อให้ร้านตรวจสอบ
           </p>
+          {order.status === 'pending_payment' && (
+            <p className="rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-800">
+              กรุณาโอนและแนบสลิปภายใน {ORDER_EXPIRY_HOURS} ชั่วโมงหลังสั่งซื้อ
+              ไม่อย่างนั้นออเดอร์จะถูกยกเลิกอัตโนมัติ เพื่อปล่อยสินค้าให้ลูกค้าท่านอื่น
+            </p>
+          )}
 
           {qrPayload ? (
             <div className="flex flex-col items-center gap-2 py-2">
