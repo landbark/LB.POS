@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { Eye, EyeOff, Pencil, Pin, Plus, Trash2 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { createClient } from '@/lib/supabase/client'
+import { confirmDialog } from '@/lib/confirm'
 import ImageInput from '@/components/ImageInput'
 import type { Announcement } from '@/lib/types'
 
@@ -126,7 +127,12 @@ export default function AnnouncementsClient({ initialItems }: { initialItems: An
   }
 
   async function remove(item: Announcement) {
-    if (!confirm(`ลบประกาศ "${item.title}"?`)) return
+    const { confirmed } = await confirmDialog({
+      title: 'ลบประกาศนี้?',
+      message: `"${item.title}" จะหายไปจากหน้าเว็บทันที`,
+      confirmLabel: 'ลบประกาศ',
+    })
+    if (!confirmed) return
     const supabase = createClient()
     const { error } = await supabase.from('announcements').delete().eq('id', item.id)
     if (error) {

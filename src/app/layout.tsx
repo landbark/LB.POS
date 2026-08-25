@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist } from "next/font/google";
 import { Toaster } from "react-hot-toast";
 import TopLoader from "@/components/TopLoader";
+import ConfirmHost from "@/components/ConfirmHost";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -24,6 +25,7 @@ export default function RootLayout({
       <body className="min-h-full flex flex-col bg-gray-50">
         <TopLoader />
         <Toaster position="top-center" />
+        <ConfirmHost />
         {children}
       </body>
     </html>

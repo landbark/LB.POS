@@ -7,6 +7,7 @@ import { Plus, Edit, Trash2, X, Check } from 'lucide-react'
 import toast from 'react-hot-toast'
 import type { Supplier } from '@/lib/types'
 import SupplierImportButton from './SupplierImportButton'
+import { confirmDialog } from '@/lib/confirm'
 
 const emptyForm = { name: '', contact_name: '', phone: '', address: '', notes: '' }
 
@@ -69,7 +70,7 @@ export default function SuppliersClient({ suppliers }: { suppliers: Supplier[] }
   }
 
   async function remove(s: Supplier) {
-    if (!confirm(`ลบ "${s.name}" ? สินค้าที่ผูกไว้จะไม่ถูกลบ แค่ไม่มีซัพพลายเออร์`)) return
+    if (!(await confirmDialog({ message: `ลบ "${s.name}" ? สินค้าที่ผูกไว้จะไม่ถูกลบ แค่ไม่มีซัพพลายเออร์` })).confirmed) return
     const supabase = createClient()
     const { error } = await supabase.from('suppliers').delete().eq('id', s.id)
     if (error) {

@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 import { Plus, Trash2, Pencil } from 'lucide-react'
 import toast from 'react-hot-toast'
 import type { ProductLot } from '@/lib/types'
+import { confirmDialog } from '@/lib/confirm'
 
 interface Props {
   productId: string
@@ -69,7 +70,7 @@ export default function LotManager({ productId, lots, unit, userId }: Props) {
   }
 
   async function deleteLot(lot: ProductLot) {
-    if (!confirm('ลบ lot นี้?')) return
+    if (!(await confirmDialog({ message: 'ลบ lot นี้?' })).confirmed) return
     const supabase = createClient()
 
     // log ก่อนลบ เพราะลบแล้ว FK จะอ้างอิง lot นี้ไม่ได้อีก

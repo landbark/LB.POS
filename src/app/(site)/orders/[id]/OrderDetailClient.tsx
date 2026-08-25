@@ -7,6 +7,7 @@ import { QRCodeSVG } from 'qrcode.react'
 import generatePayload from 'promptpay-qr'
 import { ArrowLeft, Loader2, Truck, Upload } from 'lucide-react'
 import toast from 'react-hot-toast'
+import { confirmDialog } from '@/lib/confirm'
 import { ORDER_STATUS_LABELS, ORDER_STATUS_STYLE, formatAddress, formatWeightApprox } from '@/lib/shop'
 import { FULFILLMENT_LABELS, type Order } from '@/lib/types'
 
@@ -48,7 +49,12 @@ export default function OrderDetailClient({ order, slipUrl, promptpayId, payment
   }
 
   async function cancelOrder() {
-    if (!confirm('ยกเลิกออเดอร์นี้?')) return
+    const { confirmed } = await confirmDialog({
+      title: 'ยกเลิกออเดอร์นี้?',
+      message: 'ถ้าโอนเงินไปแล้ว กรุณาติดต่อร้านเพื่อขอคืนเงิน',
+      confirmLabel: 'ยกเลิกออเดอร์',
+    })
+    if (!confirmed) return
     setCancelling(true)
     const res = await fetch(`/api/shop/orders/${order.id}/cancel`, { method: 'POST' })
     const data = await res.json()

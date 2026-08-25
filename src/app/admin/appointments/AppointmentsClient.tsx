@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { ChevronLeft, ChevronRight, Plus, X } from 'lucide-react'
 import toast from 'react-hot-toast'
+import { confirmDialog } from '@/lib/confirm'
 import {
   APPOINTMENT_STATUS_LABELS, APPOINTMENT_TYPE_LABELS, SPECIES_LABELS,
   type Appointment, type AppointmentStatus, type AppointmentType, type Pet,
@@ -148,7 +149,7 @@ export default function AppointmentsClient({
   }
 
   async function remove(a: Appointment) {
-    if (!confirm('ลบนัดนี้?')) return
+    if (!(await confirmDialog({ message: 'ลบนัดนี้?' })).confirmed) return
     const supabase = createClient()
     const { error } = await supabase.from('appointments').delete().eq('id', a.id)
     if (error) { toast.error('ลบไม่สำเร็จ'); return }

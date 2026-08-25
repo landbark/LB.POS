@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { Users, Plus, KeyRound, Trash2, X, Pencil, Check } from 'lucide-react'
 import toast from 'react-hot-toast'
 import type { StaffEmail } from '@/lib/types'
+import { confirmDialog } from '@/lib/confirm'
 
 interface Props {
   staff: StaffEmail[]
@@ -80,7 +81,7 @@ export default function StaffSection({ staff, migrated }: Props) {
   }
 
   async function handleDelete(s: StaffEmail) {
-    if (!confirm(`ลบ "${s.name}" (${s.email}) ออกจากรายชื่อพนักงาน?\nบัญชีนี้จะเข้าระบบไม่ได้อีก แต่ประวัติการขายยังอยู่`)) return
+    if (!(await confirmDialog({ message: `ลบ "${s.name}" (${s.email}) ออกจากรายชื่อพนักงาน?\nบัญชีนี้จะเข้าระบบไม่ได้อีก แต่ประวัติการขายยังอยู่` })).confirmed) return
     if (await api('DELETE', { email: s.email })) {
       toast.success(`ลบ "${s.name}" แล้ว`)
     }

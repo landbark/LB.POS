@@ -4,12 +4,13 @@ import { Trash2 } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import toast from 'react-hot-toast'
+import { confirmDialog } from '@/lib/confirm'
 
 export default function DeleteProductButton({ id, name }: { id: string; name: string }) {
   const router = useRouter()
 
   async function handleDelete() {
-    if (!confirm(`ลบสินค้า "${name}" ?`)) return
+    if (!(await confirmDialog({ message: `ลบสินค้า "${name}" ?` })).confirmed) return
 
     const supabase = createClient()
     const { error } = await supabase

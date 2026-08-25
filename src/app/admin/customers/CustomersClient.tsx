@@ -7,6 +7,7 @@ import { createClient } from '@/lib/supabase/client'
 import { Plus, Edit, Trash2, X, Check, Search } from 'lucide-react'
 import toast from 'react-hot-toast'
 import type { Customer } from '@/lib/types'
+import { confirmDialog } from '@/lib/confirm'
 
 const emptyForm = { name: '', phone: '' }
 
@@ -65,7 +66,7 @@ export default function CustomersClient({
   }
 
   async function remove(c: Customer) {
-    if (!confirm(`ลบ "${c.name}" ? ประวัติการซื้อเดิมจะยังอยู่ แค่ไม่ผูกกับลูกค้าคนนี้แล้ว`)) return
+    if (!(await confirmDialog({ message: `ลบ "${c.name}" ? ประวัติการซื้อเดิมจะยังอยู่ แค่ไม่ผูกกับลูกค้าคนนี้แล้ว` })).confirmed) return
     const supabase = createClient()
     const { error } = await supabase.from('customers').delete().eq('id', c.id)
     if (error) {

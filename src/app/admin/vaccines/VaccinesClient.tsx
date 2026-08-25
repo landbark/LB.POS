@@ -8,6 +8,7 @@ import { Plus, Settings2, Syringe, Trash2, X } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { SPECIES_LABELS, type PetSpecies, type Vaccine } from '@/lib/types'
 import { composeBreed } from '@/lib/pets'
+import { confirmDialog } from '@/lib/confirm'
 
 interface DueItem {
   petId: string
@@ -50,7 +51,7 @@ export default function VaccinesClient({ items, vaccines }: { items: DueItem[]; 
   }
 
   async function removeVaccine(v: Vaccine) {
-    if (!confirm(`ลบ "${v.name}" ออกจากแคตตาล็อก?\nประวัติที่ฉีดไปแล้วยังอยู่ (เก็บชื่อไว้แล้ว)`)) return
+    if (!(await confirmDialog({ message: `ลบ "${v.name}" ออกจากแคตตาล็อก?\nประวัติที่ฉีดไปแล้วยังอยู่ (เก็บชื่อไว้แล้ว)` })).confirmed) return
     const supabase = createClient()
     const { error } = await supabase.from('vaccines').delete().eq('id', v.id)
     if (error) { toast.error('ลบไม่สำเร็จ'); return }

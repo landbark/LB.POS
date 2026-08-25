@@ -8,6 +8,7 @@ import toast from 'react-hot-toast'
 import type { PetVaccination, Vaccine } from '@/lib/types'
 import { addDaysISO, dueVaccinations } from '@/lib/vaccines'
 import VaccineSelect from '@/components/VaccineSelect'
+import { confirmDialog } from '@/lib/confirm'
 
 const inputClass = 'w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500'
 const labelClass = 'block text-xs font-medium text-gray-600 mb-1'
@@ -91,7 +92,7 @@ export default function VaccineSection({
   }
 
   async function remove(v: PetVaccination) {
-    if (!confirm(`ลบประวัติวัคซีน "${v.vaccine_name}" (${fmtDate(v.dose_date)})?`)) return
+    if (!(await confirmDialog({ message: `ลบประวัติวัคซีน "${v.vaccine_name}" (${fmtDate(v.dose_date)})?` })).confirmed) return
     const supabase = createClient()
     const { error } = await supabase.from('pet_vaccinations').delete().eq('id', v.id)
     if (error) { toast.error('ลบไม่สำเร็จ'); return }

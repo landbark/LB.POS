@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Bell, Send, Trash2, Save, RefreshCw, ExternalLink, Check, X, Clock } from 'lucide-react'
 import toast from 'react-hot-toast'
+import { confirmDialog } from '@/lib/confirm'
 
 interface NotifySettings {
   id: number
@@ -85,7 +86,7 @@ export default function NotificationsClient({
     const msg = isReject
       ? `ปฏิเสธคำขอของ "${r.name ?? 'ไม่มีชื่อ'}"?`
       : `เอา "${r.name ?? 'ไม่มีชื่อ'}" ออกจากรายชื่อผู้รับแจ้งเตือน?`
-    if (!confirm(msg)) return
+    if (!(await confirmDialog({ message: msg })).confirmed) return
     setBusyId(r.id)
     const supabase = createClient()
     const { error } = await supabase.from('telegram_recipients').delete().eq('id', r.id)

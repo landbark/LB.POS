@@ -11,6 +11,7 @@ import { petAge, petWarnings } from '@/lib/pets'
 import { isClinicOnly, isVaccine } from '@/lib/clinic'
 import { computeNextDue } from '@/lib/vaccines'
 import VaccineSection from '@/app/admin/pets/[id]/VaccineSection'
+import { confirmDialog } from '@/lib/confirm'
 
 interface DispensableProduct {
   id: string
@@ -227,7 +228,7 @@ export default function VisitDetail({
       toast.error('มีรายการที่ต้องเก็บเงิน — ใช้ปุ่มส่งไปเก็บเงินแทน')
       return
     }
-    if (!confirm('จบการรักษาโดยไม่คิดเงิน?\nใบนี้จะปิดเลยโดยไม่ส่งไปเก็บเงิน')) return
+    if (!(await confirmDialog({ message: 'จบการรักษาโดยไม่คิดเงิน?\nใบนี้จะปิดเลยโดยไม่ส่งไปเก็บเงิน' })).confirmed) return
     if (!await saveVisit(true)) return
 
     const supabase = createClient()
@@ -289,7 +290,7 @@ export default function VisitDetail({
 
   // ยกเลิกเวชระเบียนที่เปิดผิด (เฉพาะที่ยังไม่เก็บเงิน) — เก็บ record ไว้แต่ mark เป็นยกเลิก
   async function cancelVisit() {
-    if (!confirm('ยกเลิกเวชระเบียนใบนี้?\nใช้กรณีเปิดผิดตัว/ผิดคน — จะหลุดจากคิวและไม่นับเป็นการรักษา')) return
+    if (!(await confirmDialog({ message: 'ยกเลิกเวชระเบียนใบนี้?\nใช้กรณีเปิดผิดตัว/ผิดคน — จะหลุดจากคิวและไม่นับเป็นการรักษา' })).confirmed) return
     const supabase = createClient()
     const { error } = await supabase.from('visits').update({ status: 'cancelled' }).eq('id', visit.id)
     if (error) {

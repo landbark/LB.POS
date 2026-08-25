@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { Plus, Trash2, Truck, X } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { createClient } from '@/lib/supabase/client'
+import { confirmDialog } from '@/lib/confirm'
 import { PROVINCES } from '@/lib/provinces'
 import { formatWeight } from '@/lib/shop'
 import type { ShippingZoneWithRates } from '@/lib/types'
@@ -42,7 +43,12 @@ export default function ShippingSection({ initialZones }: { initialZones: Shippi
   }
 
   async function removeZone(zone: ShippingZoneWithRates) {
-    if (!confirm(`ลบโซน "${zone.name}" และค่าส่งทั้งหมดในโซนนี้?`)) return
+    const { confirmed } = await confirmDialog({
+      title: 'ลบโซนจัดส่งนี้?',
+      message: `"${zone.name}" และค่าส่งทุกช่วงน้ำหนักในโซนนี้จะถูกลบ`,
+      confirmLabel: 'ลบโซน',
+    })
+    if (!confirmed) return
     const { error } = await supabase.from('shipping_zones').delete().eq('id', zone.id)
     if (error) {
       toast.error('ลบไม่สำเร็จ')

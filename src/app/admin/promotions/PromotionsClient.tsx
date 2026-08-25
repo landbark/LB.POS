@@ -7,6 +7,7 @@ import Link from 'next/link'
 import { Plus, Edit, Trash2, X, Check, Printer } from 'lucide-react'
 import toast from 'react-hot-toast'
 import type { Promotion, Category, PromotionType, ApplyTo } from '@/lib/types'
+import { confirmDialog } from '@/lib/confirm'
 
 interface ProductOption {
   id: string
@@ -161,7 +162,7 @@ export default function PromotionsClient({
   }
 
   async function remove(p: Promotion) {
-    if (!confirm(`ลบโปรโมชั่น "${p.name}" ?`)) return
+    if (!(await confirmDialog({ message: `ลบโปรโมชั่น "${p.name}" ?` })).confirmed) return
     const supabase = createClient()
     const { error } = await supabase.from('promotions').delete().eq('id', p.id)
     if (error) {

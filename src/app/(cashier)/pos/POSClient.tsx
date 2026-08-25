@@ -8,6 +8,7 @@ import toast from 'react-hot-toast'
 import type { Product, CartItem, Promotion, PointsConfig, Customer, PaymentMethod, ClinicQueueVisit } from '@/lib/types'
 import { POS_DISPLAY_CHANNEL, type PosDisplayMessage } from '@/lib/posDisplay'
 import PaymentModal from './PaymentModal'
+import { confirmDialog } from '@/lib/confirm'
 
 interface Props {
   products: Product[]
@@ -154,8 +155,16 @@ export default function POSClient({ products, promotions, pointsConfig, cashierI
   }
 
   // ดึงรายการที่หมอสั่งจ่ายเข้าตะกร้า — ราคาใช้ตามที่บันทึกไว้ในเวชระเบียน ไม่ใช่ราคาสินค้าปัจจุบัน
-  function loadVisit(visit: ClinicQueueVisit) {
-    if (cart.length > 0 && !confirm('ตะกร้ามีของอยู่แล้ว — แทนที่ด้วยรายการจากคลินิก?')) return
+  async function loadVisit(visit: ClinicQueueVisit) {
+    if (cart.length > 0) {
+      const { confirmed } = await confirmDialog({
+        title: 'แทนที่ตะกร้าเดิม?',
+        message: 'ตะกร้ามีของอยู่แล้ว — จะแทนที่ด้วยรายการจากคลินิก',
+        confirmLabel: 'แทนที่',
+        tone: 'primary',
+      })
+      if (!confirmed) return
+    }
 
     const short = visit.items.filter((i) => !i.product.is_service && getProductStock(i.product) < i.quantity)
     if (short.length > 0) {

@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Ruler, Tag, Plus, Trash2 } from 'lucide-react'
 import toast from 'react-hot-toast'
+import { confirmDialog } from '@/lib/confirm'
 
 type Flag = 'vat_applicable' | 'clinic_only' | 'is_vaccine'
 
@@ -73,7 +74,7 @@ export default function NameListSection({ title, table, items, placeholder, dele
   }
 
   async function handleDelete(item: Item) {
-    if (!confirm(`ลบ "${item.name}"?\n${deleteHint}`)) return
+    if (!(await confirmDialog({ message: `ลบ "${item.name}"?\n${deleteHint}` })).confirmed) return
     setLoading(true)
     const supabase = createClient()
     const { error } = await supabase.from(table).delete().eq('id', item.id)

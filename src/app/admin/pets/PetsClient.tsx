@@ -9,6 +9,7 @@ import toast from 'react-hot-toast'
 import { SPECIES_LABELS, type Breed, type Pet, type PetSpecies } from '@/lib/types'
 import { ageAt, petAge } from '@/lib/pets'
 import BreedSelect from '@/components/BreedSelect'
+import { confirmDialog } from '@/lib/confirm'
 
 type OwnerOption = { id: string; name: string; phone: string }
 
@@ -128,7 +129,7 @@ export default function PetsClient({
 
   // ไม่ลบจริง — ประวัติการรักษาต้องอยู่ต่อ
   async function remove(p: Pet) {
-    if (!confirm(`นำ "${p.name}" ออกจากทะเบียน?\nประวัติการรักษาเดิมยังอยู่ครบ`)) return
+    if (!(await confirmDialog({ message: `นำ "${p.name}" ออกจากทะเบียน?\nประวัติการรักษาเดิมยังอยู่ครบ` })).confirmed) return
     const supabase = createClient()
     const { error } = await supabase.from('pets').update({ active: false }).eq('id', p.id)
     if (error) {

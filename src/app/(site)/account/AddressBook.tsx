@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { MapPin, Plus, Trash2 } from 'lucide-react'
 import toast from 'react-hot-toast'
+import { confirmDialog } from '@/lib/confirm'
 import { PROVINCES } from '@/lib/provinces'
 import { formatAddress } from '@/lib/shop'
 import type { CustomerAddress } from '@/lib/types'
@@ -49,7 +50,8 @@ export default function AddressBook({ initialAddresses }: { initialAddresses: Cu
   }
 
   async function remove(id: string) {
-    if (!confirm('ลบที่อยู่นี้?')) return
+    const { confirmed } = await confirmDialog({ title: 'ลบที่อยู่นี้?', message: 'ที่อยู่ที่เคยใช้สั่งไปแล้วจะไม่หายไปจากออเดอร์เดิม', confirmLabel: 'ลบที่อยู่' })
+    if (!confirmed) return
     const res = await fetch(`/api/shop/addresses?id=${id}`, { method: 'DELETE' })
     if (!res.ok) {
       toast.error('ลบไม่สำเร็จ')

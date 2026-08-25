@@ -6,6 +6,7 @@ import Link from '@/components/ProgressLink'
 import { ArrowLeft, Ban, CheckCircle2, ExternalLink, Printer, Truck } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { createClient } from '@/lib/supabase/client'
+import { confirmDialog } from '@/lib/confirm'
 import { confirmOrder } from '@/lib/confirmOrder'
 import { ORDER_STATUS_LABELS, ORDER_STATUS_STYLE, formatAddress, formatWeight } from '@/lib/shop'
 import { FULFILLMENT_LABELS, type Order } from '@/lib/types'
@@ -40,8 +41,15 @@ export default function OrderDetail({ order, slipUrl, userId }: { order: Order; 
   }
 
   async function handleConfirm() {
-    if (!order.payment_slip_path && !confirm('ออเดอร์นี้ยังไม่มีสลิปโอนเงิน ยืนยันเลยไหม?')) return
-    if (!confirm('ยืนยันออเดอร์นี้? ระบบจะตัดสต็อคและสร้างบิลขายให้เลย')) return
+    const { confirmed } = await confirmDialog({
+      title: 'ยืนยันออเดอร์นี้?',
+      message: order.payment_slip_path
+        ? 'ระบบจะตัดสต็อคตามรายการและสร้างบิลขายให้ทันที'
+        : 'ออเดอร์นี้ยังไม่มีสลิปโอนเงิน — ยืนยันแล้วระบบจะตัดสต็อคและสร้างบิลขายเลย',
+      confirmLabel: 'ยืนยันออเดอร์',
+      tone: 'primary',
+    })
+    if (!confirmed) return
 
     setBusy(true)
     const { error } = await confirmOrder(order, userId)
@@ -55,14 +63,20 @@ export default function OrderDetail({ order, slipUrl, userId }: { order: Order; 
   }
 
   async function handleCancel() {
-    const reason = prompt('เหตุผลที่ยกเลิก (ไม่ใส่ก็ได้)') ?? ''
-    if (!confirm('ยกเลิกออเดอร์นี้?')) return
+    const { confirmed, value } = await confirmDialog({
+      title: 'ยกเลิกออเดอร์นี้?',
+      message: 'ลูกค้าจะเห็นสถานะว่ายกเลิก พร้อมเหตุผลที่ใส่ไว้',
+      confirmLabel: 'ยกเลิกออเดอร์',
+      reasonLabel: 'เหตุผลที่ยกเลิก',
+      reasonPlaceholder: 'เช่น ลูกค้าไม่โอนภายในกำหนด',
+    })
+    if (!confirmed) return
     await update(
       {
         status: 'cancelled',
         cancelled_at: new Date().toISOString(),
         cancelled_by: userId,
-        cancel_reason: reason.trim() || 'ร้านยกเลิก',
+        cancel_reason: value || 'ร้านยกเลิก',
       },
       'ยกเลิกออเดอร์แล้ว'
     )

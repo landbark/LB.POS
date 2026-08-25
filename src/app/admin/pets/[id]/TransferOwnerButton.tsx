@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { ArrowRightLeft, X, Check, UserPlus } from 'lucide-react'
 import toast from 'react-hot-toast'
+import { confirmDialog } from '@/lib/confirm'
 
 type OwnerOption = { id: string; name: string; phone: string }
 
@@ -65,7 +66,7 @@ export default function TransferOwnerButton({
   }
 
   async function pickExisting(c: OwnerOption) {
-    if (!confirm(`ย้าย "${petName}" ไปเป็นของ ${c.name} (${c.phone})?\nประวัติการรักษาเดิมยังอยู่ครบกับผู้พามาตอนนั้น`)) return
+    if (!(await confirmDialog({ message: `ย้าย "${petName}" ไปเป็นของ ${c.name} (${c.phone})?\nประวัติการรักษาเดิมยังอยู่ครบกับผู้พามาตอนนั้น` })).confirmed) return
     await transferTo(c.id, c.name)
   }
 
