@@ -1,5 +1,6 @@
 'use client'
 
+import { useState } from 'react'
 import Link from '@/components/ProgressLink'
 import { usePathname, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
@@ -23,6 +24,8 @@ import {
   Stethoscope,
   CalendarClock,
   Syringe,
+  Menu,
+  X,
   ShoppingBag,
   Megaphone,
   Globe,
@@ -56,6 +59,8 @@ const navItems = [
 export default function AdminNav({ userName, role }: { userName: string; role: string }) {
   const pathname = usePathname()
   const router = useRouter()
+  // มือถือ: เมนูซ่อนไว้เป็นลิ้นชัก เปิดด้วยปุ่มบนแถบด้านบน (จอ md ขึ้นไปโชว์ค้างเหมือนเดิม)
+  const [open, setOpen] = useState(false)
 
   async function handleLogout() {
     const supabase = createClient()
@@ -65,10 +70,47 @@ export default function AdminNav({ userName, role }: { userName: string; role: s
   }
 
   return (
-    <aside className="fixed left-0 top-0 h-screen w-56 flex flex-col" style={{ background: '#4A4338' }}>
-      <div className="px-4 py-5 shrink-0" style={{ borderBottom: '1px solid #5C5144' }}>
-        <h1 className="text-lg font-bold" style={{ color: '#F0E8DC' }}>LANDBARK</h1>
-        <p className="text-xs mt-0.5" style={{ color: '#D4A87A' }}>{userName}</p>
+    <>
+      {/* แถบบนสำหรับมือถือ */}
+      <div
+        className="md:hidden fixed top-0 left-0 right-0 h-14 z-30 flex items-center gap-3 px-3"
+        style={{ background: '#4A4338', borderBottom: '1px solid #5C5144' }}
+      >
+        <button
+          onClick={() => setOpen(true)}
+          aria-label="เปิดเมนู"
+          className="p-2 rounded-lg"
+          style={{ color: '#F0E8DC' }}
+        >
+          <Menu size={22} />
+        </button>
+        <span className="font-bold truncate" style={{ color: '#F0E8DC' }}>LANDBARK</span>
+        <span className="text-xs truncate ml-auto" style={{ color: '#D4A87A' }}>{userName}</span>
+      </div>
+
+      {/* ฉากหลังตอนเปิดเมนูบนมือถือ — แตะแล้วปิด */}
+      {open && (
+        <div className="md:hidden fixed inset-0 z-40 bg-black/50" onClick={() => setOpen(false)} />
+      )}
+
+    <aside
+      // ซ่อนเฉพาะจอเล็ก (max-md) — จอ md ขึ้นไปไม่ใส่ translate เลย จะได้ไม่ต้องแข่งลำดับ CSS กัน
+      className={`fixed left-0 top-0 h-screen w-56 flex flex-col z-50 transition-transform duration-200 ${open ? 'translate-x-0' : 'max-md:-translate-x-full'}`}
+      style={{ background: '#4A4338' }}
+    >
+      <div className="px-4 py-5 shrink-0 flex items-start" style={{ borderBottom: '1px solid #5C5144' }}>
+        <div className="flex-1 min-w-0">
+          <h1 className="text-lg font-bold" style={{ color: '#F0E8DC' }}>LANDBARK</h1>
+          <p className="text-xs mt-0.5 truncate" style={{ color: '#D4A87A' }}>{userName}</p>
+        </div>
+        <button
+          onClick={() => setOpen(false)}
+          aria-label="ปิดเมนู"
+          className="md:hidden p-1 -mr-1"
+          style={{ color: '#D4A87A' }}
+        >
+          <X size={20} />
+        </button>
       </div>
 
       {/* min-h-0 + overflow-y-auto: เมนูเยอะกว่าความสูงจอเมื่อไหร่ ให้ตัวเมนูเลื่อนเอง
@@ -84,6 +126,7 @@ export default function AdminNav({ userName, role }: { userName: string; role: s
             <Link
               key={href}
               href={href}
+              onClick={() => setOpen(false)}
               className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors"
               style={active
                 ? { background: '#C4865A', color: '#FDF6EE' }
@@ -112,5 +155,6 @@ export default function AdminNav({ userName, role }: { userName: string; role: s
         </button>
       </div>
     </aside>
+    </>
   )
 }

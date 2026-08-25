@@ -285,9 +285,11 @@ export default function CheckoutClient({
       <section className="rounded-xl bg-white border border-brand-muted/30 p-4 space-y-2">
         <h2 className="font-semibold text-brand-dark mb-1">สรุปคำสั่งซื้อ</h2>
         {cart.items.map((item) => (
-          <div key={item.productId} className="flex justify-between text-sm text-gray-600">
-            <span className="truncate pr-2">{item.name} × {item.quantity}</span>
-            <span className="whitespace-nowrap">฿{money(item.price * item.quantity)}</span>
+          <div key={item.productId} className="flex items-baseline gap-2 text-sm text-gray-600">
+            {/* ชื่อยาวให้ตัด แต่จำนวนกับราคาห้ามหาย */}
+            <span className="truncate">{item.name}</span>
+            <span className="shrink-0 text-gray-400">× {item.quantity}</span>
+            <span className="ml-auto shrink-0 whitespace-nowrap">฿{money(item.price * item.quantity)}</span>
           </div>
         ))}
 

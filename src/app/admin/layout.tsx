@@ -20,7 +20,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   return (
     <div className="min-h-screen flex">
       <AdminNav userName={profile.name} role={profile.role} />
-      <main className="flex-1 ml-56 p-6">{children}</main>
+      <main className="flex-1 md:ml-56 p-4 pt-18 md:p-6 md:pt-6 min-w-0">{children}</main>
     </div>
   )
 }

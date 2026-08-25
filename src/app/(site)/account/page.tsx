@@ -7,7 +7,8 @@ import AddressBook from './AddressBook'
 
 export const dynamic = 'force-dynamic'
 
-const money = (n: number) => Number(n).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+// การ์ดสรุปบนมือถือแคบ — ตัดสตางค์ออกกันตัวเลขล้นกรอบ
+const compact = (n: number) => Number(n).toLocaleString('th-TH', { maximumFractionDigits: 0 })
 
 const ERROR_MESSAGES: Record<string, string> = {
   'line-not-configured': 'ร้านยังไม่ได้ตั้งค่าการเข้าสู่ระบบด้วย LINE',
@@ -59,19 +60,19 @@ export default async function AccountPage({
         <p className="text-sm text-brand-muted mt-0.5">{customer.phone}</p>
 
         <div className="mt-4 grid grid-cols-3 gap-3 text-center">
-          <div className="rounded-lg bg-brand-bg-light py-3">
+          <div className="rounded-lg bg-brand-bg-light px-1 py-3 min-w-0">
             <Sparkles size={16} className="mx-auto text-brand-muted" />
-            <p className="mt-1 text-lg font-bold">{customer.points}</p>
+            <p className="mt-1 text-base sm:text-lg font-bold">{customer.points}</p>
             <p className="text-[11px] text-brand-muted">แต้มสะสม</p>
           </div>
-          <div className="rounded-lg bg-brand-bg-light py-3">
+          <div className="rounded-lg bg-brand-bg-light px-1 py-3 min-w-0">
             <Wallet size={16} className="mx-auto text-brand-muted" />
-            <p className="mt-1 text-lg font-bold">฿{money(customer.credit_balance)}</p>
+            <p className="mt-1 text-base sm:text-lg font-bold">฿{compact(customer.credit_balance)}</p>
             <p className="text-[11px] text-brand-muted">เครดิตร้าน</p>
           </div>
-          <div className="rounded-lg bg-brand-bg-light py-3">
+          <div className="rounded-lg bg-brand-bg-light px-1 py-3 min-w-0">
             <Package size={16} className="mx-auto text-brand-muted" />
-            <p className="mt-1 text-lg font-bold">฿{money(customer.total_spent)}</p>
+            <p className="mt-1 text-base sm:text-lg font-bold">฿{compact(customer.total_spent)}</p>
             <p className="text-[11px] text-brand-muted">ยอดซื้อสะสม</p>
           </div>
         </div>

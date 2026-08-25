@@ -121,13 +121,13 @@ export default function ShopClient({ products, freeShippingMin, pickupNote }: Pr
                     {product.weight_grams ? formatWeight(product.weight_grams) : product.unit}
                     {product.stock !== null && product.stock > 0 && ` · เหลือ ${product.stock} ${product.unit}`}
                   </p>
-                  <p className="mt-2 font-bold text-brand-dark">฿{money(product.price)}</p>
+                  <p className="mt-2 mb-3 font-bold text-brand-dark">฿{money(product.price)}</p>
 
                   <button
                     type="button"
                     disabled={soldOut}
                     onClick={() => addToCart(product)}
-                    className="mt-3 w-full inline-flex items-center justify-center gap-1.5 py-2 rounded-lg bg-brand-brown text-white text-sm font-medium disabled:bg-gray-200 disabled:text-gray-400 hover:opacity-90"
+                    className="mt-auto w-full inline-flex items-center justify-center gap-1.5 py-2 rounded-lg bg-brand-brown text-white text-sm font-medium disabled:bg-gray-200 disabled:text-gray-400 hover:opacity-90"
                   >
                     {soldOut ? 'สินค้าหมด' : (<><Plus size={15} /> ใส่ตะกร้า</>)}
                   </button>
