@@ -35,8 +35,11 @@ Settings → Environment Variables (ใส่ทั้ง Production/Preview/Dev
 
 ### 3. รัน migration
 
-เปิด Supabase SQL Editor แล้วรัน `supabase-migration-notify-events.sql` ตามด้วย
-`supabase-migration-notify-appointments.sql` (รันซ้ำได้ ไม่พังของเดิม)
+เปิด Supabase SQL Editor แล้วรันตามลำดับ (รันซ้ำได้ ไม่พังของเดิม):
+
+1. `supabase-migration-notify-events.sql`
+2. `supabase-migration-notify-appointments.sql`
+3. `supabase-migration-customer-telegram.sql`
 
 ```sql
 ALTER TABLE notify_settings ADD COLUMN IF NOT EXISTS notify_new_order BOOLEAN NOT NULL DEFAULT true;
@@ -70,7 +73,25 @@ curl -X POST "https://api.telegram.org/bot<TOKEN>/setWebhook" \
 
 ---
 
-## ส่วนที่ 2 — เจ้าของร้าน (ทำเองได้ ~5 นาที)
+## ส่วนที่ 2ก — เจ้าของสัตว์ / ลูกค้า (ทำเองได้ ~3 นาที)
+
+ลูกค้าเชื่อมเองได้จากหน้าสมาชิก `/account` **ไม่ต้องรอแอดมินอนุมัติ** เพราะผูกผ่าน
+deep link เฉพาะตัว (`t.me/<bot>?start=<token>`) ที่ออกให้เฉพาะคนที่ล็อกอินแล้ว
+โทเคนใช้ได้ครั้งเดียว อายุ 30 นาที
+
+1. เข้าหน้า **สมาชิก** บนเว็บร้าน (ล็อกอินด้วย LINE ตามปกติ)
+2. กดปุ่ม **เชื่อมต่อ Telegram** — แอป Telegram จะเปิดขึ้นมาเอง
+3. กดปุ่ม **START** หนึ่งครั้ง บอทจะทักกลับว่าเชื่อมต่อสำเร็จ
+
+ในหน้านั้นมีคู่มือ *ยังไม่เคยใช้ Telegram?* กางดูได้ (ลงแอป → สมัครด้วยเบอร์ → กดเชื่อมต่อ)
+ถ้าเปิดจากคอม จะมี QR ให้สแกนด้วยมือถือแทน
+
+ลูกค้าจะได้รับ **เตือนวันนัดล่วงหน้า 1 วัน และซ้ำอีกครั้งเช้าวันนัด**
+ปิดชั่วคราวได้จากหน้าสมาชิก หรือพิมพ์ `/stop` ในแชทบอท
+
+---
+
+## ส่วนที่ 2ข — เจ้าของร้าน / พนักงาน (ทำเองได้ ~5 นาที)
 
 เปิดหน้า **หลังร้าน → แจ้งเตือน** จะมีคู่มือทีละขั้นพร้อม QR code ให้สแกน กดปุ่ม **พิมพ์คู่มือ**
 เพื่อพิมพ์ใส่กระดาษให้เจ้าของถือทำตามได้ด้วย ย่อมาคือ:
@@ -113,6 +134,10 @@ curl -X POST "https://api.telegram.org/bot<TOKEN>/setWebhook" \
 ---
 
 ## แก้ปัญหา
+
+**ลูกค้ากดปุ่มเชื่อมต่อแล้วบอทบอกว่าลิงก์หมดอายุ** — โทเคนอายุ 30 นาทีและใช้ได้ครั้งเดียว กดปุ่มในหน้าสมาชิกใหม่อีกครั้ง
+
+**ลูกค้าไม่ได้รับเตือนวันนัด** — เช็คว่ารัน `supabase-migration-customer-telegram.sql` แล้ว, ติ๊ก *เตือนวันนัดให้เจ้าของสัตว์* ไว้, และนัดนั้นสถานะยังเป็น `scheduled`
 
 **กด /start แล้วบอทเงียบ** — webhook ยังไม่ผูก หรือ `TELEGRAM_WEBHOOK_SECRET` ไม่ตรงกับตอน setWebhook
 เช็ค `getWebhookInfo` ดูช่อง `last_error_message`

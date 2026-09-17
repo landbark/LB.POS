@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { Bell, Send, Trash2, Save, RefreshCw, ExternalLink, Check, X, Clock, Crown } from 'lucide-react'
+import { Bell, Send, Trash2, Save, RefreshCw, ExternalLink, Check, X, Clock, Crown, Users } from 'lucide-react'
 import TelegramSetupGuide from './TelegramSetupGuide'
 import toast from 'react-hot-toast'
 import { confirmDialog } from '@/lib/confirm'
@@ -17,6 +17,7 @@ interface NotifySettings {
   notify_new_appointment?: boolean
   notify_shift_close?: boolean
   notify_daily_sales?: boolean
+  notify_customer_appointment?: boolean
   cash_diff_threshold?: number
 }
 
@@ -47,10 +48,12 @@ export default function NotificationsClient({
   initialSettings,
   initialRecipients,
   botUsername,
+  linkedCustomers,
 }: {
   initialSettings: NotifySettings
   initialRecipients: Recipient[]
   botUsername: string
+  linkedCustomers: number
 }) {
   const router = useRouter()
   const [enabled, setEnabled] = useState(initialSettings.enabled)
@@ -60,6 +63,7 @@ export default function NotificationsClient({
     Object.fromEntries(EVENTS.map((e) => [e.key, initialSettings[e.key] !== false])) as Record<EventKey, boolean>
   )
   const [cashThreshold, setCashThreshold] = useState(String(initialSettings.cash_diff_threshold ?? 0))
+  const [customerAppt, setCustomerAppt] = useState(initialSettings.notify_customer_appointment !== false)
   const [saving, setSaving] = useState(false)
   const [testing, setTesting] = useState(false)
   const [busyId, setBusyId] = useState<string | null>(null)
@@ -118,6 +122,7 @@ export default function NotificationsClient({
         enabled,
         expiry_days: days,
         ...events,
+        notify_customer_appointment: customerAppt,
         cash_diff_threshold: threshold,
         updated_at: new Date().toISOString(),
       })
@@ -256,6 +261,40 @@ export default function NotificationsClient({
             <Save size={15} /> {saving ? 'กำลังบันทึก...' : 'บันทึก'}
           </button>
         </div>
+      </div>
+
+      <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 max-w-xl mb-6">
+        <div className="flex items-center gap-2 mb-1">
+          <Users size={18} className="text-gray-400" />
+          <h2 className="font-semibold text-gray-900">แจ้งเตือนเจ้าของสัตว์</h2>
+        </div>
+        <p className="text-xs text-gray-500 mb-4">
+          ลูกค้าเชื่อม Telegram เองได้จากหน้าสมาชิก (<span className="font-mono bg-gray-100 px-1 rounded">/account</span>)
+          — ไม่ต้องรออนุมัติ เพราะผูกผ่านลิงก์เฉพาะตัวที่ออกให้ตอนล็อกอินแล้ว
+        </p>
+
+        <label className="flex items-start gap-2 text-sm text-gray-700 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={customerAppt}
+            onChange={(e) => setCustomerAppt(e.target.checked)}
+            className="w-4 h-4 mt-0.5 accent-blue-600"
+          />
+          <span>
+            เตือนวันนัดให้เจ้าของสัตว์
+            <span className="block text-xs text-gray-400">
+              ส่งล่วงหน้า 1 วัน และซ้ำอีกครั้งเช้าวันนัด (รอบ 8:00 น.)
+            </span>
+          </span>
+        </label>
+
+        <p className="mt-4 pt-4 border-t border-gray-100 text-sm text-gray-600">
+          ตอนนี้มีลูกค้าเชื่อม Telegram แล้ว{' '}
+          <span className="font-semibold text-gray-900">{linkedCustomers}</span> คน
+        </p>
+        <p className="text-xs text-gray-400 mt-0.5">
+          กด <b>บันทึก</b> ด้านบนเพื่อให้การเปลี่ยนแปลงมีผล
+        </p>
       </div>
 
       {pending.length > 0 && (

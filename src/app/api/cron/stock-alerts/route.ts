@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server'
 import { sendStockAlerts } from '@/lib/notify'
 import { expireStaleOrders } from '@/lib/order-stock'
+import { sendCustomerAppointmentReminders } from '@/lib/customer-notify'
 
 // ยิงโดย Vercel Cron ทุกเช้า (ดู vercel.json) — Vercel แนบ Authorization: Bearer CRON_SECRET ให้เอง
 export async function GET(request: NextRequest) {
@@ -12,7 +13,9 @@ export async function GET(request: NextRequest) {
   try {
     const expiredOrders = await expireStaleOrders()
     const result = await sendStockAlerts()
-    return NextResponse.json({ ...result, expiredOrders })
+    // เตือนวันนัดให้เจ้าของสัตว์ด้วยในรอบเดียวกัน (ล่วงหน้า 1 วัน + เช้าวันนัด)
+    const customerReminders = await sendCustomerAppointmentReminders()
+    return NextResponse.json({ ...result, expiredOrders, customerReminders })
   } catch (err) {
     return NextResponse.json(
       { error: err instanceof Error ? err.message : 'unknown error' },

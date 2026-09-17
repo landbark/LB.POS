@@ -4,6 +4,7 @@ import { getSessionCustomer } from '@/lib/customer-session'
 import { createAdminClient } from '@/lib/supabase/admin'
 import type { CustomerAddress } from '@/lib/types'
 import AddressBook from './AddressBook'
+import TelegramConnect from './TelegramConnect'
 
 export const dynamic = 'force-dynamic'
 
@@ -46,12 +47,18 @@ export default async function AccountPage({
   }
 
   const admin = createAdminClient()
-  const { data: addresses } = await admin
-    .from('customer_addresses')
-    .select('*')
-    .eq('customer_id', customer.id)
-    .order('is_default', { ascending: false })
-    .order('created_at', { ascending: false })
+  const [{ data: addresses }, { data: telegram }] = await Promise.all([
+    admin
+      .from('customer_addresses')
+      .select('*')
+      .eq('customer_id', customer.id)
+      .order('is_default', { ascending: false })
+      .order('created_at', { ascending: false }),
+    // select('*') กันพังช่วงก่อนรัน migration (คอลัมน์ telegram_* อาจยังไม่มี)
+    admin.from('customers').select('*').eq('id', customer.id).maybeSingle(),
+  ])
+
+  const tg = telegram as Record<string, unknown> | null
 
   return (
     <div className="max-w-2xl mx-auto space-y-4">
@@ -94,6 +101,12 @@ export default async function AccountPage({
           </button>
         </form>
       </div>
+
+      <TelegramConnect
+        linked={Boolean(tg?.telegram_chat_id)}
+        notifyEnabled={tg?.telegram_notify !== false}
+        botConfigured={Boolean(process.env.NEXT_PUBLIC_TELEGRAM_BOT_USERNAME)}
+      />
 
       <AddressBook initialAddresses={(addresses ?? []) as CustomerAddress[]} />
     </div>
