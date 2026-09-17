@@ -1,3 +1,7 @@
+/** ข้อความติดต่อท้ายข้อความเตือนนัดที่ส่งให้เจ้าของสัตว์ — ร้านแก้เองได้ในหน้าแจ้งเตือน */
+export const DEFAULT_REMINDER_FOOTER =
+  'ถ้าต้องการเลื่อนนัดหรือสอบถามเพิ่มเติม ติดต่อคลินิกได้เลยค่ะ\nLINE: @landbark · โทร. 098-329-5945'
+
 export type Role = 'admin' | 'cashier' | 'vet'
 
 export const ROLE_LABELS: Record<Role, string> = {

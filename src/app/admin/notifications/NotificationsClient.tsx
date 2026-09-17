@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Bell, Send, Trash2, Save, RefreshCw, ExternalLink, Check, X, Clock, Crown, Users } from 'lucide-react'
 import TelegramSetupGuide from './TelegramSetupGuide'
+import { DEFAULT_REMINDER_FOOTER } from '@/lib/types'
 import toast from 'react-hot-toast'
 import { confirmDialog } from '@/lib/confirm'
 
@@ -18,6 +19,7 @@ interface NotifySettings {
   notify_shift_close?: boolean
   notify_daily_sales?: boolean
   notify_customer_appointment?: boolean
+  customer_reminder_footer?: string | null
   cash_diff_threshold?: number
 }
 
@@ -64,6 +66,7 @@ export default function NotificationsClient({
   )
   const [cashThreshold, setCashThreshold] = useState(String(initialSettings.cash_diff_threshold ?? 0))
   const [customerAppt, setCustomerAppt] = useState(initialSettings.notify_customer_appointment !== false)
+  const [footer, setFooter] = useState(initialSettings.customer_reminder_footer ?? DEFAULT_REMINDER_FOOTER)
   const [saving, setSaving] = useState(false)
   const [testing, setTesting] = useState(false)
   const [busyId, setBusyId] = useState<string | null>(null)
@@ -123,6 +126,7 @@ export default function NotificationsClient({
         expiry_days: days,
         ...events,
         notify_customer_appointment: customerAppt,
+        customer_reminder_footer: footer,
         cash_diff_threshold: threshold,
         updated_at: new Date().toISOString(),
       })
@@ -287,6 +291,33 @@ export default function NotificationsClient({
             </span>
           </span>
         </label>
+
+        <div className={`mt-4 pt-4 border-t border-gray-100 ${customerAppt ? '' : 'opacity-40 pointer-events-none'}`}>
+          <label className="block text-xs font-medium text-gray-600 mb-1">
+            ข้อความติดต่อท้ายข้อความเตือนนัด
+          </label>
+          <textarea
+            value={footer}
+            onChange={(e) => setFooter(e.target.value)}
+            rows={3}
+            placeholder="เว้นว่างไว้ = ไม่ต่อท้ายอะไรเลย"
+            className={`${inputClass} w-full resize-y font-normal`}
+          />
+          <button
+            type="button"
+            onClick={() => setFooter(DEFAULT_REMINDER_FOOTER)}
+            className="mt-1 text-xs text-blue-600 hover:underline"
+          >
+            คืนค่าเริ่มต้น
+          </button>
+
+          <p className="mt-3 text-xs font-medium text-gray-600 mb-1">ตัวอย่างข้อความที่ลูกค้าจะได้รับ</p>
+          <pre className="whitespace-pre-wrap break-words bg-gray-50 border border-gray-200 rounded-lg p-3 text-xs text-gray-700 font-sans leading-relaxed">
+{`📅 พรุ่งนี้มีนัด ฉีดวัคซีน ของ โมจิ นะคะ
+
+🗓️ วันศุกร์ที่ 18 กันยายน เวลา 10:30 น.${footer.trim() ? `\n\n${footer.trim()}` : ''}`}
+          </pre>
+        </div>
 
         <p className="mt-4 pt-4 border-t border-gray-100 text-sm text-gray-600">
           ตอนนี้มีลูกค้าเชื่อม Telegram แล้ว{' '}

@@ -40,6 +40,7 @@ Settings → Environment Variables (ใส่ทั้ง Production/Preview/Dev
 1. `supabase-migration-notify-events.sql`
 2. `supabase-migration-notify-appointments.sql`
 3. `supabase-migration-customer-telegram.sql`
+4. `supabase-migration-reminder-footer.sql`
 
 ```sql
 ALTER TABLE notify_settings ADD COLUMN IF NOT EXISTS notify_new_order BOOLEAN NOT NULL DEFAULT true;
@@ -88,6 +89,9 @@ deep link เฉพาะตัว (`t.me/<bot>?start=<token>`) ที่ออ�
 
 ลูกค้าจะได้รับ **เตือนวันนัดล่วงหน้า 1 วัน และซ้ำอีกครั้งเช้าวันนัด**
 ปิดชั่วคราวได้จากหน้าสมาชิก หรือพิมพ์ `/stop` ในแชทบอท
+
+ข้อความติดต่อท้ายข้อความเตือน (LINE / เบอร์โทร) แก้ได้เองที่หน้า **แจ้งเตือน** ในหลังร้าน
+มีตัวอย่างข้อความจริงให้ดูข้าง ๆ ช่องแก้ · เว้นว่าง = ไม่ต่อท้ายอะไรเลย
 
 ---
 

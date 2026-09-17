@@ -1,6 +1,7 @@
 import { randomBytes } from 'node:crypto'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { sendTelegramMessage } from '@/lib/notify'
+import { DEFAULT_REMINDER_FOOTER } from '@/lib/types'
 
 const TOKEN_TTL_MINUTES = 30
 
@@ -127,7 +128,11 @@ export async function gatherCustomerAppointments(
   return (data ?? []) as unknown as CustomerAppointmentRow[]
 }
 
-export function buildCustomerReminder(row: CustomerAppointmentRow, kind: ReminderKind): string {
+export function buildCustomerReminder(
+  row: CustomerAppointmentRow,
+  kind: ReminderKind,
+  footer: string = DEFAULT_REMINDER_FOOTER
+): string {
   const time = new Date(row.scheduled_at).toLocaleTimeString('th-TH', {
     timeZone: 'Asia/Bangkok', hour: '2-digit', minute: '2-digit',
   })
@@ -142,14 +147,14 @@ export function buildCustomerReminder(row: CustomerAppointmentRow, kind: Reminde
     ? `⏰ วันนี้มีนัด ${typeTh} ของ ${petName} ค่ะ`
     : `📅 พรุ่งนี้มีนัด ${typeTh} ของ ${petName} นะคะ`
 
+  const contact = footer.trim()
+
   return [
     header,
     '',
     `🗓️ ${dateLabel} เวลา ${time} น.`,
     ...(row.notes ? [`📝 ${row.notes}`] : []),
-    '',
-    'ถ้าต้องการเลื่อนนัดหรือสอบถามเพิ่มเติม ติดต่อร้านได้เลยค่ะ',
-    '— LANDBARK 🐾',
+    ...(contact ? ['', contact] : []),
   ].join('\n')
 }
 
@@ -172,6 +177,10 @@ export async function sendCustomerAppointmentReminders(): Promise<CustomerRemind
   const { data: settings } = await admin.from('notify_settings').select('*').eq('id', 1).maybeSingle()
   const s = settings as Record<string, unknown> | null
   if (s?.enabled === false || s?.notify_customer_appointment === false) return result
+
+  const footer = typeof s?.customer_reminder_footer === 'string'
+    ? s.customer_reminder_footer
+    : DEFAULT_REMINDER_FOOTER
 
   const today = todayThai()
   const jobs: { date: string; kind: ReminderKind }[] = [
@@ -196,7 +205,7 @@ export async function sendCustomerAppointmentReminders(): Promise<CustomerRemind
       }
 
       try {
-        await sendTelegramMessage(chatId, buildCustomerReminder(row, job.kind))
+        await sendTelegramMessage(chatId, buildCustomerReminder(row, job.kind, footer))
         result.sent += 1
       } catch {
         result.failed += 1
