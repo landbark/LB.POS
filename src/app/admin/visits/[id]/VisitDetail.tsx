@@ -254,7 +254,7 @@ export default function VisitDetail({
     const supabase = createClient()
     // เที่ยงวันกันปัญหา timezone ขยับข้ามวัน
     const scheduled_at = new Date(`${form.follow_up_date}T09:00`).toISOString()
-    const { error } = await supabase.from('appointments').insert({
+    const { data: created, error } = await supabase.from('appointments').insert({
       pet_id: visit.pet_id,
       customer_id: visit.customer_id,
       vet_id: visit.vet_id,
@@ -263,13 +263,23 @@ export default function VisitDetail({
       notes: visit.diagnosis ? `ติดตามอาการ: ${visit.diagnosis}` : null,
       visit_id: visit.id,
       created_by: userId,
-    })
+    }).select('id').maybeSingle()
     await supabase.from('visits').update({ follow_up_date: form.follow_up_date }).eq('id', visit.id)
     setMakingAppt(false)
     if (error) {
       toast.error('สร้างนัดไม่สำเร็จ')
       return
     }
+
+    // แจ้งเจ้าของทาง Telegram — ล้มเหลวก็ไม่เป็นไร นัดบันทึกไปแล้ว
+    if (created) {
+      fetch('/api/notify/appointment-created', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ appointmentId: created.id }),
+      }).catch(() => {})
+    }
+
     toast.success('สร้างนัดติดตามแล้ว — ดูได้ที่เมนูนัดหมาย')
     refresh()
   }

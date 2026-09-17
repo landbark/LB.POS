@@ -111,14 +111,14 @@ interface AppointmentReminder {
   notes: string | null
 }
 
-// ช่วงเวลาของ "พรุ่งนี้" ตามเวลาไทย แปลงเป็น UTC ไว้ query scheduled_at (timestamptz)
-export async function gatherTomorrowAppointments(
-  admin: ReturnType<typeof createAdminClient>
+// นัดหมายของวันที่ระบุ (YYYY-MM-DD เวลาไทย) — แปลงเป็น UTC ไว้ query scheduled_at (timestamptz)
+export async function gatherAppointmentsOn(
+  admin: ReturnType<typeof createAdminClient>,
+  date: string
 ): Promise<AppointmentReminder[]> {
-  const tomorrow = addDays(todayThai(), 1)
-  // ไทย = UTC+7 → 00:00 ของพรุ่งนี้ (ไทย) = 17:00 ของวันนี้ (UTC)
-  const startUtc = new Date(`${tomorrow}T00:00:00+07:00`).toISOString()
-  const endUtc = new Date(`${addDays(tomorrow, 1)}T00:00:00+07:00`).toISOString()
+  // ไทย = UTC+7 → 00:00 ของวันนั้น (ไทย) = 17:00 ของวันก่อนหน้า (UTC)
+  const startUtc = new Date(`${date}T00:00:00+07:00`).toISOString()
+  const endUtc = new Date(`${addDays(date, 1)}T00:00:00+07:00`).toISOString()
 
   const { data } = await admin
     .from('appointments')
@@ -142,10 +142,13 @@ export async function gatherTomorrowAppointments(
   })
 }
 
-export function buildAppointmentMessage(appointments: AppointmentReminder[]): string | null {
+export function buildAppointmentMessage(
+  appointments: AppointmentReminder[],
+  { date, heading }: { date: string; heading: string }
+): string | null {
   if (appointments.length === 0) return null
 
-  const headerDate = new Date(`${addDays(todayThai(), 1)}T00:00:00`).toLocaleDateString('th-TH', {
+  const headerDate = new Date(`${date}T00:00:00`).toLocaleDateString('th-TH', {
     day: 'numeric', month: 'short', year: '2-digit',
   })
 
@@ -154,7 +157,7 @@ export function buildAppointmentMessage(appointments: AppointmentReminder[]): st
     return `• ${a.time} — ${a.petName} (${APPOINTMENT_TYPE_TH[a.type] ?? a.type})${who ? ` · ${who}` : ''}${a.notes ? `\n   ${a.notes}` : ''}`
   })
 
-  return [`📅 LANDBARK นัดหมายพรุ่งนี้ (${headerDate}) — ${appointments.length} นัด`, ...lines].join('\n')
+  return [`${heading} (${headerDate}) — ${appointments.length} นัด`, ...lines].join('\n')
 }
 
 // ---- วัคซีนครบกำหนด ----
@@ -276,9 +279,12 @@ export async function sendStockAlerts(
   const chatIds = (recipients ?? []).map((r) => r.chat_id)
   if (chatIds.length === 0) return { sent: false, reason: 'no_recipients' }
 
-  const [alerts, appointments, vaccineDue] = await Promise.all([
+  const today = todayThai()
+  const tomorrow = addDays(today, 1)
+  const [alerts, todayAppointments, tomorrowAppointments, vaccineDue] = await Promise.all([
     gatherStockAlerts(admin, settings?.expiry_days ?? 30),
-    gatherTomorrowAppointments(admin),
+    gatherAppointmentsOn(admin, today),
+    gatherAppointmentsOn(admin, tomorrow),
     gatherDueVaccines(admin),
   ])
   const counts = {
@@ -289,14 +295,16 @@ export async function sendStockAlerts(
 
   // รวมแจ้งเตือนสต็อค + นัดพรุ่งนี้ + วัคซีนครบกำหนด ไว้ในข้อความเดียว (ส่งถ้ามีอย่างใดอย่างหนึ่ง)
   const parts = [
+    // นัดวันนี้ขึ้นก่อน — เป็นสิ่งที่ต้องลงมือทำภายในวัน
+    buildAppointmentMessage(todayAppointments, { date: today, heading: '📅 LANDBARK นัดหมายวันนี้' }),
     buildAlertMessage(alerts),
-    buildAppointmentMessage(appointments),
+    buildAppointmentMessage(tomorrowAppointments, { date: tomorrow, heading: '🗓️ นัดหมายพรุ่งนี้' }),
     buildVaccineMessage(vaccineDue),
   ].filter(Boolean) as string[]
   let message: string | null = parts.length > 0 ? parts.join('\n\n———\n\n') : null
   if (!message) {
     if (!sendWhenEmpty) return { sent: false, reason: 'nothing_to_alert', counts }
-    message = '🐾 LANDBARK — ทดสอบแจ้งเตือนสำเร็จ ✅\nตอนนี้ไม่มีสินค้าสต็อคต่ำ/ใกล้หมดอายุ และไม่มีนัดหมายพรุ่งนี้'
+    message = '🐾 LANDBARK — ทดสอบแจ้งเตือนสำเร็จ ✅\nตอนนี้ไม่มีสินค้าสต็อคต่ำ/ใกล้หมดอายุ และไม่มีนัดหมายวันนี้/พรุ่งนี้'
   }
 
   const results = await Promise.allSettled(chatIds.map((id) => sendTelegramMessage(id, message!)))
@@ -307,14 +315,19 @@ export async function sendStockAlerts(
 
 // ---- แจ้งเตือนทันเหตุการณ์ (ออเดอร์ใหม่ / สลิป / ปิดกะ / สรุปยอดวัน) ----
 
-export type NotifyEvent = 'new_order' | 'payment_slip' | 'shift_close' | 'daily_sales'
+export type NotifyEvent =
+  | 'new_order' | 'payment_slip' | 'new_appointment' | 'shift_close' | 'daily_sales'
 
 const EVENT_COLUMN: Record<NotifyEvent, string> = {
   new_order: 'notify_new_order',
   payment_slip: 'notify_payment_slip',
+  new_appointment: 'notify_new_appointment',
   shift_close: 'notify_shift_close',
   daily_sales: 'notify_daily_sales',
 }
+
+// เรื่องเงิน — ส่งเฉพาะผู้รับที่ติ๊กว่าเป็นเจ้าของ พนักงานไม่ต้องเห็นยอดขาย/เงินขาดเกิน
+const OWNER_ONLY: ReadonlySet<NotifyEvent> = new Set<NotifyEvent>(['shift_close', 'daily_sales'])
 
 /** ลิงก์กลับเข้าหลังร้าน — ตั้ง NEXT_PUBLIC_SITE_URL บน Vercel ไว้ให้ลิงก์ในข้อความกดได้ */
 export function adminLink(path: string): string {
@@ -349,12 +362,17 @@ export async function notifyEvent(
       if (error) return // ชน PK = เคยส่งไปแล้ว
     }
 
+    // select('*') กันพังช่วงก่อนรัน migration (คอลัมน์ is_owner อาจยังไม่มี)
     const { data: recipients } = await admin
       .from('telegram_recipients')
-      .select('chat_id')
+      .select('*')
       .eq('approved', true)
 
-    const chatIds = (recipients ?? []).map((r) => r.chat_id)
+    // ไม่มี fallback ตั้งใจ: ถ้ายังไม่มีใครเป็นเจ้าของ ข้อความเรื่องเงินจะไม่ถูกส่ง
+    // ดีกว่าเผลอส่งยอดขายให้พนักงาน — หน้าแจ้งเตือนจะขึ้นเตือนให้ไปติ๊กเอง
+    const list = (recipients ?? []).filter((r) => !OWNER_ONLY.has(event) || r.is_owner === true)
+
+    const chatIds = list.map((r) => r.chat_id)
     if (chatIds.length === 0) return
 
     await Promise.allSettled(chatIds.map((id) => sendTelegramMessage(id, text)))
@@ -401,6 +419,34 @@ export function buildPaymentSlipMessage(o: {
     `${o.customerName ?? 'ลูกค้า'} · ${baht(o.total)}`,
     `⏰ ${timeThai()} น. — รอตรวจสลิปและยืนยันออเดอร์`,
   ].join('\n') + adminLink(`/admin/orders/${o.orderId}`)
+}
+
+export interface NewAppointmentInfo {
+  petName: string
+  ownerName: string | null
+  ownerPhone: string | null
+  type: string
+  scheduledAt: string
+  notes: string | null
+  createdBy: string | null
+}
+
+export function buildNewAppointmentMessage(a: NewAppointmentInfo): string {
+  const when = new Date(a.scheduledAt).toLocaleString('th-TH', {
+    timeZone: 'Asia/Bangkok',
+    weekday: 'short', day: 'numeric', month: 'short', year: '2-digit',
+    hour: '2-digit', minute: '2-digit',
+  })
+  const who = [a.ownerName, a.ownerPhone].filter(Boolean).join(' ')
+
+  return [
+    '🗓️ นัดใหม่ถูกบันทึก',
+    `${a.petName} (${APPOINTMENT_TYPE_TH[a.type] ?? a.type})`,
+    `📅 ${when} น.`,
+    ...(who ? [who] : []),
+    ...(a.notes ? [`📝 ${a.notes}`] : []),
+    ...(a.createdBy ? [`บันทึกโดย: ${a.createdBy}`] : []),
+  ].join('\n') + adminLink('/admin/appointments')
 }
 
 export interface ShiftCloseInfo {

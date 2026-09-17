@@ -104,16 +104,27 @@ export default function AppointmentsClient({
       type: form.type,
       notes: form.notes.trim() || null,
     }
-    const { error } = editing
-      ? await supabase.from('appointments').update(payload).eq('id', editing.id)
-      : await supabase.from('appointments').insert({ ...payload, created_by: userId })
+    const { data: created, error } = editing
+      ? await supabase.from('appointments').update(payload).eq('id', editing.id).select('id').maybeSingle()
+      : await supabase.from('appointments').insert({ ...payload, created_by: userId }).select('id').maybeSingle()
     setSaving(false)
 
     if (error) { toast.error('บันทึกนัดไม่สำเร็จ'); return }
     toast.success(editing ? 'แก้ไขนัดแล้ว' : 'สร้างนัดแล้ว')
+
+    // แจ้งเจ้าของทาง Telegram เฉพาะนัดที่สร้างใหม่ — ล้มเหลวก็ไม่เป็นไร นัดบันทึกไปแล้ว
+    if (!editing && created) notifyAppointment(created.id)
     setModal(false)
     setSelectedDate(form.date)
     router.refresh()
+  }
+
+  function notifyAppointment(appointmentId: string) {
+    fetch('/api/notify/appointment-created', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ appointmentId }),
+    }).catch(() => {})
   }
 
   async function setStatus(a: Appointment, status: AppointmentStatus) {

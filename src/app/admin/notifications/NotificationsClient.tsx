@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { Bell, Send, Trash2, Save, RefreshCw, ExternalLink, Check, X, Clock } from 'lucide-react'
+import { Bell, Send, Trash2, Save, RefreshCw, ExternalLink, Check, X, Clock, Crown } from 'lucide-react'
 import TelegramSetupGuide from './TelegramSetupGuide'
 import toast from 'react-hot-toast'
 import { confirmDialog } from '@/lib/confirm'
@@ -14,6 +14,7 @@ interface NotifySettings {
   expiry_days: number
   notify_new_order?: boolean
   notify_payment_slip?: boolean
+  notify_new_appointment?: boolean
   notify_shift_close?: boolean
   notify_daily_sales?: boolean
   cash_diff_threshold?: number
@@ -23,8 +24,9 @@ interface NotifySettings {
 const EVENTS = [
   { key: 'notify_new_order', label: 'ออเดอร์ออนไลน์ใหม่', hint: 'ลูกค้ากดสั่งของบนเว็บร้าน' },
   { key: 'notify_payment_slip', label: 'ลูกค้าแนบสลิปโอนเงิน', hint: 'เตือนให้ไปตรวจสลิปและยืนยันออเดอร์' },
-  { key: 'notify_shift_close', label: 'ปิดกะ / นับเงิน', hint: 'สรุปยอดขายในกะ + เงินขาดเกิน' },
-  { key: 'notify_daily_sales', label: 'สรุปยอดขายรายวัน', hint: 'ส่งทุกเย็น 20:00 น. (เฉพาะวันที่มีการขาย)' },
+  { key: 'notify_new_appointment', label: 'มีการจองนัดใหม่', hint: 'ทันทีที่บันทึกนัดจากหน้านัดหมายหรือหน้า OPD' },
+  { key: 'notify_shift_close', label: 'ปิดกะ / นับเงิน', hint: 'สรุปยอดขายในกะ + เงินขาดเกิน', ownerOnly: true },
+  { key: 'notify_daily_sales', label: 'สรุปยอดขายรายวัน', hint: 'ส่งทุกเย็น 20:00 น. (เฉพาะวันที่มีการขาย)', ownerOnly: true },
 ] as const
 
 type EventKey = (typeof EVENTS)[number]['key']
@@ -34,6 +36,7 @@ interface Recipient {
   chat_id: string
   name: string | null
   approved: boolean
+  is_owner?: boolean
   created_at: string
 }
 
@@ -81,6 +84,19 @@ export default function NotificationsClient({
     } finally {
       setBusyId(null)
     }
+  }
+
+  // ติ๊กว่าใครเป็นเจ้าของ — เฉพาะเจ้าของถึงจะได้ข้อความเรื่องเงิน (ปิดกะ / ยอดขายรายวัน)
+  async function toggleOwner(r: Recipient) {
+    setBusyId(r.id)
+    const supabase = createClient()
+    const { error } = await supabase
+      .from('telegram_recipients')
+      .update({ is_owner: !r.is_owner })
+      .eq('id', r.id)
+    setBusyId(null)
+    if (error) toast.error(error.message)
+    else router.refresh()
   }
 
   async function saveSettings() {
@@ -153,8 +169,8 @@ export default function NotificationsClient({
     <div>
       <h1 className="text-2xl font-bold text-gray-900 mb-1">แจ้งเตือน Telegram</h1>
       <p className="text-sm text-gray-500 mb-6">
-        ส่งเข้ามือถือเจ้าของฟรี ไม่มีค่าข้อความ — เด้งทันทีเมื่อมีออเดอร์ใหม่ / ลูกค้าโอนเงิน / ปิดกะ
-        และสรุปสต็อคต่ำ · ใกล้หมดอายุ · นัดหมายพรุ่งนี้ ทุกเช้า 8:00 น.
+        ส่งเข้ามือถือเจ้าของฟรี ไม่มีค่าข้อความ — เด้งทันทีเมื่อมีออเดอร์ใหม่ / ลูกค้าโอนเงิน / จองนัด / ปิดกะ
+        และสรุปนัดหมายวันนี้ · สต็อคต่ำ · ใกล้หมดอายุ · นัดพรุ่งนี้ ทุกเช้า 8:00 น.
       </p>
 
       <TelegramSetupGuide
@@ -194,6 +210,11 @@ export default function NotificationsClient({
               />
               <span>
                 {ev.label}
+                {'ownerOnly' in ev && ev.ownerOnly && (
+                  <span className="ml-1.5 align-middle text-[10px] font-medium text-[#7A4E2D] bg-[#F0E4D4] px-1.5 py-0.5 rounded">
+                    เฉพาะเจ้าของ
+                  </span>
+                )}
                 <span className="block text-xs text-gray-400">{ev.hint}</span>
               </span>
             </label>
@@ -284,24 +305,46 @@ export default function NotificationsClient({
           เปิดบอทใน Telegram แล้วพิมพ์ <span className="font-mono bg-gray-100 px-1 rounded">/start</span> เพื่อขอรับแจ้งเตือน (ต้องรอแอดมินอนุมัติ) — พิมพ์ <span className="font-mono bg-gray-100 px-1 rounded">/stop</span> เพื่อยกเลิก
         </p>
 
+        {approved.length > 0 && !approved.some((r) => r.is_owner) && (
+          <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-4">
+            ยังไม่มีใครถูกตั้งเป็น <b>เจ้าของ</b> — ข้อความปิดกะและสรุปยอดขายรายวันจะไม่ถูกส่งหาใครเลย
+            กดไอคอนมงกุฎหลังชื่อเพื่อตั้ง
+          </p>
+        )}
+
         {approved.length === 0 ? (
           <p className="text-sm text-gray-400 mb-4">ยังไม่มีผู้รับแจ้งเตือน</p>
         ) : (
           <ul className="divide-y divide-gray-100 mb-4">
             {approved.map((r) => (
-              <li key={r.id} className="flex items-center justify-between py-2">
-                <div>
+              <li key={r.id} className="flex items-center justify-between py-2 gap-2">
+                <div className="min-w-0">
                   <span className="text-sm text-gray-900">{r.name ?? 'ไม่มีชื่อ'}</span>
+                  {r.is_owner && (
+                    <span className="ml-1.5 text-[10px] font-medium text-[#7A4E2D] bg-[#F0E4D4] px-1.5 py-0.5 rounded">
+                      เจ้าของ
+                    </span>
+                  )}
                   <span className="text-xs text-gray-400 ml-2">เชื่อมเมื่อ {fmtDate(r.created_at)}</span>
                 </div>
-                <button
-                  onClick={() => removeRecipient(r)}
-                  disabled={busyId === r.id}
-                  className="text-gray-300 hover:text-red-500 disabled:opacity-50 p-1"
-                  title="ลบออกจากรายชื่อ"
-                >
-                  <Trash2 size={15} />
-                </button>
+                <div className="flex items-center gap-1 shrink-0">
+                  <button
+                    onClick={() => toggleOwner(r)}
+                    disabled={busyId === r.id}
+                    className={`p-1 disabled:opacity-50 ${r.is_owner ? 'text-[#C4865A]' : 'text-gray-300 hover:text-[#C4865A]'}`}
+                    title={r.is_owner ? 'เอาสถานะเจ้าของออก (จะไม่ได้ข้อความเรื่องเงิน)' : 'ตั้งเป็นเจ้าของ (รับข้อความเรื่องเงินด้วย)'}
+                  >
+                    <Crown size={15} />
+                  </button>
+                  <button
+                    onClick={() => removeRecipient(r)}
+                    disabled={busyId === r.id}
+                    className="text-gray-300 hover:text-red-500 disabled:opacity-50 p-1"
+                    title="ลบออกจากรายชื่อ"
+                  >
+                    <Trash2 size={15} />
+                  </button>
+                </div>
               </li>
             ))}
           </ul>
