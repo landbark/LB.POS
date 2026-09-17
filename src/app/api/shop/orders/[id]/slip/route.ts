@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server'
 import { getCustomerId } from '@/lib/customer-session'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { buildPaymentSlipMessage, notifyEvent } from '@/lib/notify'
 
 const BUCKET = 'payment-slips'
 const MAX_SIZE = 5 * 1024 * 1024
@@ -15,7 +16,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
   const { data: order } = await admin
     .from('orders')
-    .select('id, status, payment_slip_path')
+    .select('id, status, payment_slip_path, order_number, total, recipient_name, customers(name)')
     .eq('id', id)
     .eq('customer_id', customerId)
     .maybeSingle()
@@ -51,6 +52,19 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   if (order.payment_slip_path) {
     await admin.storage.from(BUCKET).remove([order.payment_slip_path])
   }
+
+  // เตือนให้ไปตรวจสลิป — dedupe ตาม path ของสลิป (ส่งสลิปใหม่ = คนละ path = เตือนอีกครั้ง)
+  const customer = order.customers as unknown as { name: string } | null
+  await notifyEvent(
+    'payment_slip',
+    buildPaymentSlipMessage({
+      orderNumber: order.order_number,
+      orderId: order.id,
+      customerName: order.recipient_name || customer?.name || null,
+      total: order.total,
+    }),
+    { dedupeKey: `slip:${path}` }
+  )
 
   return NextResponse.json({ ok: true })
 }

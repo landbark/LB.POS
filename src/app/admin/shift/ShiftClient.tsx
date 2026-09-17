@@ -168,6 +168,13 @@ export default function ShiftClient({
       return
     }
 
+    // แจ้งเจ้าของทาง Telegram — ล้มเหลวก็ไม่เป็นไร กะปิดไปแล้ว
+    fetch('/api/notify/shift-closed', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ shiftId: openShift.id }),
+    }).catch(() => {})
+
     // เปิดกะถัดไปต่อเลยด้วยเงินคงเหลือหลังแยกแบงค์พัน (ร้านปิดกลางคืน ไม่มีกะดึก)
     if (reopenNext) {
       const { error: openError } = await supabase.from('shifts').insert({

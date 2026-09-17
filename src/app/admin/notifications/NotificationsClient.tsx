@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Bell, Send, Trash2, Save, RefreshCw, ExternalLink, Check, X, Clock } from 'lucide-react'
+import TelegramSetupGuide from './TelegramSetupGuide'
 import toast from 'react-hot-toast'
 import { confirmDialog } from '@/lib/confirm'
 
@@ -11,7 +12,22 @@ interface NotifySettings {
   id: number
   enabled: boolean
   expiry_days: number
+  notify_new_order?: boolean
+  notify_payment_slip?: boolean
+  notify_shift_close?: boolean
+  notify_daily_sales?: boolean
+  cash_diff_threshold?: number
 }
+
+// เหตุการณ์ที่เด้งทันที (นอกเหนือจากสรุปรอบเช้า)
+const EVENTS = [
+  { key: 'notify_new_order', label: 'ออเดอร์ออนไลน์ใหม่', hint: 'ลูกค้ากดสั่งของบนเว็บร้าน' },
+  { key: 'notify_payment_slip', label: 'ลูกค้าแนบสลิปโอนเงิน', hint: 'เตือนให้ไปตรวจสลิปและยืนยันออเดอร์' },
+  { key: 'notify_shift_close', label: 'ปิดกะ / นับเงิน', hint: 'สรุปยอดขายในกะ + เงินขาดเกิน' },
+  { key: 'notify_daily_sales', label: 'สรุปยอดขายรายวัน', hint: 'ส่งทุกเย็น 20:00 น. (เฉพาะวันที่มีการขาย)' },
+] as const
+
+type EventKey = (typeof EVENTS)[number]['key']
 
 interface Recipient {
   id: string
@@ -36,6 +52,11 @@ export default function NotificationsClient({
   const router = useRouter()
   const [enabled, setEnabled] = useState(initialSettings.enabled)
   const [expiryDays, setExpiryDays] = useState(String(initialSettings.expiry_days))
+  // ก่อนรัน migration คอลัมน์ยังไม่มี (undefined) — ถือว่าเปิด ให้ตรงกับฝั่ง server
+  const [events, setEvents] = useState<Record<EventKey, boolean>>(() =>
+    Object.fromEntries(EVENTS.map((e) => [e.key, initialSettings[e.key] !== false])) as Record<EventKey, boolean>
+  )
+  const [cashThreshold, setCashThreshold] = useState(String(initialSettings.cash_diff_threshold ?? 0))
   const [saving, setSaving] = useState(false)
   const [testing, setTesting] = useState(false)
   const [busyId, setBusyId] = useState<string | null>(null)
@@ -68,11 +89,22 @@ export default function NotificationsClient({
       toast.error('จำนวนวันต้องอยู่ระหว่าง 1-365')
       return
     }
+    const threshold = parseFloat(cashThreshold)
+    if (isNaN(threshold) || threshold < 0) {
+      toast.error('เกณฑ์เงินขาด/เกินต้องเป็นตัวเลขไม่ติดลบ')
+      return
+    }
     setSaving(true)
     const supabase = createClient()
     const { error } = await supabase
       .from('notify_settings')
-      .update({ enabled, expiry_days: days, updated_at: new Date().toISOString() })
+      .update({
+        enabled,
+        expiry_days: days,
+        ...events,
+        cash_diff_threshold: threshold,
+        updated_at: new Date().toISOString(),
+      })
       .eq('id', 1)
     setSaving(false)
     if (error) toast.error(error.message)
@@ -121,8 +153,15 @@ export default function NotificationsClient({
     <div>
       <h1 className="text-2xl font-bold text-gray-900 mb-1">แจ้งเตือน Telegram</h1>
       <p className="text-sm text-gray-500 mb-6">
-        ระบบส่งสรุปสต็อคต่ำ / สินค้าใกล้หมดอายุ / นัดหมายพรุ่งนี้ เข้า Telegram ทุกเช้า 8:00 น. (เฉพาะวันที่มีรายการต้องเตือน)
+        ส่งเข้ามือถือเจ้าของฟรี ไม่มีค่าข้อความ — เด้งทันทีเมื่อมีออเดอร์ใหม่ / ลูกค้าโอนเงิน / ปิดกะ
+        และสรุปสต็อคต่ำ · ใกล้หมดอายุ · นัดหมายพรุ่งนี้ ทุกเช้า 8:00 น.
       </p>
+
+      <TelegramSetupGuide
+        botUsername={botUsername}
+        botLink={botLink}
+        hasApproved={approved.length > 0}
+      />
 
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 max-w-xl mb-6">
         <div className="flex items-center gap-2 mb-4">
@@ -130,25 +169,62 @@ export default function NotificationsClient({
           <h2 className="font-semibold text-gray-900">ตั้งค่า</h2>
         </div>
 
-        <label className="flex items-center gap-2 text-sm text-gray-700 mb-4 cursor-pointer">
+        <label className="flex items-center gap-2 text-sm text-gray-700 pb-4 mb-4 border-b border-gray-100 cursor-pointer">
           <input
             type="checkbox"
             checked={enabled}
             onChange={(e) => setEnabled(e.target.checked)}
             className="w-4 h-4 accent-blue-600"
           />
-          เปิดใช้แจ้งเตือนอัตโนมัติทุกเช้า
+          <span>
+            เปิดใช้แจ้งเตือนทั้งหมด
+            <span className="block text-xs text-gray-400 font-normal">ปิดอันนี้ = เงียบทุกอย่าง</span>
+          </span>
         </label>
 
-        <label className="block text-xs font-medium text-gray-600 mb-1">
-          เตือนสินค้าที่จะหมดอายุภายใน (วัน)
-        </label>
-        <input
-          type="number" min={1} max={365}
-          value={expiryDays}
-          onChange={(e) => setExpiryDays(e.target.value)}
-          className={`${inputClass} w-28`}
-        />
+        <p className="text-xs font-medium text-gray-600 mb-2">เตือนเมื่อเกิดเหตุการณ์</p>
+        <div className={`space-y-2.5 mb-4 ${enabled ? '' : 'opacity-40 pointer-events-none'}`}>
+          {EVENTS.map((ev) => (
+            <label key={ev.key} className="flex items-start gap-2 text-sm text-gray-700 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={events[ev.key]}
+                onChange={(e) => setEvents((prev) => ({ ...prev, [ev.key]: e.target.checked }))}
+                className="w-4 h-4 mt-0.5 accent-blue-600"
+              />
+              <span>
+                {ev.label}
+                <span className="block text-xs text-gray-400">{ev.hint}</span>
+              </span>
+            </label>
+          ))}
+        </div>
+
+        <div className="flex flex-wrap gap-4 pt-4 border-t border-gray-100">
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">
+              เตือนสินค้าที่จะหมดอายุภายใน (วัน)
+            </label>
+            <input
+              type="number" min={1} max={365}
+              value={expiryDays}
+              onChange={(e) => setExpiryDays(e.target.value)}
+              className={`${inputClass} w-28`}
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">
+              เตือนปิดกะเมื่อเงินขาด/เกินตั้งแต่ (บาท)
+            </label>
+            <input
+              type="number" min={0} step={1}
+              value={cashThreshold}
+              onChange={(e) => setCashThreshold(e.target.value)}
+              className={`${inputClass} w-28`}
+            />
+            <p className="text-xs text-gray-400 mt-1">ใส่ 0 = เตือนทุกครั้งที่ปิดกะ</p>
+          </div>
+        </div>
 
         <div className="mt-4">
           <button

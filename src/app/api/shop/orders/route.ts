@@ -5,6 +5,7 @@ import { getShippingZones, getStorefront } from '@/lib/shop-data'
 import { quoteShipping } from '@/lib/shop'
 import { expireStaleOrders } from '@/lib/order-stock'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { buildNewOrderMessage, notifyEvent } from '@/lib/notify'
 
 interface AddressInput {
   recipient_name?: string
@@ -161,6 +162,29 @@ export async function POST(request: NextRequest) {
     await admin.from('orders').delete().eq('id', order.id)
     return NextResponse.json({ error: itemsError.message }, { status: 500 })
   }
+
+  // เด้งเข้า Telegram ให้เจ้าของรู้ทันที — ต้อง await (serverless ตัด process ทิ้งถ้าปล่อยลอย)
+  // notifyEvent กลืน error เองแล้ว ออเดอร์จึงไม่พังตาม
+  const { data: customer } = await admin
+    .from('customers')
+    .select('name')
+    .eq('id', customerId)
+    .maybeSingle()
+
+  await notifyEvent(
+    'new_order',
+    buildNewOrderMessage({
+      orderNumber: order.order_number,
+      orderId: order.id,
+      customerName: address.recipient_name?.trim() || customer?.name || null,
+      total,
+      itemCount: priced.lines.length,
+      fulfillment,
+      province: address.province ?? null,
+      note: String(body.note ?? '').trim() || null,
+    }),
+    { dedupeKey: `order:${order.id}` }
+  )
 
   return NextResponse.json({ id: order.id, order_number: order.order_number })
 }

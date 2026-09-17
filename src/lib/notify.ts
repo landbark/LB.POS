@@ -304,3 +304,232 @@ export async function sendStockAlerts(
 
   return { sent: true, recipients: chatIds.length, failed, counts }
 }
+
+// ---- แจ้งเตือนทันเหตุการณ์ (ออเดอร์ใหม่ / สลิป / ปิดกะ / สรุปยอดวัน) ----
+
+export type NotifyEvent = 'new_order' | 'payment_slip' | 'shift_close' | 'daily_sales'
+
+const EVENT_COLUMN: Record<NotifyEvent, string> = {
+  new_order: 'notify_new_order',
+  payment_slip: 'notify_payment_slip',
+  shift_close: 'notify_shift_close',
+  daily_sales: 'notify_daily_sales',
+}
+
+/** ลิงก์กลับเข้าหลังร้าน — ตั้ง NEXT_PUBLIC_SITE_URL บน Vercel ไว้ให้ลิงก์ในข้อความกดได้ */
+export function adminLink(path: string): string {
+  const origin = (process.env.NEXT_PUBLIC_SITE_URL ?? '').replace(/\/$/, '')
+  return origin ? `\n${origin}${path}` : ''
+}
+
+/**
+ * ส่งแจ้งเตือนเหตุการณ์ให้ผู้รับที่อนุมัติแล้ว
+ * ไม่ throw ออกไปเด็ดขาด — แจ้งเตือนล้มเหลวต้องไม่ทำให้ลูกค้าสั่งของไม่ได้
+ * dedupeKey: กันส่งซ้ำตอน Vercel retry (ใช้ PK ของ notify_log กันชนกัน)
+ */
+export async function notifyEvent(
+  event: NotifyEvent,
+  text: string,
+  { dedupeKey }: { dedupeKey?: string } = {}
+): Promise<void> {
+  try {
+    if (!process.env.TELEGRAM_BOT_TOKEN) return
+    const admin = createAdminClient()
+
+    // select('*') กันพังช่วงก่อนรัน migration (คอลัมน์ notify_* อาจยังไม่มี)
+    const { data } = await admin.from('notify_settings').select('*').eq('id', 1).maybeSingle()
+    const settings = data as Record<string, unknown> | null
+
+    if (settings?.enabled === false) return
+    // ยังไม่ได้รัน migration → คอลัมน์ไม่มี = undefined, ถือว่าเปิด
+    if (settings?.[EVENT_COLUMN[event]] === false) return
+
+    if (dedupeKey) {
+      const { error } = await admin.from('notify_log').insert({ event_key: dedupeKey })
+      if (error) return // ชน PK = เคยส่งไปแล้ว
+    }
+
+    const { data: recipients } = await admin
+      .from('telegram_recipients')
+      .select('chat_id')
+      .eq('approved', true)
+
+    const chatIds = (recipients ?? []).map((r) => r.chat_id)
+    if (chatIds.length === 0) return
+
+    await Promise.allSettled(chatIds.map((id) => sendTelegramMessage(id, text)))
+  } catch {
+    // แจ้งเตือนเป็นงานเสริม — เงียบไว้ ไม่ให้ล้มงานหลัก
+  }
+}
+
+const baht = (n: number) => `฿${n.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+
+const timeThai = () =>
+  new Date().toLocaleTimeString('th-TH', { timeZone: 'Asia/Bangkok', hour: '2-digit', minute: '2-digit' })
+
+export interface NewOrderInfo {
+  orderNumber: string
+  orderId: string
+  customerName: string | null
+  total: number
+  itemCount: number
+  fulfillment: 'delivery' | 'pickup'
+  province?: string | null
+  note?: string | null
+}
+
+export function buildNewOrderMessage(o: NewOrderInfo): string {
+  const where = o.fulfillment === 'pickup' ? '🏠 รับที่ร้าน' : `🚚 จัดส่ง${o.province ? ` · ${o.province}` : ''}`
+  return [
+    `🛒 ออเดอร์ออนไลน์ใหม่ — ${o.orderNumber}`,
+    `${o.customerName ?? 'ลูกค้า'} · ${o.itemCount} รายการ · ${baht(o.total)}`,
+    where,
+    ...(o.note ? [`📝 ${o.note}`] : []),
+    `⏰ ${timeThai()} น. — รอลูกค้าชำระเงิน`,
+  ].join('\n') + adminLink(`/admin/orders/${o.orderId}`)
+}
+
+export function buildPaymentSlipMessage(o: {
+  orderNumber: string
+  orderId: string
+  customerName: string | null
+  total: number
+}): string {
+  return [
+    `💸 ลูกค้าแจ้งโอนแล้ว — ${o.orderNumber}`,
+    `${o.customerName ?? 'ลูกค้า'} · ${baht(o.total)}`,
+    `⏰ ${timeThai()} น. — รอตรวจสลิปและยืนยันออเดอร์`,
+  ].join('\n') + adminLink(`/admin/orders/${o.orderId}`)
+}
+
+export interface ShiftCloseInfo {
+  closedBy: string | null
+  expectedCash: number
+  countedCash: number
+  difference: number
+  cashToOwner: number
+  salesTotal: number
+  txCount: number
+  notes: string | null
+}
+
+export function buildShiftCloseMessage(s: ShiftCloseInfo): string {
+  const diffLine =
+    s.difference === 0
+      ? '✅ เงินตรงพอดี'
+      : s.difference > 0
+        ? `🔵 เงินเกิน ${baht(s.difference)}`
+        : `🔴 เงินขาด ${baht(Math.abs(s.difference))}`
+
+  return [
+    `🧾 ปิดกะแล้ว — ${timeThai()} น.`,
+    `ผู้ปิดกะ: ${s.closedBy ?? '—'}`,
+    '',
+    `ยอดขายในกะ: ${baht(s.salesTotal)} (${s.txCount} บิล)`,
+    `เงินสดที่ควรมี: ${baht(s.expectedCash)}`,
+    `นับได้จริง: ${baht(s.countedCash)}`,
+    diffLine,
+    ...(s.cashToOwner > 0 ? [`👜 แยกให้เจ้าของ: ${baht(s.cashToOwner)}`] : []),
+    ...(s.notes ? ['', `📝 ${s.notes}`] : []),
+  ].join('\n') + adminLink('/admin/daily')
+}
+
+/** สรุปยอดขายของวัน (เวลาไทย) สำหรับ cron รอบเย็น */
+export async function gatherDailySales(admin: ReturnType<typeof createAdminClient>, date: string) {
+  const startISO = new Date(`${date}T00:00:00+07:00`).toISOString()
+  const endISO = new Date(`${addDays(date, 1)}T00:00:00+07:00`).toISOString()
+
+  const [{ data: completed }, { data: cancelled }, { data: items }] = await Promise.all([
+    admin
+      .from('transactions')
+      .select('total, payment_method')
+      .eq('status', 'completed')
+      .gte('created_at', startISO)
+      .lt('created_at', endISO),
+    admin
+      .from('transactions')
+      .select('total')
+      .eq('status', 'cancelled')
+      .gte('cancelled_at', startISO)
+      .lt('cancelled_at', endISO),
+    admin
+      .from('transaction_items')
+      .select('quantity, subtotal, products(name), transactions!inner(status, created_at)')
+      .eq('transactions.status', 'completed')
+      .gte('transactions.created_at', startISO)
+      .lt('transactions.created_at', endISO),
+  ])
+
+  const tx = completed ?? []
+  const total = tx.reduce((s, t) => s + t.total, 0)
+
+  const byMethodMap: Record<string, number> = {}
+  for (const t of tx) byMethodMap[t.payment_method] = (byMethodMap[t.payment_method] ?? 0) + t.total
+
+  const sellerMap: Record<string, { qty: number; revenue: number }> = {}
+  for (const it of (items ?? []) as unknown as {
+    quantity: number
+    subtotal: number
+    products: { name: string } | null
+  }[]) {
+    const name = it.products?.name
+    if (!name) continue
+    const s = (sellerMap[name] ??= { qty: 0, revenue: 0 })
+    s.qty += it.quantity
+    s.revenue += it.subtotal
+  }
+
+  const bestSellers = Object.entries(sellerMap)
+    .map(([name, v]) => ({ name, ...v }))
+    .sort((a, b) => b.revenue - a.revenue)
+    .slice(0, 5)
+
+  return {
+    date,
+    total,
+    txCount: tx.length,
+    byMethod: Object.entries(byMethodMap).map(([method, amount]) => ({ method, amount })),
+    cancelledCount: cancelled?.length ?? 0,
+    cancelledTotal: cancelled?.reduce((s, t) => s + t.total, 0) ?? 0,
+    bestSellers,
+  }
+}
+
+const PAYMENT_TH: Record<string, string> = {
+  cash: 'เงินสด',
+  transfer: 'โอนเงิน',
+  card: 'บัตรเครดิต',
+  qr: 'QR Code',
+}
+
+export function buildDailySalesMessage(s: Awaited<ReturnType<typeof gatherDailySales>>): string | null {
+  if (s.txCount === 0 && s.cancelledCount === 0) return null
+
+  const label = new Date(`${s.date}T00:00:00+07:00`).toLocaleDateString('th-TH', {
+    timeZone: 'Asia/Bangkok', weekday: 'short', day: 'numeric', month: 'short',
+  })
+
+  const lines = [
+    `📊 สรุปยอดขายวันนี้ (${label})`,
+    '',
+    `💰 ยอดขายรวม ${baht(s.total)} · ${s.txCount} บิล`,
+  ]
+
+  if (s.byMethod.length > 0) {
+    lines.push(...s.byMethod
+      .sort((a, b) => b.amount - a.amount)
+      .map((m) => `   • ${PAYMENT_TH[m.method] ?? m.method} ${baht(m.amount)}`))
+  }
+
+  if (s.cancelledCount > 0) {
+    lines.push('', `❌ ยกเลิก ${s.cancelledCount} บิล (${baht(s.cancelledTotal)})`)
+  }
+
+  if (s.bestSellers.length > 0) {
+    lines.push('', '🏆 ขายดีวันนี้')
+    lines.push(...s.bestSellers.map((b, i) => `   ${i + 1}. ${b.name} — ${b.qty} ชิ้น ${baht(b.revenue)}`))
+  }
+
+  return lines.join('\n') + adminLink('/admin/daily')
+}
