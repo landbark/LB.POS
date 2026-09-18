@@ -1,8 +1,10 @@
 import { createClient } from '@/lib/supabase/server'
 import { notFound } from 'next/navigation'
+import { getMarketplaceChannels } from '@/lib/marketplace'
 import ProductForm from '../ProductForm'
 import LotManager from './LotManager'
 import StockHistory from './StockHistory'
+import ProductMarketplaceLinks from './ProductMarketplaceLinks'
 
 export default async function EditProductPage({
   params,
@@ -13,7 +15,7 @@ export default async function EditProductPage({
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
 
-  const [{ data: product }, { data: categories }, { data: units }, { data: suppliers }, { data: movements }] = await Promise.all([
+  const [{ data: product }, { data: categories }, { data: units }, { data: suppliers }, { data: movements }, marketplaceChannels, { data: marketplaceLinks }] = await Promise.all([
     supabase
       .from('products')
       .select('*, product_lots(*)')
@@ -28,6 +30,8 @@ export default async function EditProductPage({
       .eq('product_id', id)
       .order('created_at', { ascending: false })
       .limit(50),
+    getMarketplaceChannels(),
+    supabase.from('product_marketplace_links').select('*').eq('product_id', id),
   ])
 
   if (!product) notFound()
@@ -42,6 +46,7 @@ export default async function EditProductPage({
       <div className="mt-6">
         <StockHistory movements={(movements as never[]) ?? []} unit={product.unit} />
       </div>
+      <ProductMarketplaceLinks productId={id} channels={marketplaceChannels} links={marketplaceLinks ?? []} />
     </div>
   )
 }
