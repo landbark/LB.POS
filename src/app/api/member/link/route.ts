@@ -13,7 +13,7 @@ import { clientIp, rateLimit } from '@/lib/rate-limit'
  * ไม่งั้นใช้ไล่เดาเบอร์เพื่อดูว่าใครเป็นลูกค้าร้านได้
  */
 export async function POST(request: NextRequest) {
-  const limited = rateLimit(`member-link:${clientIp(request)}`, { limit: 5, windowMs: 10 * 60_000 })
+  const limited = await rateLimit(`member-link:${clientIp(request)}`, { limit: 5, windowMs: 10 * 60_000 })
   if (!limited.ok) {
     return NextResponse.json(
       { error: 'ลองหลายครั้งเกินไป กรุณารอสักครู่' },

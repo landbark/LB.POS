@@ -1,30 +1,30 @@
+import { createAdminClient } from '@/lib/supabase/admin'
+
 /**
- * จำกัดจำนวนครั้งที่เรียก API แบบง่าย ๆ เก็บในหน่วยความจำของ instance
+ * จำกัดจำนวนครั้งที่เรียก API — นับใน Postgres จึงรวมทุก instance
  *
- * ข้อจำกัดที่ต้องรู้: Vercel รันหลาย instance และรีไซเคิลเรื่อย ๆ ตัวนับจึงไม่ครบถ้วน
- * ของจริงควรใช้ Upstash Redis หรือ Vercel KV — อันนี้แค่กันยิงรัวจากเครื่องเดียว
- * ซึ่งพอสำหรับสกัดการไล่เดาเบอร์โทรทีละหมื่นครั้ง
+ * Vercel รันหลาย instance พร้อมกัน ตัวนับที่เก็บในหน่วยความจำจะนับแยกกัน
+ * ยิงกระจายไปหลาย instance ก็เลี่ยงลิมิตได้ ตัวนับกลางเท่านั้นที่กันได้จริง
+ *
+ * ถ้า DB ล่มหรือยังไม่ได้รัน migration จะถอยไปใช้ตัวนับในหน่วยความจำ
+ * — หลวมกว่าแต่ยังดีกว่าปล่อยผ่านทั้งหมด และไม่ทำให้หน้าเว็บพัง
  */
 
-interface Bucket {
-  count: number
-  resetAt: number
+export interface RateLimitResult {
+  ok: boolean
+  retryAfterSeconds: number
 }
 
-const buckets = new Map<string, Bucket>()
+// ---------- ตัวนับสำรองในหน่วยความจำ ----------
 
-/** ล้างของหมดอายุเป็นครั้งคราว กัน map โตไม่จำกัด */
-function sweep(now: number) {
-  if (buckets.size < 5000) return
-  for (const [key, b] of buckets) if (b.resetAt <= now) buckets.delete(key)
-}
+const buckets = new Map<string, { count: number; resetAt: number }>()
 
-export function rateLimit(
-  key: string,
-  { limit, windowMs }: { limit: number; windowMs: number }
-): { ok: boolean; retryAfterSeconds: number } {
+function memoryLimit(key: string, limit: number, windowMs: number): RateLimitResult {
   const now = Date.now()
-  sweep(now)
+
+  if (buckets.size >= 5000) {
+    for (const [k, b] of buckets) if (b.resetAt <= now) buckets.delete(k)
+  }
 
   const bucket = buckets.get(key)
   if (!bucket || bucket.resetAt <= now) {
@@ -33,10 +33,37 @@ export function rateLimit(
   }
 
   bucket.count += 1
-  if (bucket.count > limit) {
-    return { ok: false, retryAfterSeconds: Math.ceil((bucket.resetAt - now) / 1000) }
+  return bucket.count > limit
+    ? { ok: false, retryAfterSeconds: Math.ceil((bucket.resetAt - now) / 1000) }
+    : { ok: true, retryAfterSeconds: 0 }
+}
+
+// ---------- ตัวนับกลางใน Postgres ----------
+
+export async function rateLimit(
+  key: string,
+  { limit, windowMs }: { limit: number; windowMs: number }
+): Promise<RateLimitResult> {
+  const windowSeconds = Math.ceil(windowMs / 1000)
+
+  try {
+    const { data, error } = await createAdminClient().rpc('consume_rate_limit', {
+      p_key: key,
+      p_limit: limit,
+      p_window_seconds: windowSeconds,
+    })
+    if (error) throw new Error(error.message)
+
+    const row = Array.isArray(data) ? data[0] : data
+    if (!row) throw new Error('empty result')
+
+    return {
+      ok: row.allowed === true,
+      retryAfterSeconds: Number(row.retry_after_seconds ?? windowSeconds),
+    }
+  } catch {
+    return memoryLimit(key, limit, windowMs)
   }
-  return { ok: true, retryAfterSeconds: 0 }
 }
 
 /** ip ของผู้เรียก — หลัง proxy ของ Vercel ใช้ x-forwarded-for */

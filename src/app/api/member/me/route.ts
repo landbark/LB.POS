@@ -13,7 +13,7 @@ import { clientIp, rateLimit } from '@/lib/rate-limit'
  * ใช้ POST เพราะ token ไม่ควรไปโผล่ใน query string (ติดไปกับ log ทุกชั้น)
  */
 export async function POST(request: NextRequest) {
-  const limited = rateLimit(`member-me:${clientIp(request)}`, { limit: 30, windowMs: 60_000 })
+  const limited = await rateLimit(`member-me:${clientIp(request)}`, { limit: 30, windowMs: 60_000 })
   if (!limited.ok) {
     return NextResponse.json(
       { error: 'เรียกถี่เกินไป กรุณารอสักครู่' },
