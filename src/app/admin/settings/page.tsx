@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { getMarketplaceChannels } from '@/lib/marketplace'
 import PasswordSection from './PasswordSection'
+import BackupSection from './BackupSection'
 import StaffSection from './StaffSection'
 import NameListSection from './NameListSection'
 import PointsSection from './PointsSection'
@@ -64,6 +65,8 @@ export default async function SettingsPage() {
         <PointsSection config={pointsConfig} />
 
         <MarketplaceSection channels={marketplaceChannels} />
+
+        <BackupSection />
 
         <PasswordSection />
       </div>
