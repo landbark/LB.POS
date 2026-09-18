@@ -1,12 +1,29 @@
 'use client'
 
-import { useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { Suspense, useState } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { homePath } from '@/lib/home-path'
 import Image from 'next/image'
 import Link from 'next/link'
 import toast from 'react-hot-toast'
+
+const LOGIN_ERRORS: Record<string, string> = {
+  'not-allowed': 'อีเมลนี้ยังไม่ได้รับอนุญาตให้เข้าใช้งาน — แจ้งเจ้าของร้านเพิ่มอีเมลของคุณที่ ตั้งค่า → พนักงาน ก่อน',
+  auth: 'เข้าสู่ระบบไม่สำเร็จ กรุณาลองใหม่อีกครั้ง',
+}
+
+/** อ่าน ?error= จาก URL — แยกเป็นคอมโพเนนต์เพราะ useSearchParams ต้องอยู่ใน Suspense */
+function LoginError() {
+  const error = useSearchParams().get('error')
+  if (!error) return null
+
+  return (
+    <div className="rounded-xl px-4 py-3 mb-5 text-sm" style={{ background: '#5B3A34', color: '#F0E8DC' }}>
+      {LOGIN_ERRORS[error] ?? LOGIN_ERRORS.auth}
+    </div>
+  )
+}
 
 export default function LoginPage() {
   const router = useRouter()
@@ -73,6 +90,10 @@ export default function LoginPage() {
         {/* Card */}
         <div className="rounded-2xl shadow-xl px-8 py-7" style={{ background: '#5C5144' }}>
 
+          <Suspense fallback={null}>
+            <LoginError />
+          </Suspense>
+
           {/* Google Login */}
           <button
             onClick={handleGoogleLogin}
@@ -90,9 +111,9 @@ export default function LoginPage() {
             {googleLoading ? 'กำลังเชื่อมต่อ...' : 'เข้าสู่ระบบด้วย Google'}
           </button>
 
-          {/* พนักงานใหม่ไม่ต้องรอให้เจ้าของใส่อีเมลก่อนแล้ว — เข้า Google ได้เลย แล้วรออนุมัติ */}
+          {/* เข้าได้เฉพาะอีเมลที่เจ้าของร้านเพิ่มไว้แล้ว (staff_emails) */}
           <p className="text-xs text-center mb-5 -mt-3" style={{ color: '#D4A87A' }}>
-            พนักงานใหม่: เข้าด้วย Google ได้เลย แล้วรอเจ้าของร้านอนุมัติ
+            พนักงานใหม่: แจ้งเจ้าของร้านเพิ่มอีเมลของคุณก่อน แล้วจึงเข้าด้วย Google
           </p>
 
           {/* Divider */}

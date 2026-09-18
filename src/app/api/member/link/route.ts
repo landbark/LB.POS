@@ -4,16 +4,15 @@ import { verifyLineIdToken } from '@/lib/line-id-token'
 import { clientIp, rateLimit } from '@/lib/rate-limit'
 
 /**
- * ผูกบัญชี LINE (จาก LIFF) กับสมาชิกที่มีอยู่แล้ว ด้วยเบอร์โทร
+ * ลูกค้าขอผูกบัญชี LINE กับสมาชิกของร้าน ด้วยเบอร์โทร
  *
- * เดิมเชื่อ lineUserId ที่ client ส่งมา และคืนชื่อ/แต้ม/ยอดซื้อของเจ้าของเบอร์
- * กลับไปด้วย ทำให้ไล่เดาเบอร์เพื่อดูว่าใครเป็นลูกค้าร้าน และดูดข้อมูลได้
+ * เบอร์โทรอย่างเดียวพิสูจน์ความเป็นเจ้าของไม่ได้ (ใครรู้เบอร์ก็กรอกได้)
+ * คำขอจึงเข้าคิวรอให้ทางร้านยืนยันก่อน ไม่ผูกให้ทันที
  *
- * ตอนนี้: ต้องยืนยัน ID token กับ LINE ก่อน · จำกัดจำนวนครั้ง ·
- * ไม่คืนข้อมูลของคนอื่นกลับไปไม่ว่ากรณีใด
+ * สำคัญ: ตอบ { pending: true } เหมือนกันทุกกรณี ไม่ว่าเบอร์นั้นจะมีในระบบหรือไม่
+ * ไม่งั้นใช้ไล่เดาเบอร์เพื่อดูว่าใครเป็นลูกค้าร้านได้
  */
 export async function POST(request: NextRequest) {
-  // ผูกบัญชีเป็นงานที่ทำครั้งเดียว — เรียกถี่ ๆ คือกำลังไล่เดาเบอร์
   const limited = rateLimit(`member-link:${clientIp(request)}`, { limit: 5, windowMs: 10 * 60_000 })
   if (!limited.ok) {
     return NextResponse.json(
@@ -32,38 +31,37 @@ export async function POST(request: NextRequest) {
   }
 
   const admin = createAdminClient()
-  const { data: customer, error } = await admin
+  const { data: customer } = await admin
     .from('customers')
-    .select('id, name, phone, points, total_spent, line_user_id')
+    .select('id, name, points, total_spent, line_user_id')
     .eq('phone', phone)
     .maybeSingle()
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-
-  // ข้อความและสถานะเดียวกันทั้ง "ไม่พบเบอร์" กับ "ผูกกับคนอื่นแล้ว"
-  // ไม่งั้นใช้แยกได้ว่าเบอร์ไหนเป็นลูกค้าร้าน
-  const refuse = () => NextResponse.json(
-    { error: 'ผูกบัญชีไม่สำเร็จ — ตรวจสอบเบอร์โทรอีกครั้ง หรือติดต่อร้าน' },
-    { status: 404 }
-  )
-
-  if (!customer) return refuse()
-  if (customer.line_user_id && customer.line_user_id !== lineUserId) return refuse()
-
-  if (!customer.line_user_id) {
-    const { error: updateError } = await admin
-      .from('customers')
-      .update({ line_user_id: lineUserId })
-      .eq('id', customer.id)
-      // กันแย่งผูกพร้อมกัน — อัปเดตได้ต่อเมื่อยังว่างอยู่จริง
-      .is('line_user_id', null)
-    if (updateError) return NextResponse.json({ error: updateError.message }, { status: 500 })
+  // ผูกไว้แล้วกับ LINE เครื่องนี้ — เข้าได้เลย ไม่ต้องขอใหม่
+  if (customer?.line_user_id === lineUserId) {
+    return NextResponse.json({
+      linked: true,
+      customer: {
+        id: customer.id,
+        name: customer.name,
+        points: customer.points,
+        total_spent: customer.total_spent,
+      },
+    })
   }
 
-  return NextResponse.json({
-    id: customer.id,
-    name: customer.name,
-    points: customer.points,
-    total_spent: customer.total_spent,
-  })
+  // เข้าคิวเฉพาะกรณีที่เบอร์มีจริงและยังไม่ถูกผูกกับใคร
+  // กรณีอื่นไม่สร้างอะไร แต่ตอบเหมือนกัน เพื่อไม่ให้รู้ว่าเบอร์ไหนมีในระบบ
+  if (customer && !customer.line_user_id) {
+    await admin.from('member_link_requests').delete()
+      .eq('line_user_id', lineUserId).eq('status', 'pending')
+
+    await admin.from('member_link_requests').insert({
+      line_user_id: lineUserId,
+      phone,
+      customer_id: customer.id,
+    })
+  }
+
+  return NextResponse.json({ pending: true })
 }

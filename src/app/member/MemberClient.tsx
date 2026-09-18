@@ -31,7 +31,7 @@ interface TxRow {
   transaction_items: TxItem[]
 }
 
-type Status = 'loading' | 'need-phone' | 'linking' | 'ready' | 'error'
+type Status = 'loading' | 'need-phone' | 'linking' | 'pending' | 'ready' | 'error'
 
 export default function MemberClient() {
   const [status, setStatus] = useState<Status>('loading')
@@ -109,7 +109,14 @@ export default function MemberClient() {
         setStatus('need-phone')
         return
       }
-      setCustomer(data)
+
+      // เบอร์โทรอย่างเดียวพิสูจน์ตัวตนไม่ได้ ทางร้านต้องยืนยันก่อน
+      if (!data.linked) {
+        setStatus('pending')
+        return
+      }
+
+      setCustomer(data.customer)
       const txRes = await fetch('/api/member/me', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -144,6 +151,23 @@ export default function MemberClient() {
         {status === 'error' && (
           <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 text-center">
             <p className="text-sm text-red-500">{errorMsg}</p>
+          </div>
+        )}
+
+        {status === 'pending' && (
+          <div className="rounded-xl bg-white border border-brand-muted/30 p-6 text-center">
+            <p className="text-3xl">⏳</p>
+            <h2 className="mt-2 font-bold text-brand-dark">ส่งคำขอแล้ว รอทางร้านยืนยัน</h2>
+            <p className="mt-2 text-sm text-gray-600 leading-relaxed">
+              เพื่อความปลอดภัยของแต้มและประวัติการซื้อ ทางร้านจะตรวจสอบก่อนผูกบัญชีให้
+              <br />แจ้งพนักงานที่ร้านได้เลย หรือรอสักครู่แล้วเปิดหน้านี้ใหม่
+            </p>
+            <button
+              onClick={() => window.location.reload()}
+              className="mt-4 px-5 py-2.5 rounded-xl bg-brand-brown text-white text-sm font-medium hover:opacity-90"
+            >
+              เช็คสถานะอีกครั้ง
+            </button>
           </div>
         )}
 

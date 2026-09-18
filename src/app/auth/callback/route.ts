@@ -25,31 +25,30 @@ export async function GET(request: NextRequest) {
     )
 
     const { error } = await supabase.auth.exchangeCodeForSession(code)
-    if (!error) {
-      // สร้าง profile ถ้ายังไม่มี
-      const { data: { user } } = await supabase.auth.getUser()
-      let role: string | null = 'cashier'
-      if (user) {
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('role')
-          .eq('id', user.id)
-          .single()
 
-        if (!profile) {
-          await supabase.from('profiles').insert({
-            id: user.id,
-            role: 'cashier',
-            name: user.user_metadata?.full_name ?? user.email ?? 'User',
-          })
-        } else {
-          role = profile.role
-        }
-      }
-
-      // หน้าแรกตาม role — admin/หมอ ไป dashboard, แคชเชียร์ไปหน้าขาย
-      return NextResponse.redirect(`${origin}${homePath(role)}`)
+    if (error) {
+      // trigger handle_new_user ปฏิเสธอีเมลที่ไม่อยู่ใน staff_emails
+      const blocked = /อนุญาต|insufficient_privilege|Database error/i.test(error.message)
+      return NextResponse.redirect(`${origin}/login?error=${blocked ? 'not-allowed' : 'auth'}`)
     }
+
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return NextResponse.redirect(`${origin}/login?error=auth`)
+
+    // โปรไฟล์ถูกสร้างโดย trigger ตอนสมัครเท่านั้น — ไม่สร้างเองตรงนี้
+    // (เดิมสร้างให้อัตโนมัติ ซึ่งเปิดทางให้คนนอก whitelist มีโปรไฟล์ได้)
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('role, active')
+      .eq('id', user.id)
+      .maybeSingle()
+
+    if (!profile || profile.active === false) {
+      return NextResponse.redirect(`${origin}/no-access`)
+    }
+
+    // หน้าแรกตาม role — admin/หมอ ไป dashboard, แคชเชียร์ไปหน้าขาย
+    return NextResponse.redirect(`${origin}${homePath(profile.role)}`)
   }
 
   return NextResponse.redirect(`${origin}/login?error=auth`)

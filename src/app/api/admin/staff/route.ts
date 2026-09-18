@@ -1,26 +1,15 @@
 import { NextResponse, type NextRequest } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { getAdmin } from '@/lib/require-staff'
 
 const ROLES = ['admin', 'cashier', 'vet']
 const normalizeRole = (role: unknown) => (ROLES.includes(role as string) ? (role as string) : 'cashier')
 
-// ตรวจว่า caller เป็น admin ก่อนใช้ service role ทุกครั้ง
+// ตรวจว่า caller เป็นแอดมินที่ยังใช้งานอยู่ ก่อนใช้ service role ทุกครั้ง
 async function requireAdmin() {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return { error: NextResponse.json({ error: 'unauthorized' }, { status: 401 }) }
-
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('role')
-    .eq('id', user.id)
-    .single()
-
-  if (profile?.role !== 'admin') {
-    return { error: NextResponse.json({ error: 'forbidden' }, { status: 403 }) }
-  }
-  return { user }
+  const admin = await getAdmin()
+  if (!admin) return { error: NextResponse.json({ error: 'forbidden' }, { status: 403 }) }
+  return { user: { id: admin.userId } }
 }
 
 // หา auth user id จากอีเมล (profiles.email ถูก sync จาก trigger/migration)
