@@ -2,8 +2,16 @@ import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
 import { Package, ShoppingBag, AlertTriangle, TrendingUp, Clock, CalendarClock, Syringe } from 'lucide-react'
 import { dueVaccinations } from '@/lib/vaccines'
+import { fetchAll } from '@/lib/supabase/fetch-all'
 import { APPOINTMENT_TYPE_LABELS, type AppointmentType } from '@/lib/types'
 import StaffRequests, { type StaffRequest } from '../settings/StaffRequests'
+
+interface VaxRow {
+  pet_id: string
+  vaccine_name: string
+  dose_date: string
+  next_due_date: string | null
+}
 
 export default async function DashboardPage() {
   const supabase = await createClient()
@@ -34,7 +42,7 @@ export default async function DashboardPage() {
     { data: expiringSoon },
     { count: waitingCount },
     { data: todayAppts },
-    { data: vaxRows },
+    vaxRows,
     { data: openOrders },
   ] = await Promise.all([
     supabase.from('products').select('*', { count: 'exact', head: true }).eq('active', true),
@@ -58,11 +66,15 @@ export default async function DashboardPage() {
       .gte('scheduled_at', dayStartUtc)
       .lt('scheduled_at', dayEndUtc.toISOString())
       .order('scheduled_at'),
-    supabase
-      .from('pet_vaccinations')
-      .select('pet_id, vaccine_name, dose_date, next_due_date, pets!inner(active)')
-      .eq('pets.active', true)
-      .limit(5000),
+    // วัคซีนสะสมโตขึ้นเรื่อย ๆ — .limit() ไม่ช่วย เพราะเซิร์ฟเวอร์ตัดที่ 1000 แถวอยู่ดี
+    fetchAll<VaxRow>((from, to) =>
+      supabase
+        .from('pet_vaccinations')
+        .select('pet_id, vaccine_name, dose_date, next_due_date, pets!inner(active)')
+        .eq('pets.active', true)
+        .order('id')
+        .range(from, to)
+    ),
     // ออเดอร์ออนไลน์ที่ยังค้างอยู่
     supabase
       .from('orders')
@@ -76,11 +88,7 @@ export default async function DashboardPage() {
     unpaid: (openOrders ?? []).filter((o) => o.status === 'pending_payment').length,
   }
 
-  const vaxDue = dueVaccinations(
-    ((vaxRows ?? []) as unknown as { pet_id: string; vaccine_name: string; dose_date: string; next_due_date: string | null }[]),
-    todayThai,
-    30,
-  )
+  const vaxDue = dueVaccinations(vaxRows, todayThai, 30)
 
   const todaySales = todayTx?.reduce((sum, t) => sum + t.total, 0) ?? 0
   const todayCount = todayTx?.length ?? 0

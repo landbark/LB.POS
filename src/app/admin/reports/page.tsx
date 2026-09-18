@@ -1,25 +1,37 @@
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
+import { fetchAll } from '@/lib/supabase/fetch-all'
 
 export default async function ReportsPage() {
   const supabase = await createClient()
   const today = new Date().toISOString().split('T')[0]
   const startOfMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0]
 
-  const [{ data: todayTx }, { data: monthTx }, { data: recentTx }, { data: monthItems }, { data: store }] = await Promise.all([
-    supabase.from('transactions').select('total, payment_method').gte('created_at', today),
-    supabase.from('transactions').select('total').gte('created_at', startOfMonth),
+  // ยอดทั้งเดือนอาจเกิน 1000 แถว — ต้องไล่ดึงทีละหน้า ไม่งั้นตัวเลขจะขาดแบบไม่มี error
+  const [todayTx, monthTx, { data: recentTx }, monthItems, { data: store }] = await Promise.all([
+    fetchAll((from, to) =>
+      supabase.from('transactions').select('total, payment_method')
+        .gte('created_at', today).order('id').range(from, to)
+    ),
+    fetchAll((from, to) =>
+      supabase.from('transactions').select('total')
+        .gte('created_at', startOfMonth).order('id').range(from, to)
+    ),
     supabase
       .from('transactions')
       .select('*, profiles!transactions_cashier_id_fkey(name), customers(name)')
       .order('created_at', { ascending: false })
       .limit(20),
     // แยกยอด VAT + รายได้บริการคลินิก ต้องดูรายสินค้า ไม่ใช่ระดับบิล — ตัดบิลที่ถูกยกเลิกออก
-    supabase
-      .from('transaction_items')
-      .select('subtotal, vat_applicable, products(is_service), transactions!inner(created_at, status)')
-      .gte('transactions.created_at', startOfMonth)
-      .neq('transactions.status', 'cancelled'),
+    fetchAll((from, to) =>
+      supabase
+        .from('transaction_items')
+        .select('subtotal, vat_applicable, products(is_service), transactions!inner(created_at, status)')
+        .gte('transactions.created_at', startOfMonth)
+        .neq('transactions.status', 'cancelled')
+        .order('id')
+        .range(from, to)
+    ),
     supabase.from('store_settings').select('vat_registered, vat_rate').limit(1).single(),
   ])
 

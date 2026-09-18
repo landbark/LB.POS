@@ -1,5 +1,6 @@
 import { createAdminClient } from '@/lib/supabase/admin'
 import { dueVaccinations } from '@/lib/vaccines'
+import { fetchAll } from '@/lib/supabase/fetch-all'
 
 const MAX_ITEMS_PER_SECTION = 15
 
@@ -172,13 +173,17 @@ interface VaccineDueRow {
 
 // วัคซีนที่ครบกำหนดกระตุ้นภายใน 7 วัน + ที่เลยกำหนดแล้ว
 export async function gatherDueVaccines(admin: ReturnType<typeof createAdminClient>) {
-  const { data } = await admin
-    .from('pet_vaccinations')
-    .select('pet_id, vaccine_name, dose_date, next_due_date, pets!inner(name, active, customers(name, phone))')
-    .eq('pets.active', true)
-    .limit(5000)
+  // วัคซีนสะสมโตขึ้นทุกปี — .limit() ไม่ช่วย เซิร์ฟเวอร์ตัดที่ 1000 แถวอยู่ดี ต้องไล่ทีละหน้า
+  const data = await fetchAll((from, to) =>
+    admin
+      .from('pet_vaccinations')
+      .select('pet_id, vaccine_name, dose_date, next_due_date, pets!inner(name, active, customers(name, phone))')
+      .eq('pets.active', true)
+      .order('id')
+      .range(from, to)
+  )
 
-  const rows = (data ?? []) as unknown as VaccineDueRow[]
+  const rows = data as unknown as VaccineDueRow[]
   return dueVaccinations(rows, todayThai(), 7)
 }
 
