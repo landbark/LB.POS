@@ -10,12 +10,18 @@
 
 const LINE_VERIFY_ID_TOKEN_URL = 'https://api.line.me/oauth2/v2.1/verify'
 
-/** channel ที่ออก token — LIFF id มีรูปแบบ "<channelId>-<suffix>" ใช้เป็นทางสำรองได้ */
+/**
+ * channel ที่ออก ID token นี้ — ต้องตรงกับ aud ในตัว token
+ *
+ * token ออกมาจาก LIFF จึงยึด channel ของ LIFF เป็นหลัก
+ * (LIFF id มีรูปแบบ "<channelId>-<suffix>") ส่วน LINE_LOGIN_CHANNEL_ID
+ * ใช้เป็นทางสำรอง เพราะอาจเป็นคนละ channel กับ LIFF ได้
+ */
 function channelId(): string | null {
   return (
     process.env.LINE_LIFF_CHANNEL_ID
-    || process.env.LINE_LOGIN_CHANNEL_ID
     || process.env.NEXT_PUBLIC_LIFF_ID?.split('-')[0]
+    || process.env.LINE_LOGIN_CHANNEL_ID
     || null
   )
 }
