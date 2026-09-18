@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { useLookup } from '@/lib/use-lookup'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { ChevronLeft, ChevronRight, Plus, X } from 'lucide-react'
@@ -43,11 +44,12 @@ const emptyForm = {
 
 export default function AppointmentsClient({
   appointments,
-  pets,
+  recentPets,
   userId,
 }: {
   appointments: Appointment[]
-  pets: Pet[]
+  /** รายชื่อตั้งต้นตอนยังไม่พิมพ์ค้นหา — ที่เหลือค้นจาก server */
+  recentPets: Pet[]
   userId: string
 }) {
   const router = useRouter()
@@ -59,6 +61,8 @@ export default function AppointmentsClient({
   const [editing, setEditing] = useState<Appointment | null>(null)
   const [form, setForm] = useState(emptyForm)
   const [petQuery, setPetQuery] = useState('')
+  // สัตว์ที่เลือก เก็บเป็น state เพราะไม่ได้มีรายชื่อทั้งตารางให้ค้นแล้ว
+  const [selectedPet, setSelectedPet] = useState<Pet | null>(null)
   const [saving, setSaving] = useState(false)
 
   // นัดต่อวัน (key = YYYY-MM-DD ตามเวลาเครื่อง)
@@ -76,6 +80,9 @@ export default function AppointmentsClient({
 
   function openEdit(a: Appointment) {
     setEditing(a)
+    // ไม่ตั้ง selectedPet จาก a.pets เพราะข้อมูลที่ติดมาไม่ครบ (ไม่มี customer_id)
+    // ชื่อสัตว์ในฟอร์มอ่านจาก editing.pets แทน
+    setSelectedPet(null)
     const d = new Date(a.scheduled_at)
     setForm({
       pet_id: a.pet_id,
@@ -92,14 +99,17 @@ export default function AppointmentsClient({
     if (!form.pet_id) { toast.error('กรุณาเลือกสัตว์'); return }
     if (!form.date) { toast.error('กรุณาเลือกวันที่'); return }
 
-    const pet = pets.find((p) => p.id === form.pet_id)
+    // ตอนแก้นัดแล้วไม่ได้เปลี่ยนตัวสัตว์ ข้อมูลสัตว์ที่ติดมากับนัดไม่มี customer_id
+    // จึงต้องยึด customer_id เดิมของนัดไว้ ไม่งั้นเจ้าของจะถูกล้างเป็นค่าว่าง
+    const customerId = selectedPet?.customer_id
+      ?? (editing && editing.pet_id === form.pet_id ? editing.customer_id : null)
     const scheduled_at = new Date(`${form.date}T${form.time || '00:00'}`).toISOString()
 
     setSaving(true)
     const supabase = createClient()
     const payload = {
       pet_id: form.pet_id,
-      customer_id: pet?.customer_id ?? null,
+      customer_id: customerId,
       scheduled_at,
       type: form.type,
       notes: form.notes.trim() || null,
@@ -180,11 +190,16 @@ export default function AppointmentsClient({
   })
   const todayKey = localDate(today)
 
-  const pq = petQuery.trim().toLowerCase()
-  const petMatches = pq
-    ? pets.filter((p) => p.name.toLowerCase().includes(pq) || (p.customers?.name ?? '').toLowerCase().includes(pq) || (p.customers?.phone ?? '').includes(pq)).slice(0, 8)
-    : []
-  const selectedPet = pets.find((p) => p.id === form.pet_id)
+  const searchingPets = petQuery.trim().length > 0
+  const { results: petHits, loading: petLoading } = useLookup<Pet>('pets', petQuery)
+  const petMatches = searchingPets ? petHits : recentPets
+
+  // ชื่อที่โชว์ในช่อง "สัตว์" — ตอนแก้นัดใช้ข้อมูลที่ติดมากับนัด (ยังไม่ได้เลือกใหม่)
+  const pickedPet = selectedPet
+    ? { name: selectedPet.name, owner: selectedPet.customers?.name ?? null }
+    : editing?.pets
+      ? { name: editing.pets.name, owner: editing.customers?.name ?? null }
+      : null
 
   const dayList = (byDate[selectedDate] ?? []).slice().sort((a, b) => a.scheduled_at.localeCompare(b.scheduled_at))
 
@@ -313,23 +328,32 @@ export default function AppointmentsClient({
             <div className="space-y-3">
               <div>
                 <label className={labelClass}>สัตว์ *</label>
-                {selectedPet ? (
+                {pickedPet ? (
                   <div className="flex items-center gap-2">
                     <div className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm">
-                      {selectedPet.name}
-                      <span className="text-gray-400"> · {selectedPet.customers?.name ?? 'ไม่ระบุเจ้าของ'}</span>
+                      {pickedPet.name}
+                      <span className="text-gray-400"> · {pickedPet.owner ?? 'ไม่ระบุเจ้าของ'}</span>
                     </div>
                     {!editing && (
-                      <button onClick={() => { setForm({ ...form, pet_id: '' }); setPetQuery('') }} className="p-2 text-gray-400 hover:text-red-600"><X size={15} /></button>
+                      <button onClick={() => { setForm({ ...form, pet_id: '' }); setSelectedPet(null); setPetQuery('') }} className="p-2 text-gray-400 hover:text-red-600"><X size={15} /></button>
                     )}
                   </div>
                 ) : (
                   <div className="relative">
                     <input type="text" autoFocus value={petQuery} onChange={(e) => setPetQuery(e.target.value)} placeholder="พิมพ์ชื่อสัตว์ / เจ้าของ / เบอร์..." className={inputClass} />
+                    {!searchingPets && (
+                      <p className="text-xs text-gray-400 mt-1">แสดงสัตว์ที่ลงทะเบียนล่าสุด — พิมพ์เพื่อค้นทั้งหมด</p>
+                    )}
+                    {searchingPets && petLoading && petMatches.length === 0 && (
+                      <p className="text-xs text-gray-400 mt-1">กำลังค้นหา…</p>
+                    )}
+                    {searchingPets && !petLoading && petMatches.length === 0 && (
+                      <p className="text-xs text-gray-400 mt-1">ไม่พบสัตว์เลี้ยง — ลงทะเบียนที่หน้า &quot;สัตว์เลี้ยง&quot; ก่อน</p>
+                    )}
                     {petMatches.length > 0 && (
                       <div className="absolute z-10 left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg overflow-hidden max-h-60 overflow-y-auto">
                         {petMatches.map((p) => (
-                          <button key={p.id} onClick={() => { setForm({ ...form, pet_id: p.id }); setPetQuery('') }} className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50">
+                          <button key={p.id} onClick={() => { setForm({ ...form, pet_id: p.id }); setSelectedPet(p); setPetQuery('') }} className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50">
                             {p.name} <span className="text-gray-400">· {p.customers?.name ?? 'ไม่ระบุ'}</span>
                           </button>
                         ))}

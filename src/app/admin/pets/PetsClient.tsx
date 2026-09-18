@@ -1,10 +1,12 @@
 'use client'
 
 import { useState } from 'react'
+import SearchBox from '@/components/SearchBox'
+import { useLookup } from '@/lib/use-lookup'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { Plus, Edit, Trash2, X, Check, Search, AlertTriangle } from 'lucide-react'
+import { Plus, Edit, Trash2, X, Check, AlertTriangle } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { SPECIES_LABELS, type Breed, type Pet, type PetSpecies } from '@/lib/types'
 import { ageAt, petAge } from '@/lib/pets'
@@ -36,21 +38,26 @@ const labelClass = 'block text-xs font-medium text-gray-600 mb-1'
 
 export default function PetsClient({
   pets,
-  customers,
   breeds,
+  searching,
+  atLimit,
+  pageSize,
 }: {
   pets: Pet[]
-  customers: OwnerOption[]
   breeds: Breed[]
+  searching: boolean
+  atLimit: boolean
+  pageSize: number
 }) {
   const router = useRouter()
   const [showAdd, setShowAdd] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [form, setForm] = useState<Form>(emptyForm)
   const [loading, setLoading] = useState(false)
-  const [query, setQuery] = useState('')
-  // ช่องค้นหาเจ้าของ (ลูกค้าเยอะเกินกว่าจะใส่ dropdown ยาวๆ)
+  // ช่องค้นหาเจ้าของ — ค้นที่ server ไม่ได้โหลดลูกค้าทั้งร้านมารอ
   const [ownerQuery, setOwnerQuery] = useState('')
+  // เจ้าของที่เลือกไว้ เก็บแยกเพราะรายชื่อไม่ได้อยู่ในมือทั้งก้อนแล้ว
+  const [selectedOwner, setSelectedOwner] = useState<OwnerOption | null>(null)
 
   function set<K extends keyof Form>(key: K, value: Form[K]) {
     setForm((prev) => ({ ...prev, [key]: value }))
@@ -60,6 +67,7 @@ export default function PetsClient({
     setEditingId(p.id)
     setShowAdd(false)
     setOwnerQuery('')
+    setSelectedOwner(p.customers ?? null)
     setForm({
       customer_id: p.customer_id,
       name: p.name,
@@ -82,6 +90,7 @@ export default function PetsClient({
     setEditingId(null)
     setForm(emptyForm)
     setOwnerQuery('')
+    setSelectedOwner(null)
   }
 
   async function save() {
@@ -140,22 +149,8 @@ export default function PetsClient({
     router.refresh()
   }
 
-  const q = query.trim().toLowerCase()
-  const filtered = q
-    ? pets.filter((p) =>
-        p.name.toLowerCase().includes(q)
-        || (p.breed ?? '').toLowerCase().includes(q)
-        || (p.customers?.name ?? '').toLowerCase().includes(q)
-        || (p.customers?.phone ?? '').includes(q)
-        || (p.microchip ?? '').includes(q)
-      )
-    : pets
-
-  const oq = ownerQuery.trim().toLowerCase()
-  const ownerMatches = oq
-    ? customers.filter((c) => c.name.toLowerCase().includes(oq) || c.phone.includes(oq)).slice(0, 8)
-    : []
-  const selectedOwner = customers.find((c) => c.id === form.customer_id)
+  const oq = ownerQuery.trim()
+  const { results: ownerMatches, loading: ownerLoading } = useLookup<OwnerOption>('customers', ownerQuery)
   const sterilizedAge = form.sterilized_date ? ageAt(form.birth_date || null, form.sterilized_date) : null
 
   const formCard = (
@@ -173,7 +168,7 @@ export default function PetsClient({
               <div className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white">
                 {selectedOwner.name} <span className="text-gray-400 font-mono">{selectedOwner.phone}</span>
               </div>
-              <button onClick={() => { set('customer_id', ''); setOwnerQuery('') }} className="p-2 text-gray-400 hover:text-red-600">
+              <button onClick={() => { set('customer_id', ''); setSelectedOwner(null); setOwnerQuery('') }} className="p-2 text-gray-400 hover:text-red-600">
                 <X size={15} />
               </button>
             </div>
@@ -191,7 +186,7 @@ export default function PetsClient({
                   {ownerMatches.map((c) => (
                     <button
                       key={c.id}
-                      onClick={() => { set('customer_id', c.id); setOwnerQuery('') }}
+                      onClick={() => { set('customer_id', c.id); setSelectedOwner(c); setOwnerQuery('') }}
                       className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50"
                     >
                       {c.name} <span className="text-gray-400 font-mono">{c.phone}</span>
@@ -199,7 +194,7 @@ export default function PetsClient({
                   ))}
                 </div>
               )}
-              {oq && ownerMatches.length === 0 && (
+              {oq && !ownerLoading && ownerMatches.length === 0 && (
                 <p className="text-xs text-gray-400 mt-1">ไม่พบลูกค้า — เพิ่มที่หน้า &quot;ลูกค้า&quot; ก่อน</p>
               )}
             </div>
@@ -307,16 +302,13 @@ export default function PetsClient({
 
       {showAdd && formCard}
 
-      <div className="relative mb-4 max-w-xs">
-        <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-        <input
-          type="text"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="ค้นหาชื่อสัตว์ / เจ้าของ / เบอร์..."
-          className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-        />
-      </div>
+      <SearchBox placeholder="ค้นหาชื่อสัตว์ / เจ้าของ / เบอร์..." className="mb-4 max-w-xs" />
+
+      {atLimit && (
+        <p className="text-xs text-gray-500 mb-3">
+          แสดง {pageSize} รายการแรก — พิมพ์ค้นหาเพื่อจำกัดผลลัพธ์
+        </p>
+      )}
 
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-x-auto">
         <table className="w-full">
@@ -332,7 +324,7 @@ export default function PetsClient({
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-50">
-            {filtered.map((p) => (
+            {pets.map((p) => (
               editingId === p.id ? (
                 <tr key={p.id}>
                   <td colSpan={7} className="px-4 py-3">{formCard}</td>
@@ -386,10 +378,10 @@ export default function PetsClient({
                 </tr>
               )
             ))}
-            {filtered.length === 0 && (
+            {pets.length === 0 && (
               <tr>
                 <td colSpan={7} className="px-4 py-10 text-center text-sm text-gray-400">
-                  {pets.length === 0 ? 'ยังไม่มีสัตว์เลี้ยงในทะเบียน' : 'ไม่พบสัตว์เลี้ยงที่ค้นหา'}
+                  {searching ? 'ไม่พบสัตว์เลี้ยงที่ค้นหา' : 'ยังไม่มีสัตว์เลี้ยงในทะเบียน'}
                 </td>
               </tr>
             )}

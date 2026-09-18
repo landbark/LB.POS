@@ -158,7 +158,7 @@ export function buildAppointmentMessage(
     return `• ${a.time} — ${a.petName} (${APPOINTMENT_TYPE_TH[a.type] ?? a.type})${who ? ` · ${who}` : ''}${a.notes ? `\n   ${a.notes}` : ''}`
   })
 
-  return [`${heading} (${headerDate}) — ${appointments.length} นัด`, ...lines].join('\n')
+  return [`${heading} (${headerDate}) — ${appointments.length} นัด`, ...capped(lines)].join('\n')
 }
 
 // ---- วัคซีนครบกำหนด ----
@@ -196,17 +196,18 @@ export function buildVaccineMessage(due: Awaited<ReturnType<typeof gatherDueVacc
     return `• ${tag} ${d.row.pets?.name ?? '—'} — ${d.row.vaccine_name}${d.row.next_due_date ? ` (${dateTh(d.row.next_due_date)})` : ''}${owner ? `\n   ${owner}` : ''}`
   })
 
-  return [`💉 LANDBARK วัคซีนครบกำหนด — ${due.length} รายการ`, ...lines].join('\n')
+  return [`💉 LANDBARK วัคซีนครบกำหนด — ${due.length} รายการ`, ...capped(lines)].join('\n')
+}
+
+/** ตัดรายการยาว ๆ ให้เหลือเท่าที่อ่านไหว — รายละเอียดทั้งหมดดูในเว็บเอา */
+function capped(lines: string[]): string[] {
+  const shown = lines.slice(0, MAX_ITEMS_PER_SECTION)
+  const more = lines.length - shown.length
+  return more > 0 ? [...shown, `  …และอีก ${more} รายการ`] : shown
 }
 
 function section(title: string, lines: string[]): string {
-  const shown = lines.slice(0, MAX_ITEMS_PER_SECTION)
-  const more = lines.length - shown.length
-  return [
-    `${title} (${lines.length} รายการ)`,
-    ...shown,
-    ...(more > 0 ? [`  …และอีก ${more} รายการ`] : []),
-  ].join('\n')
+  return [`${title} (${lines.length} รายการ)`, ...capped(lines)].join('\n')
 }
 
 export function buildAlertMessage(alerts: StockAlerts): string | null {
@@ -246,9 +247,37 @@ export function buildAlertMessage(alerts: StockAlerts): string | null {
 const telegramApi = (method: string) =>
   `https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/${method}`
 
-export async function sendTelegramMessage(chatId: string, text: string) {
-  if (!process.env.TELEGRAM_BOT_TOKEN) throw new Error('ยังไม่ได้ตั้งค่า TELEGRAM_BOT_TOKEN')
+// Telegram รับข้อความละไม่เกิน 4096 "ตัวอักษร" (ไม่ใช่ไบต์ — ภาษาไทยจึงไม่ได้เสียเปรียบ)
+// ยาวเกินแล้วมันปฏิเสธทั้งก้อน ไม่ได้ตัดให้ ข้อความทั้งฉบับจะหายไปเฉย ๆ
+const TELEGRAM_MAX_CHARS = 4096
+/** เผื่อที่ให้ป้าย "(1/2)" ที่ต่อท้ายตอนหั่น */
+const SPLIT_BUDGET = 3900
 
+/** หั่นตามบรรทัด ไม่ตัดกลางรายการ — บรรทัดเดียวที่ยาวเกินจริง ๆ ค่อยตัดดิบ */
+export function splitForTelegram(text: string, budget = SPLIT_BUDGET): string[] {
+  if ([...text].length <= TELEGRAM_MAX_CHARS) return [text]
+
+  const parts: string[] = []
+  let buffer = ''
+
+  const flush = () => { if (buffer) { parts.push(buffer); buffer = '' } }
+
+  for (const line of text.split('\n')) {
+    if ([...line].length > budget) {
+      flush()
+      const chars = [...line]
+      for (let i = 0; i < chars.length; i += budget) parts.push(chars.slice(i, i + budget).join(''))
+      continue
+    }
+    if ([...buffer].length + [...line].length + 1 > budget) flush()
+    buffer = buffer ? `${buffer}\n${line}` : line
+  }
+  flush()
+
+  return parts
+}
+
+async function postMessage(chatId: string, text: string) {
   const res = await fetch(telegramApi('sendMessage'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -256,6 +285,15 @@ export async function sendTelegramMessage(chatId: string, text: string) {
   })
   const data = await res.json()
   if (!data.ok) throw new Error(`Telegram (${chatId}): ${data.description ?? res.status}`)
+}
+
+export async function sendTelegramMessage(chatId: string, text: string) {
+  if (!process.env.TELEGRAM_BOT_TOKEN) throw new Error('ยังไม่ได้ตั้งค่า TELEGRAM_BOT_TOKEN')
+
+  const parts = splitForTelegram(text)
+  for (const [i, part] of parts.entries()) {
+    await postMessage(chatId, parts.length > 1 ? `${part}\n\n(${i + 1}/${parts.length})` : part)
+  }
 }
 
 export interface SendResult {

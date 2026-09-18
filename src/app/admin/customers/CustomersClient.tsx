@@ -4,7 +4,8 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { Plus, Edit, Trash2, X, Check, Search } from 'lucide-react'
+import { Plus, Edit, Trash2, X, Check } from 'lucide-react'
+import SearchBox from '@/components/SearchBox'
 import toast from 'react-hot-toast'
 import type { Customer } from '@/lib/types'
 import { confirmDialog } from '@/lib/confirm'
@@ -14,17 +15,24 @@ const emptyForm = { name: '', phone: '' }
 export default function CustomersClient({
   customers,
   petNames,
+  searching,
+  atLimit,
+  pageSize,
 }: {
   customers: Customer[]
   /** customer_id → ชื่อสัตว์เลี้ยง (ทะเบียนคลินิก) */
   petNames: Record<string, string[]>
+  /** กำลังมีคำค้นอยู่ — ใช้แยกข้อความตอนไม่พบผลลัพธ์ */
+  searching: boolean
+  /** ผลลัพธ์เต็มหน้า อาจมีมากกว่านี้ */
+  atLimit: boolean
+  pageSize: number
 }) {
   const router = useRouter()
   const [showAdd, setShowAdd] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [form, setForm] = useState(emptyForm)
   const [loading, setLoading] = useState(false)
-  const [query, setQuery] = useState('')
 
   function set(key: string, value: string) {
     setForm((prev) => ({ ...prev, [key]: value }))
@@ -77,11 +85,6 @@ export default function CustomersClient({
     router.refresh()
   }
 
-  const q = query.trim().toLowerCase()
-  const filtered = q
-    ? customers.filter((c) => c.name.toLowerCase().includes(q) || c.phone.includes(q))
-    : customers
-
   const inputClass = 'w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500'
 
   const formCard = (
@@ -123,16 +126,13 @@ export default function CustomersClient({
 
       {showAdd && formCard}
 
-      <div className="relative mb-4 max-w-xs">
-        <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-        <input
-          type="text"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="ค้นหาชื่อ / เบอร์โทร..."
-          className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-        />
-      </div>
+      <SearchBox placeholder="ค้นหาชื่อ / เบอร์โทร..." className="mb-4 max-w-xs" />
+
+      {atLimit && (
+        <p className="text-xs text-gray-500 mb-3">
+          แสดง {pageSize} รายการแรก — พิมพ์ค้นหาเพื่อจำกัดผลลัพธ์
+        </p>
+      )}
 
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-x-auto">
         <table className="w-full">
@@ -149,7 +149,7 @@ export default function CustomersClient({
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-50">
-            {filtered.map((c) => (
+            {customers.map((c) => (
               editingId === c.id ? (
                 <tr key={c.id}>
                   <td colSpan={8} className="px-4 py-3">{formCard}</td>
@@ -190,12 +190,12 @@ export default function CustomersClient({
                 </tr>
               )
             ))}
-            {filtered.length === 0 && (
+            {customers.length === 0 && (
               <tr>
                 <td colSpan={8} className="px-4 py-10 text-center text-sm text-gray-400">
-                  {customers.length === 0
-                    ? 'ยังไม่มีลูกค้า — เพิ่มได้ที่นี่ หรือพิมพ์เบอร์ลูกค้าที่หน้าขายเพื่อเพิ่มระหว่างขาย'
-                    : 'ไม่พบลูกค้าที่ค้นหา'}
+                  {searching
+                    ? 'ไม่พบลูกค้าที่ค้นหา'
+                    : 'ยังไม่มีลูกค้า — เพิ่มได้ที่นี่ หรือพิมพ์เบอร์ลูกค้าที่หน้าขายเพื่อเพิ่มระหว่างขาย'}
                 </td>
               </tr>
             )}

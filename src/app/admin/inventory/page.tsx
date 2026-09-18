@@ -1,18 +1,58 @@
 import { createClient } from '@/lib/supabase/server'
 import { AlertTriangle } from 'lucide-react'
+import SearchBox from '@/components/SearchBox'
 
-export default async function InventoryPage() {
+/** ล็อตสินค้าสะสมขึ้นทุกครั้งที่รับของ — แสดงทีละหน้า แล้วให้ค้นที่ server */
+const PAGE_SIZE = 200
+
+export default async function InventoryPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ q?: string }>
+}) {
+  const { q } = await searchParams
   const supabase = await createClient()
+  const term = (q ?? '').trim()
   const today = new Date().toISOString().split('T')[0]
   const in30Days = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
 
-  const { data: lots } = await supabase
+  const columns = '*, products!inner(name, sku, unit, min_stock, active)'
+  const baseQuery = () => supabase
     .from('product_lots')
-    .select('*, products(name, sku, unit, min_stock, active)')
+    .select(columns)
     .gt('quantity', 0)
+    .eq('products.active', true)
     .order('expiry_date', { ascending: true, nullsFirst: false })
+    .limit(PAGE_SIZE)
 
-  const activeLots = lots?.filter((l) => (l.products as any)?.active) ?? []
+  let lots: Awaited<ReturnType<typeof baseQuery>>['data'] = []
+
+  if (term) {
+    const like = `%${term.replace(/[%_\\]/g, (c) => `\\${c}`)}%`
+    // .or() สองครั้งจะถูก AND เข้าด้วยกัน และเงื่อนไขบนตาราง join ผสมกับคอลัมน์ของตัวเองไม่ได้
+    // จึงต้องยิงแยกแล้วรวมผลเอง
+    const [byLot, byProduct] = await Promise.all([
+      baseQuery().ilike('lot_number', like),
+      baseQuery().or(`name.ilike.${like},sku.ilike.${like}`, { referencedTable: 'products' }),
+    ])
+    const seen = new Set<string>()
+    lots = [...(byLot.data ?? []), ...(byProduct.data ?? [])]
+      .filter((l) => !seen.has(l.id) && seen.add(l.id))
+      .sort((a, b) => (a.expiry_date ?? '9999').localeCompare(b.expiry_date ?? '9999'))
+      .slice(0, PAGE_SIZE)
+  } else {
+    lots = (await baseQuery()).data ?? []
+  }
+
+  // ตัวเลขในแถบเตือนต้องนับจากของทั้งหมด ไม่ใช่แค่หน้าที่แสดง
+  const [{ count: expiredTotal }, { count: expiringTotal }] = await Promise.all([
+    supabase.from('product_lots').select('id, products!inner(active)', { count: 'exact', head: true })
+      .gt('quantity', 0).eq('products.active', true).lt('expiry_date', today),
+    supabase.from('product_lots').select('id, products!inner(active)', { count: 'exact', head: true })
+      .gt('quantity', 0).eq('products.active', true).gte('expiry_date', today).lte('expiry_date', in30Days),
+  ])
+
+  const activeLots = lots ?? []
 
   const expiredLots = activeLots.filter((l) => l.expiry_date && l.expiry_date < today)
   const expiringSoon = activeLots.filter(
@@ -49,9 +89,11 @@ export default async function InventoryPage() {
 
   return (
     <div>
-      <h1 className="text-2xl font-bold text-gray-900 mb-6">สต็อคสินค้า</h1>
+      <h1 className="text-2xl font-bold text-gray-900 mb-4">สต็อคสินค้า</h1>
 
-      {(expiredLots.length > 0 || expiringSoon.length > 0) && (
+      <SearchBox placeholder="ค้นหาสินค้า / SKU / เลขล็อต..." className="mb-4 max-w-xs" />
+
+      {((expiredTotal ?? 0) > 0 || (expiringTotal ?? 0) > 0) && (
         <div className="bg-orange-50 border border-orange-200 rounded-xl p-4 mb-6 flex gap-3">
           <AlertTriangle size={20} className="text-orange-500 shrink-0 mt-0.5" />
           <div>
@@ -59,8 +101,8 @@ export default async function InventoryPage() {
               พบสินค้าที่ต้องดูแล
             </p>
             <p className="text-sm text-orange-700 mt-0.5">
-              {expiredLots.length > 0 && `หมดอายุแล้ว ${expiredLots.length} lot · `}
-              {expiringSoon.length > 0 && `ใกล้หมดอายุ (30 วัน) ${expiringSoon.length} lot`}
+              {(expiredTotal ?? 0) > 0 && `หมดอายุแล้ว ${expiredTotal} lot · `}
+              {(expiringTotal ?? 0) > 0 && `ใกล้หมดอายุ (30 วัน) ${expiringTotal} lot`}
             </p>
           </div>
         </div>
@@ -84,13 +126,19 @@ export default async function InventoryPage() {
             {activeLots.length === 0 && (
               <tr>
                 <td colSpan={5} className="px-4 py-10 text-center text-sm text-gray-400">
-                  ยังไม่มีสต็อค
+                  {term ? 'ไม่พบสินค้าที่ค้นหา' : 'ยังไม่มีสต็อค'}
                 </td>
               </tr>
             )}
           </tbody>
         </table>
       </div>
+
+      {activeLots.length === PAGE_SIZE && (
+        <p className="text-xs text-gray-500 mt-3">
+          แสดง {PAGE_SIZE} ล็อตแรก — พิมพ์ค้นหาเพื่อจำกัดผลลัพธ์
+        </p>
+      )}
     </div>
   )
 }

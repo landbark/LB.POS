@@ -8,6 +8,7 @@ import { ArrowLeft, Clock, Plus, Search, Stethoscope, X } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { SPECIES_LABELS, VISIT_STATUS_LABELS, type Breed, type Pet, type PetSpecies, type Visit, type VisitStatus } from '@/lib/types'
 import { ageAt, petAge } from '@/lib/pets'
+import { useLookup } from '@/lib/use-lookup'
 import BreedSelect from '@/components/BreedSelect'
 
 type OwnerOption = { id: string; name: string; phone: string }
@@ -37,16 +38,15 @@ const emptyPetForm = {
 
 export default function VisitsClient({
   visits,
-  pets,
-  customers,
+  recentPets,
   breeds,
   lastWeights,
   userId,
   role,
 }: {
   visits: Visit[]
-  pets: Pet[]
-  customers: OwnerOption[]
+  /** รายชื่อตั้งต้นตอนยังไม่พิมพ์ค้นหา — ที่เหลือค้นจาก server */
+  recentPets: Pet[]
   breeds: Breed[]
   lastWeights: Record<string, LastWeight>
   userId: string
@@ -67,6 +67,8 @@ export default function VisitsClient({
   const [addingPet, setAddingPet] = useState(false)
   const [petForm, setPetForm] = useState(emptyPetForm)
   const [ownerId, setOwnerId] = useState('')
+  // เก็บเจ้าของที่เลือกไว้เอง เพราะไม่ได้โหลดรายชื่อลูกค้าทั้งร้านมาให้ค้นแล้ว
+  const [selectedOwner, setSelectedOwner] = useState<OwnerOption | null>(null)
   const [ownerQuery, setOwnerQuery] = useState('')
   const [newOwner, setNewOwner] = useState({ name: '', phone: '' })
   const [addingOwner, setAddingOwner] = useState(false)
@@ -81,6 +83,7 @@ export default function VisitsClient({
     setAddingPet(false)
     setPetForm(emptyPetForm)
     setOwnerId('')
+    setSelectedOwner(null)
     setOwnerQuery('')
     setNewOwner({ name: '', phone: '' })
     setAddingOwner(false)
@@ -237,19 +240,12 @@ export default function VisitsClient({
       return b.visit_date.localeCompare(a.visit_date) // สถานะเดียวกัน: ใหม่ก่อน
     })
 
-  const pq = petQuery.trim().toLowerCase()
-  const petMatches = pets.filter((p) =>
-    !pq
-    || p.name.toLowerCase().includes(pq)
-    || (p.customers?.name ?? '').toLowerCase().includes(pq)
-    || (p.customers?.phone ?? '').includes(pq)
-  ).slice(0, 12)
+  const searchingPets = petQuery.trim().length > 0
+  const { results: petHits, loading: petLoading } = useLookup<Pet>('pets', petQuery)
+  // ยังไม่พิมพ์ = โชว์รายชื่อล่าสุด · พิมพ์แล้ว = ผลค้นจาก server
+  const petMatches = searchingPets ? petHits : recentPets
 
-  const oq = ownerQuery.trim().toLowerCase()
-  const ownerMatches = oq
-    ? customers.filter((c) => c.name.toLowerCase().includes(oq) || c.phone.includes(oq)).slice(0, 6)
-    : []
-  const selectedOwner = customers.find((c) => c.id === ownerId)
+  const { results: ownerMatches } = useLookup<OwnerOption>('customers', ownerQuery)
 
   const lastWeight = selectedPet ? lastWeights[selectedPet.id] : undefined
   const weightDiff = lastWeight && weight.trim() !== '' ? Number(weight) - lastWeight.weight : null
@@ -409,8 +405,11 @@ export default function VisitsClient({
                   autoFocus
                   onChange={(e) => setPetQuery(e.target.value)}
                   placeholder="พิมพ์ชื่อสัตว์ / เจ้าของ / เบอร์โทร..."
-                  className={`${inputClass} mb-3`}
+                  className={`${inputClass} mb-1`}
                 />
+                <p className="text-xs text-gray-400 mb-3">
+                  {searchingPets ? 'ผลการค้นหา' : 'สัตว์ที่ลงทะเบียนล่าสุด — พิมพ์เพื่อค้นทั้งหมด'}
+                </p>
 
                 <button
                   onClick={() => { setAddingPet(true); setPetForm({ ...emptyPetForm, name: petQuery.trim() }) }}
@@ -439,7 +438,9 @@ export default function VisitsClient({
                     </button>
                   ))}
                   {petMatches.length === 0 && (
-                    <p className="py-6 text-center text-sm text-gray-400">ไม่พบสัตว์เลี้ยง — ลงทะเบียนใหม่ได้จากปุ่มด้านบน</p>
+                    <p className="py-6 text-center text-sm text-gray-400">
+                      {petLoading ? 'กำลังค้นหา…' : 'ไม่พบสัตว์เลี้ยง — ลงทะเบียนใหม่ได้จากปุ่มด้านบน'}
+                    </p>
                   )}
                 </div>
               </>
@@ -523,7 +524,7 @@ export default function VisitsClient({
                       <div className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm">
                         {selectedOwner.name} <span className="text-gray-400 font-mono">{selectedOwner.phone}</span>
                       </div>
-                      <button onClick={() => { setOwnerId(''); setOwnerQuery('') }} className="p-2 text-gray-400 hover:text-red-600">
+                      <button onClick={() => { setOwnerId(''); setSelectedOwner(null); setOwnerQuery('') }} className="p-2 text-gray-400 hover:text-red-600">
                         <X size={15} />
                       </button>
                     </div>
@@ -539,7 +540,7 @@ export default function VisitsClient({
                       {ownerMatches.length > 0 && (
                         <div className="absolute z-10 left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg overflow-hidden">
                           {ownerMatches.map((c) => (
-                            <button key={c.id} onClick={() => { setOwnerId(c.id); setOwnerQuery('') }} className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50">
+                            <button key={c.id} onClick={() => { setOwnerId(c.id); setSelectedOwner(c); setOwnerQuery('') }} className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50">
                               {c.name} <span className="text-gray-400 font-mono">{c.phone}</span>
                             </button>
                           ))}
