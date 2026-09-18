@@ -6,8 +6,9 @@ import { redeemLinkToken, unlinkCustomerChat } from '@/lib/customer-notify'
 // Telegram เรียก endpoint นี้เมื่อมีข้อความเข้าบอท (public — proxy.ts ปล่อย /api/telegram)
 // ป้องกันคนอื่นยิงมั่วด้วย secret token header ที่ตั้งตอน setWebhook
 export async function POST(request: NextRequest) {
+  // fail closed — ถ้า env หาย ต้องปฏิเสธทุกคน ไม่ใช่เปิดรับทุกคน
   const secret = process.env.TELEGRAM_WEBHOOK_SECRET
-  if (secret && request.headers.get('x-telegram-bot-api-secret-token') !== secret) {
+  if (!secret || request.headers.get('x-telegram-bot-api-secret-token') !== secret) {
     return NextResponse.json({ ok: false }, { status: 401 })
   }
 

@@ -1,14 +1,13 @@
 import { NextResponse, type NextRequest } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
+import { getStaff } from '@/lib/require-staff'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { buildShiftCloseMessage, notifyEvent } from '@/lib/notify'
 
 // เรียกจากหน้าปิดกะหลังบันทึกสำเร็จ — พนักงานที่ login แล้วเท่านั้น
 // แยกเป็น route เพราะฝั่ง client ไม่มี TELEGRAM_BOT_TOKEN (และไม่ควรมี)
 export async function POST(request: NextRequest) {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
+  // ต้องเป็นพนักงานที่อนุมัติแล้ว — แค่มี session ยังไม่พอ (ดู lib/require-staff)
+  if (!(await getStaff())) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
 
   const { shiftId } = await request.json()
   if (!shiftId) return NextResponse.json({ error: 'missing shiftId' }, { status: 400 })

@@ -1,13 +1,12 @@
 import { NextResponse, type NextRequest } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
+import { getAdmin } from '@/lib/require-staff'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { sendTelegramMessage } from '@/lib/notify'
 
-// อนุมัติผู้ขอรับแจ้งเตือน — พนักงานที่ login แล้วเท่านั้น
+// อนุมัติผู้ขอรับแจ้งเตือน — แอดมินเท่านั้น
 export async function POST(request: NextRequest) {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
+  // อนุมัติผู้รับแจ้งเตือน = ปล่อยข้อมูลยอดขายออกนอกร้าน ต้องเป็นแอดมินเท่านั้น
+  if (!(await getAdmin())) return NextResponse.json({ error: 'forbidden' }, { status: 403 })
 
   const { id } = await request.json()
   if (!id) return NextResponse.json({ error: 'missing id' }, { status: 400 })

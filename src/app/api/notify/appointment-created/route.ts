@@ -1,13 +1,12 @@
 import { NextResponse, type NextRequest } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
+import { getStaff } from '@/lib/require-staff'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { buildNewAppointmentMessage, notifyEvent } from '@/lib/notify'
 
 // เรียกหลังบันทึกนัดใหม่สำเร็จ (หน้านัดหมาย + หน้า OPD) — พนักงานที่ login แล้วเท่านั้น
 export async function POST(request: NextRequest) {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
+  // ต้องเป็นพนักงานที่อนุมัติแล้ว — แค่มี session ยังไม่พอ (ดู lib/require-staff)
+  if (!(await getStaff())) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
 
   const { appointmentId } = await request.json()
   if (!appointmentId) return NextResponse.json({ error: 'missing appointmentId' }, { status: 400 })

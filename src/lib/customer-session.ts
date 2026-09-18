@@ -12,11 +12,18 @@ export const OAUTH_STATE_COOKIE = 'lb_oauth_state'
 const SESSION_MAX_AGE = 60 * 60 * 24 * 30 // 30 วัน
 const PENDING_MAX_AGE = 60 * 15 // 15 นาที
 
+/** แยกกุญแจของคุกกี้ออกจากกุญแจอื่น เผื่อวันหนึ่งต้องหมุนอย่างใดอย่างหนึ่ง */
+const SESSION_KEY_CONTEXT = 'landbark-customer-session-v1'
+
 function secretKey() {
-  // ตั้ง CUSTOMER_SESSION_SECRET เองได้; ไม่ตั้ง = ใช้ service role key (เป็นความลับฝั่ง server อยู่แล้ว)
-  const secret = process.env.CUSTOMER_SESSION_SECRET || process.env.SUPABASE_SERVICE_ROLE_KEY
-  if (!secret) throw new Error('missing CUSTOMER_SESSION_SECRET')
-  return new TextEncoder().encode(secret)
+  const explicit = process.env.CUSTOMER_SESSION_SECRET
+  if (explicit) return new TextEncoder().encode(explicit)
+
+  // ไม่ได้ตั้งไว้ → ใช้ service role key เป็นวัตถุดิบ แต่ไม่เอามาใช้ตรง ๆ
+  // เติม context นำหน้าให้เป็นกุญแจคนละดอก จะได้ไม่ใช้กุญแจเดียวสองหน้าที่
+  const fallback = process.env.SUPABASE_SERVICE_ROLE_KEY
+  if (!fallback) throw new Error('missing CUSTOMER_SESSION_SECRET')
+  return new TextEncoder().encode(`${SESSION_KEY_CONTEXT}:${fallback}`)
 }
 
 async function sign(payload: string) {

@@ -35,7 +35,8 @@ type Status = 'loading' | 'need-phone' | 'linking' | 'ready' | 'error'
 
 export default function MemberClient() {
   const [status, setStatus] = useState<Status>('loading')
-  const [lineUserId, setLineUserId] = useState<string | null>(null)
+  // เก็บ ID token ไม่ใช่ userId — ฝั่ง server ต้องยืนยันกับ LINE เองว่าเป็นเจ้าของบัญชีจริง
+  const [idToken, setIdToken] = useState<string | null>(null)
   const [customer, setCustomer] = useState<CustomerData | null>(null)
   const [transactions, setTransactions] = useState<TxRow[]>([])
   const [phone, setPhone] = useState('')
@@ -55,11 +56,20 @@ export default function MemberClient() {
           return
         }
 
-        const profile = await liff.getProfile()
+        const token = liff.getIDToken()
         if (cancelled) return
-        setLineUserId(profile.userId)
+        if (!token) {
+          setErrorMsg('ยืนยันตัวตนกับ LINE ไม่สำเร็จ — ลองเปิดใหม่อีกครั้ง')
+          setStatus('error')
+          return
+        }
+        setIdToken(token)
 
-        const res = await fetch(`/api/member/me?lineUserId=${encodeURIComponent(profile.userId)}`)
+        const res = await fetch('/api/member/me', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ idToken: token }),
+        })
         const data = await res.json()
         if (cancelled) return
 
@@ -84,14 +94,14 @@ export default function MemberClient() {
 
   async function handleLink(e: React.FormEvent) {
     e.preventDefault()
-    if (!lineUserId || !phone.trim()) return
+    if (!idToken || !phone.trim()) return
     setStatus('linking')
     setErrorMsg('')
     try {
       const res = await fetch('/api/member/link', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ lineUserId, phone: phone.trim() }),
+        body: JSON.stringify({ idToken, phone: phone.trim() }),
       })
       const data = await res.json()
       if (!res.ok) {
@@ -100,7 +110,11 @@ export default function MemberClient() {
         return
       }
       setCustomer(data)
-      const txRes = await fetch(`/api/member/me?lineUserId=${encodeURIComponent(lineUserId)}`)
+      const txRes = await fetch('/api/member/me', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ idToken }),
+      })
       const txData = await txRes.json()
       setTransactions(txData.transactions ?? [])
       setStatus('ready')

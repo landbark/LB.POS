@@ -1,15 +1,12 @@
 import { NextResponse, type NextRequest } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { getStaff } from '@/lib/require-staff'
 
 const BUCKET = 'product-images'
 const MAX_SIZE = 1024 * 1024 // 1MB — รูปถูก compress ฝั่ง browser แล้ว ควรเล็กกว่านี้มาก
 
-async function requireUser() {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  return user
-}
+// ต้องเป็นพนักงานที่อนุมัติแล้ว — แค่มี session ยังไม่พอ (ดู lib/require-staff)
+const requireUser = getStaff
 
 // อัปโหลดรูปสินค้า (ผ่าน service role — ไม่ต้องเปิด storage policy ฝั่ง client)
 export async function POST(request: NextRequest) {

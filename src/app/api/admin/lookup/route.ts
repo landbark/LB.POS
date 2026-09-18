@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { getStaff } from '@/lib/require-staff'
 
 /**
  * ค้นหาลูกค้า/สัตว์เลี้ยงสำหรับช่องเลือกในหน้าหลังร้าน
@@ -15,9 +16,10 @@ const LIMIT = 10
 const escapeLike = (q: string) => q.replace(/[%_\\]/g, (c) => `\\${c}`)
 
 export async function GET(request: NextRequest) {
+  // ต้องเป็นพนักงานที่อนุมัติแล้ว — แค่มี session ยังไม่พอ (ดู lib/require-staff)
+  if (!(await getStaff())) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
+
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
 
   const type = request.nextUrl.searchParams.get('type')
   const raw = (request.nextUrl.searchParams.get('q') ?? '').trim()
