@@ -68,9 +68,8 @@ export default function POSClient({ products, promotions, pointsConfig, cashierI
       p.name.toLowerCase().includes(search.toLowerCase()) ||
       (p.barcode && p.barcode.includes(search))
     const matchCategory = !categoryFilter || (p.categories as any)?.name === categoryFilter
-    // ค่าตรวจ/ค่าหัตถการไม่มีสต็อค — ขายได้เสมอ
-    const hasStock = p.is_service || (p.product_lots ?? []).reduce((s: number, l: any) => s + l.quantity, 0) > 0
-    return matchSearch && matchCategory && hasStock
+    // สินค้าสต็อค 0 ยังโชว์ — ของบนชั้นมักมีจริงแม้ยอดในระบบหมด ขายได้แล้วให้สต็อคติดลบไว้ฟ้องว่าต้องนับใหม่
+    return matchSearch && matchCategory
   })
 
   function getProductStock(product: Product): number {
@@ -125,10 +124,7 @@ export default function POSClient({ products, promotions, pointsConfig, cashierI
       const newCart = [...cart]
       const item = newCart[existing]
       const newQty = item.quantity + 1
-      if (newQty > maxStock) {
-        toast.error(`สต็อคคงเหลือ ${maxStock} ${product.unit}`)
-        return
-      }
+      if (newQty > maxStock) toast(`ขายเกินสต็อค — คงเหลือในระบบ ${maxStock} ${product.unit}`, { icon: '⚠️' })
       const discount = applyPromotion(product, newQty)
       newCart[existing] = {
         ...item,
@@ -168,7 +164,7 @@ export default function POSClient({ products, promotions, pointsConfig, cashierI
 
     const short = visit.items.filter((i) => !i.product.is_service && getProductStock(i.product) < i.quantity)
     if (short.length > 0) {
-      toast.error(`สต็อคไม่พอ: ${short.map((i) => i.product.name).join(', ')}`)
+      toast(`ขายเกินสต็อค: ${short.map((i) => i.product.name).join(', ')}`, { icon: '⚠️' })
     }
 
     setCart(visit.items.map((i) => ({
@@ -193,13 +189,10 @@ export default function POSClient({ products, promotions, pointsConfig, cashierI
     if (newQty <= 0) {
       newCart.splice(index, 1)
     } else {
-      // เช็คสต็อคเฉพาะตอนเพิ่ม — การลดต้องทำได้เสมอ
+      // เตือนตอนเพิ่มเกินสต็อค แต่ไม่บล็อก — ร้านเลือกให้ขายได้แล้วค่อยไปนับสต็อคใหม่
       if (delta > 0) {
         const maxStock = getProductStock(item.product)
-        if (newQty > maxStock) {
-          toast.error(`สต็อคคงเหลือ ${maxStock} ${item.product.unit}`)
-          return
-        }
+        if (newQty > maxStock) toast(`ขายเกินสต็อค — คงเหลือในระบบ ${maxStock} ${item.product.unit}`, { icon: '⚠️' })
       }
       const discount = applyPromotion(item.product, newQty)
       newCart[index] = {
@@ -212,17 +205,14 @@ export default function POSClient({ products, promotions, pointsConfig, cashierI
     setCart(newCart)
   }
 
-  // พิมพ์จำนวนตรงๆ ในตะกร้า — clamp ไม่ให้เกินสต็อคและไม่ต่ำกว่า 1
+  // พิมพ์จำนวนตรงๆ ในตะกร้า — เกินสต็อคได้ แค่เตือน ห้ามต่ำกว่า 1
   function setQty(index: number, raw: string) {
     if (raw === '') return
     let n = parseInt(raw)
     if (isNaN(n)) return
     const item = cart[index]
     const maxStock = getProductStock(item.product)
-    if (n > maxStock) {
-      toast.error(`สต็อคคงเหลือ ${maxStock} ${item.product.unit}`)
-      n = maxStock
-    }
+    if (n > maxStock) toast(`ขายเกินสต็อค — คงเหลือในระบบ ${maxStock} ${item.product.unit}`, { icon: '⚠️' })
     if (n < 1) n = 1
     const discount = applyPromotion(item.product, n)
     const newCart = [...cart]
@@ -281,11 +271,7 @@ export default function POSClient({ products, promotions, pointsConfig, cashierI
   function handleSearchEnter() {
     const q = search.trim()
     if (!q) return
-    const exact = products.find(
-      (p) =>
-        p.barcode === q &&
-        (p.product_lots ?? []).reduce((s: number, l: any) => s + l.quantity, 0) > 0
-    )
+    const exact = products.find((p) => p.barcode === q)
     const target = exact ?? (filtered.length === 1 ? filtered[0] : null)
     if (target) {
       addToCart(target)
@@ -404,8 +390,8 @@ export default function POSClient({ products, promotions, pointsConfig, cashierI
                   <p className="text-sm font-bold text-blue-600">
                     ฿{product.price.toLocaleString('th-TH', { minimumFractionDigits: 2 })}
                   </p>
-                  <p className="text-xs text-gray-400 mt-0.5">
-                    {product.is_service ? 'บริการ' : `คงเหลือ ${stock}`}
+                  <p className={`text-xs mt-0.5 ${!product.is_service && stock <= 0 ? 'text-red-500 font-medium' : 'text-gray-400'}`}>
+                    {product.is_service ? 'บริการ' : stock <= 0 ? `สต็อคหมด (${stock})` : `คงเหลือ ${stock}`}
                   </p>
                 </button>
               )

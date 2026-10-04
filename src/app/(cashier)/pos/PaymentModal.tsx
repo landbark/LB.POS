@@ -200,6 +200,44 @@ export default function PaymentModal({
         })
         remaining -= deduct
       }
+
+      // ขายเกินสต็อค — ของมีจริงบนชั้นแต่ยอดในระบบหมด ตัดต่อให้ติดลบไว้ฟ้องว่าต้องไปนับสต็อคใหม่
+      // (ต้องถอด CHECK (quantity >= 0) ออกจาก product_lots ก่อน ดู supabase-migration-oversell.sql)
+      if (remaining > 0 && !item.product.is_service) {
+        const { data: fallback } = await supabase
+          .from('product_lots')
+          .select('id, quantity')
+          .eq('product_id', item.product.id)
+          .order('expiry_date', { ascending: true, nullsFirst: false })
+          .limit(1)
+          .maybeSingle()
+
+        let lotId = fallback?.id ?? null
+        let current = fallback?.quantity ?? 0
+        if (!lotId) {
+          // สินค้าไม่เคยมีล็อตเลย — สร้างล็อตไว้รับยอดติดลบ จะได้คืนของได้ตอนยกเลิกบิล
+          const { data: created } = await supabase
+            .from('product_lots')
+            .insert({ product_id: item.product.id, lot_number: 'OVERSELL', expiry_date: null, quantity: 0, initial_quantity: 0 })
+            .select('id')
+            .single()
+          lotId = created?.id ?? null
+          current = 0
+        }
+
+        if (lotId) {
+          await supabase.from('product_lots').update({ quantity: current - remaining }).eq('id', lotId)
+          await supabase.from('stock_movements').insert({
+            product_id: item.product.id,
+            product_lot_id: lotId,
+            transaction_id: tx.id,
+            type: 'sale',
+            quantity: remaining,
+            reason: `${tx.transaction_number} (ขายเกินสต็อค)`,
+            created_by: cashierId,
+          })
+        }
+      }
     }
 
     // ปิดเวชระเบียนคลินิกที่เพิ่งเก็บเงิน — ผูกกับบิลไว้เพื่อพิมพ์ใบเสร็จซ้ำ/คืนสถานะตอนยกเลิกบิล
