@@ -330,10 +330,14 @@ export default function VisitDetail({
     p.is_service ? null : (p.product_lots ?? []).reduce((s, l) => s + l.quantity, 0)
 
   // ค้นหาแยกตามชนิด: บริการ (is_service) กับ ยา (ไม่ใช่บริการ)
+  // ช่องยาเอาเฉพาะของคลินิก — อาหาร/ของใช้เพ็ทช็อปมีเป็นพันรายการ ไม่ควรโผล่ตอนสั่งจ่ายยา
+  // อยากให้ตัวไหนสั่งจ่ายได้ (เช่น อาหารสูตรเฉพาะโรค) ให้ติ๊ก "ของคลินิก" ที่สินค้าตัวนั้น
   const matchProducts = (query: string, wantService: boolean) => {
     const q = query.trim().toLowerCase()
     if (!q) return []
-    return products.filter((p) => p.is_service === wantService && p.name.toLowerCase().includes(q)).slice(0, 8)
+    return products
+      .filter((p) => p.is_service === wantService && (wantService || isClinicOnly(p)) && p.name.toLowerCase().includes(q))
+      .slice(0, 8)
   }
   const serviceMatches = matchProducts(serviceQuery, true)
   const rxMatches = matchProducts(rxQuery, false)
@@ -348,6 +352,7 @@ export default function VisitDetail({
     setQuery: (v: string) => void,
     matches: DispensableProduct[],
     placeholder: string,
+    showClinicBadge = true,
   ) => (
     <div className="relative mb-3">
       <div className="flex items-center gap-2">
@@ -372,7 +377,7 @@ export default function VisitDetail({
               >
                 <span>
                   {p.name}
-                  {isClinicOnly(p) && <span className="ml-1.5 text-xs text-amber-600">ของคลินิก</span>}
+                  {showClinicBadge && isClinicOnly(p) && <span className="ml-1.5 text-xs text-amber-600">ของคลินิก</span>}
                 </span>
                 <span className="text-xs text-gray-400 shrink-0">
                   ฿{p.price.toLocaleString('th-TH')} {stock !== null && `· เหลือ ${stock}`}
@@ -647,7 +652,7 @@ export default function VisitDetail({
       {/* Prescription (Rx) — ยา (สินค้าที่ไม่ใช่ service) */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 mb-4">
         <h2 className="text-sm font-semibold text-gray-900 mb-3">Prescription (Rx)</h2>
-        {!itemsLocked && renderAddBox(rxQuery, setRxQuery, rxMatches, 'พิมพ์ชื่อยา เพื่อเพิ่มรายการ...')}
+        {!itemsLocked && renderAddBox(rxQuery, setRxQuery, rxMatches, 'พิมพ์ชื่อยา เพื่อเพิ่มรายการ...', false)}
         {renderItemsTable(rxItems, true, 'ยังไม่มีรายการยา')}
       </div>
 
