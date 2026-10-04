@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { fetchAllRows } from '@/lib/fetch-all'
 import Link from 'next/link'
 import { Plus } from 'lucide-react'
 import ProductRow from './ProductRow'
@@ -7,16 +8,20 @@ import BulkImportButton from './BulkImportButton'
 export default async function ProductsPage() {
   const supabase = await createClient()
 
-  const [{ data: { user } }, { data: products }, { data: categories }, { data: units }, { data: suppliers }] = await Promise.all([
+  const [{ data: { user } }, products, { data: categories }, { data: units }, { data: suppliers }] = await Promise.all([
     supabase.auth.getUser(),
-    supabase
-      .from('products')
-      .select(`
-        *,
-        categories(name, clinic_only),
-        product_lots(id, lot_number, expiry_date, quantity)
-      `)
-      .order('name'),
+    // ไล่ดึงทีละหน้า — supabase ตัดที่ 1000 แถว ส่วนร้านมีสินค้าเกินนั้นแล้ว
+    fetchAllRows((from, to) =>
+      supabase
+        .from('products')
+        .select(`
+          *,
+          categories(name, clinic_only),
+          product_lots(id, lot_number, expiry_date, quantity)
+        `)
+        .order('name')
+        .range(from, to)
+    ),
     supabase.from('categories').select('*').order('name'),
     supabase.from('units').select('*').order('name'),
     supabase.from('suppliers').select('id, name').order('name'),

@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { fetchAllRows } from '@/lib/fetch-all'
 import { isClinicOnly } from '@/lib/clinic'
 import type { ClinicQueueItem, Customer } from '@/lib/types'
 import POSClient from './POSClient'
@@ -7,16 +8,20 @@ export default async function POSPage() {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
 
-  const [{ data: products }, { data: promotions }, { data: pointsConfig }, { data: storeSettings }, { data: pendingVisits }] = await Promise.all([
-    supabase
-      .from('products')
-      .select(`
-        *,
-        categories(name, vat_applicable, clinic_only),
-        product_lots(id, quantity, expiry_date, lot_number)
-      `)
-      .eq('active', true)
-      .order('name'),
+  const [products, { data: promotions }, { data: pointsConfig }, { data: storeSettings }, { data: pendingVisits }] = await Promise.all([
+    // ไล่ดึงทีละหน้า — supabase ตัดที่ 1000 แถว ส่วนร้านมีสินค้าเกินนั้นแล้ว
+    fetchAllRows((from, to) =>
+      supabase
+        .from('products')
+        .select(`
+          *,
+          categories(name, vat_applicable, clinic_only),
+          product_lots(id, quantity, expiry_date, lot_number)
+        `)
+        .eq('active', true)
+        .order('name')
+        .range(from, to)
+    ),
     supabase
       .from('promotions')
       .select('*')
@@ -37,10 +42,10 @@ export default async function POSPage() {
   const activePointsConfig = pointsConfig?.enabled === false ? null : pointsConfig
 
   // ยา/เวชภัณฑ์ไม่ขายหน้าร้าน — หมอสั่งจ่ายจากหน้าตรวจรักษา แล้วส่งเข้าตะกร้ามาเก็บเงินแทน
-  const shelfProducts = (products ?? []).filter((p) => !isClinicOnly(p))
+  const shelfProducts = products.filter((p) => !isClinicOnly(p))
 
   // ผูกสินค้าเต็มก้อน (พร้อมล็อต) ให้รายการจากคลินิก เพราะยาถูกกรองออกจาก shelfProducts ไปแล้ว
-  const productById = new Map((products ?? []).map((p) => [p.id, p]))
+  const productById = new Map(products.map((p) => [p.id, p]))
   const clinicQueue = (pendingVisits ?? []).map((v) => ({
     id: v.id,
     visit_number: v.visit_number,
