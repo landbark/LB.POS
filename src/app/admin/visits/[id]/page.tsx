@@ -1,6 +1,6 @@
 import { notFound } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
-import { fetchAllRows } from '@/lib/fetch-all'
+import { fetchAll } from '@/lib/supabase/fetch-all'
 import VisitDetail from './VisitDetail'
 
 export default async function VisitPage({ params }: { params: Promise<{ id: string }> }) {
@@ -24,12 +24,13 @@ export default async function VisitPage({ params }: { params: Promise<{ id: stri
 
   const [products, { data: history }, { data: vaccinations }, { data: vaccines }, { data: profile }] = await Promise.all([
     // ไล่ดึงทีละหน้า — supabase ตัดที่ 1000 แถว ยาหลายตัวเรียงตามชื่อแล้วตกขอบหายไปจากช่องสั่งจ่าย
-    fetchAllRows((from, to) =>
+    fetchAll((from, to) =>
       supabase
         .from('products')
         .select('id, name, unit, price, is_service, clinic_only, categories(name, clinic_only), product_lots(quantity)')
         .eq('active', true)
         .order('name')
+        .order('id')   // ชื่อสินค้าซ้ำได้ ต้องมีคีย์ไม่ซ้ำปิดท้าย ไม่งั้นแถวซ้ำ/หายระหว่างหน้า
         .range(from, to)
     ),
     // ประวัติการรักษาครั้งก่อนของสัตว์ตัวนี้

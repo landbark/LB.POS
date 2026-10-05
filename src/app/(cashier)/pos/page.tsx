@@ -1,5 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
-import { fetchAllRows } from '@/lib/fetch-all'
+import { fetchAll } from '@/lib/supabase/fetch-all'
 import { isClinicOnly } from '@/lib/clinic'
 import type { ClinicQueueItem, Customer } from '@/lib/types'
 import POSClient from './POSClient'
@@ -10,7 +10,7 @@ export default async function POSPage() {
 
   const [products, { data: promotions }, { data: pointsConfig }, { data: storeSettings }, { data: pendingVisits }] = await Promise.all([
     // ไล่ดึงทีละหน้า — supabase ตัดที่ 1000 แถว ส่วนร้านมีสินค้าเกินนั้นแล้ว
-    fetchAllRows((from, to) =>
+    fetchAll((from, to) =>
       supabase
         .from('products')
         .select(`
@@ -20,6 +20,7 @@ export default async function POSPage() {
         `)
         .eq('active', true)
         .order('name')
+        .order('id')   // ชื่อสินค้าซ้ำได้ ต้องมีคีย์ไม่ซ้ำปิดท้าย ไม่งั้นแถวซ้ำ/หายระหว่างหน้า
         .range(from, to)
     ),
     supabase

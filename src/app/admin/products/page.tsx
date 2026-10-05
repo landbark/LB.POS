@@ -1,5 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
-import { fetchAllRows } from '@/lib/fetch-all'
+import { fetchAll } from '@/lib/supabase/fetch-all'
 import Link from 'next/link'
 import { Plus } from 'lucide-react'
 import ProductRow from './ProductRow'
@@ -11,7 +11,7 @@ export default async function ProductsPage() {
   const [{ data: { user } }, products, { data: categories }, { data: units }, { data: suppliers }] = await Promise.all([
     supabase.auth.getUser(),
     // ไล่ดึงทีละหน้า — supabase ตัดที่ 1000 แถว ส่วนร้านมีสินค้าเกินนั้นแล้ว
-    fetchAllRows((from, to) =>
+    fetchAll((from, to) =>
       supabase
         .from('products')
         .select(`
@@ -20,6 +20,7 @@ export default async function ProductsPage() {
           product_lots(id, lot_number, expiry_date, quantity)
         `)
         .order('name')
+        .order('id')   // ชื่อสินค้าซ้ำได้ ต้องมีคีย์ไม่ซ้ำปิดท้าย ไม่งั้นแถวซ้ำ/หายระหว่างหน้า
         .range(from, to)
     ),
     supabase.from('categories').select('*').order('name'),
