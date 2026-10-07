@@ -50,6 +50,7 @@ export default function ProductRow({ product }: { product: Product }) {
                 {product.unit}
                 {clinicOnly && <span className="ml-1.5 text-amber-600">· ของคลินิก</span>}
                 {product.is_service && <span className="ml-1.5 text-gray-400">· บริการ</span>}
+                {product.on_shopee && <span className="ml-1.5 text-orange-600">· Shopee</span>}
                 {!product.is_service && !clinicOnly && (
                   product.weight_grams != null
                     ? <span className="ml-1.5 text-gray-400">· {formatWeight(product.weight_grams)}</span>

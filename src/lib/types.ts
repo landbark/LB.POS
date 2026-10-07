@@ -76,6 +76,8 @@ export interface Product {
   weight_grams: number | null
   /** ขึ้นขายบนหน้าเว็บร้านค้าออนไลน์ */
   online_available: boolean
+  /** ลงขายไว้บนร้าน Shopee แล้ว — ร้านติ๊กเอง ใช้คัดรายการตอนออกไฟล์ไปอัปเดตฝั่ง Shopee */
+  on_shopee: boolean
   /** คำอธิบายสินค้าสำหรับหน้าเว็บ (ไม่ใส่ = โชว์แค่ชื่อ) */
   online_description: string | null
   image_url: string | null

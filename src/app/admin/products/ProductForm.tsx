@@ -37,6 +37,7 @@ export default function ProductForm({ categories, units, suppliers, product }: P
     is_service: product?.is_service ?? false,
     weight_grams: product?.weight_grams?.toString() ?? '',
     online_available: product?.online_available ?? false,
+    on_shopee: product?.on_shopee ?? false,
     online_description: product?.online_description ?? '',
   })
 
@@ -152,6 +153,7 @@ export default function ProductForm({ categories, units, suppliers, product }: P
       is_service: form.is_service,
       weight_grams: form.weight_grams.trim() ? parseInt(form.weight_grams) : null,
       online_available: form.online_available,
+      on_shopee: form.on_shopee,
       online_description: form.online_description.trim() || null,
     }
 
@@ -453,6 +455,17 @@ export default function ProductForm({ categories, units, suppliers, product }: P
             </p>
           </div>
         )}
+
+        <label className="flex items-center gap-2 text-sm font-medium text-gray-700 rounded-lg border border-gray-200 p-4">
+          <input
+            type="checkbox"
+            checked={form.on_shopee}
+            onChange={(e) => setForm((prev) => ({ ...prev, on_shopee: e.target.checked }))}
+            className="w-4 h-4 accent-orange-600"
+          />
+          ลงขายบน Shopee แล้ว
+          <span className="font-normal text-xs text-gray-400">— ใช้คัดรายการตอนออกไฟล์ไปอัปเดตฝั่ง Shopee</span>
+        </label>
 
         <div className="rounded-lg border border-gray-200 p-4 space-y-3">
           <label className="flex items-center gap-2 text-sm font-medium text-gray-700">
