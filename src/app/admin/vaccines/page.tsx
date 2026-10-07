@@ -1,5 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
-import { dueVaccinations } from '@/lib/vaccines'
+import { dueVaccinations, groupDueByPet } from '@/lib/vaccines'
 import VaccinesClient from './VaccinesClient'
 
 const todayISO = () => new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Bangkok' })
@@ -28,15 +28,22 @@ export default async function VaccinesPage() {
   // ครบกำหนด/เกินกำหนด ในกรอบ 45 วัน (PostgREST infer relation เป็น array — cast ผ่าน unknown)
   const due = dueVaccinations((rows ?? []) as unknown as Row[], todayISO(), 45)
 
-  const items = due.map((d) => ({
-    petId: d.row.pets?.id ?? '',
-    petName: d.row.pets?.name ?? '—',
-    ownerName: d.row.pets?.customers?.name ?? null,
-    ownerPhone: d.row.pets?.customers?.phone ?? null,
-    vaccineName: d.row.vaccine_name,
-    dueDate: d.row.next_due_date,
-    overdue: d.overdue,
-  }))
+  // สัตว์ตัวเดียวมักครบหลายเข็มพร้อมกัน — รวมเป็นรายการเดียวแล้วไล่เข็มข้างใน
+  const items = groupDueByPet(due).map((g) => {
+    const pet = g.doses[0].row.pets
+    return {
+      petId: pet?.id ?? '',
+      petName: pet?.name ?? '—',
+      ownerName: pet?.customers?.name ?? null,
+      ownerPhone: pet?.customers?.phone ?? null,
+      overdue: g.overdue,
+      doses: g.doses.map((d) => ({
+        vaccineName: d.row.vaccine_name,
+        dueDate: d.row.next_due_date,
+        overdue: d.overdue,
+      })),
+    }
+  })
 
   return <VaccinesClient items={items} vaccines={vaccines ?? []} />
 }

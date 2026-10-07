@@ -1,5 +1,5 @@
 import { createAdminClient } from '@/lib/supabase/admin'
-import { dueVaccinations } from '@/lib/vaccines'
+import { dueVaccinations, groupDueByPet } from '@/lib/vaccines'
 import { fetchAll } from '@/lib/supabase/fetch-all'
 
 const MAX_ITEMS_PER_SECTION = 15
@@ -190,13 +190,20 @@ export async function gatherDueVaccines(admin: ReturnType<typeof createAdminClie
 export function buildVaccineMessage(due: Awaited<ReturnType<typeof gatherDueVaccines>>): string | null {
   if (due.length === 0) return null
 
-  const lines = due.map((d) => {
-    const owner = [d.row.pets?.customers?.name, d.row.pets?.customers?.phone].filter(Boolean).join(' ')
-    const tag = d.overdue ? '⚠️เกินกำหนด' : '⏰'
-    return `• ${tag} ${d.row.pets?.name ?? '—'} — ${d.row.vaccine_name}${d.row.next_due_date ? ` (${dateTh(d.row.next_due_date)})` : ''}${owner ? `\n   ${owner}` : ''}`
+  // รวมตามสัตว์ — ตัวเดียวมักครบหลายเข็มพร้อมกัน แยกบรรทัดแล้วโทรตามซ้ำและโดน capped() ตัดทิ้งเร็ว
+  const pets = groupDueByPet(due)
+
+  const lines = pets.map((g) => {
+    const pet = g.doses[0].row.pets
+    const owner = [pet?.customers?.name, pet?.customers?.phone].filter(Boolean).join(' ')
+    const tag = g.overdue ? '⚠️เกินกำหนด' : '⏰'
+    const doses = g.doses
+      .map((d) => `${d.row.vaccine_name}${d.row.next_due_date ? ` (${dateTh(d.row.next_due_date)})` : ''}`)
+      .join('\n     ')
+    return `• ${tag} ${pet?.name ?? '—'}\n     ${doses}${owner ? `\n   ${owner}` : ''}`
   })
 
-  return [`💉 LANDBARK วัคซีนครบกำหนด — ${due.length} รายการ`, ...capped(lines)].join('\n')
+  return [`💉 LANDBARK วัคซีนครบกำหนด — ${pets.length} ตัว (${due.length} เข็ม)`, ...capped(lines)].join('\n')
 }
 
 /** ตัดรายการยาว ๆ ให้เหลือเท่าที่อ่านไหว — รายละเอียดทั้งหมดดูในเว็บเอา */

@@ -10,14 +10,20 @@ import { SPECIES_LABELS, type PetSpecies, type Vaccine } from '@/lib/types'
 import { composeBreed } from '@/lib/pets'
 import { confirmDialog } from '@/lib/confirm'
 
+interface DueDose {
+  vaccineName: string
+  dueDate: string | null
+  overdue: boolean
+}
+
 interface DueItem {
   petId: string
   petName: string
   ownerName: string | null
   ownerPhone: string | null
-  vaccineName: string
-  dueDate: string | null
+  /** เกินกำหนดอย่างน้อยหนึ่งเข็ม */
   overdue: boolean
+  doses: DueDose[]
 }
 
 const inputClass = 'w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500'
@@ -62,21 +68,22 @@ export default function VaccinesClient({ items, vaccines }: { items: DueItem[]; 
   const overdue = items.filter((i) => i.overdue)
   const upcoming = items.filter((i) => !i.overdue)
 
-  const card = (i: DueItem, idx: number) => (
-    <Link
-      key={`${i.petId}-${i.vaccineName}-${idx}`}
-      href={`/admin/pets/${i.petId}`}
-      className="flex items-center justify-between gap-3 px-4 py-3 hover:bg-gray-50"
-    >
-      <div className="min-w-0">
-        <p className="text-sm font-medium text-gray-900">
-          {i.petName} <span className="font-normal text-gray-400">· {i.ownerName ?? 'ไม่ระบุเจ้าของ'}{i.ownerPhone ? ` ${i.ownerPhone}` : ''}</span>
-        </p>
-        <p className="text-xs text-gray-500">{i.vaccineName}</p>
+  const card = (i: DueItem) => (
+    <Link key={i.petId} href={`/admin/pets/${i.petId}`} className="block px-4 py-3 hover:bg-gray-50">
+      <p className="text-sm font-medium text-gray-900">
+        {i.petName} <span className="font-normal text-gray-400">· {i.ownerName ?? 'ไม่ระบุเจ้าของ'}{i.ownerPhone ? ` ${i.ownerPhone}` : ''}</span>
+        {i.doses.length > 1 && <span className="ml-1.5 text-xs text-gray-400">({i.doses.length} เข็ม)</span>}
+      </p>
+      <div className="mt-0.5 space-y-0.5">
+        {i.doses.map((d, idx) => (
+          <div key={`${d.vaccineName}-${idx}`} className="flex items-baseline justify-between gap-3">
+            <span className="text-xs text-gray-500 min-w-0">{d.vaccineName}</span>
+            <span className={`shrink-0 text-xs font-medium ${d.overdue ? 'text-red-600' : 'text-amber-600'}`}>
+              {d.dueDate && fmtDate(d.dueDate)}
+            </span>
+          </div>
+        ))}
       </div>
-      <span className={`shrink-0 text-xs font-medium ${i.overdue ? 'text-red-600' : 'text-amber-600'}`}>
-        {i.dueDate && fmtDate(i.dueDate)}
-      </span>
     </Link>
   )
 
@@ -98,7 +105,7 @@ export default function VaccinesClient({ items, vaccines }: { items: DueItem[]; 
         <div className="mb-6">
           <h2 className="text-sm font-semibold text-red-700 mb-2">⚠️ เกินกำหนด ({overdue.length})</h2>
           <div className="bg-white rounded-xl border border-red-100 divide-y divide-gray-50">
-            {overdue.map(card)}
+            {overdue.map((i) => card(i))}
           </div>
         </div>
       )}
@@ -106,7 +113,7 @@ export default function VaccinesClient({ items, vaccines }: { items: DueItem[]; 
       <div className="mb-6">
         <h2 className="text-sm font-semibold text-amber-700 mb-2">⏰ ครบกำหนดใน 45 วัน ({upcoming.length})</h2>
         <div className="bg-white rounded-xl border border-gray-100 divide-y divide-gray-50">
-          {upcoming.map(card)}
+          {upcoming.map((i) => card(i))}
           {upcoming.length === 0 && <p className="px-4 py-6 text-center text-sm text-gray-400">ไม่มีวัคซีนครบกำหนดเร็วๆ นี้</p>}
         </div>
       </div>

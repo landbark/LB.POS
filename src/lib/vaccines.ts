@@ -67,3 +67,43 @@ export function computeNextDue(doseISO: string, boosterType: string | null, cust
     default: return null
   }
 }
+
+export interface DuePet<T extends DueVaccinationRow> {
+  petId: string
+  /** เข็มที่ครบกำหนดของสัตว์ตัวนี้ เรียงตามวันนัดจากใกล้สุด */
+  doses: DueVaccination<T>[]
+  /** วันนัดที่ใกล้ที่สุด — ใช้เรียงลำดับรายการ */
+  earliestDue: string
+  /** มีอย่างน้อยหนึ่งเข็มที่เลยกำหนดแล้ว */
+  overdue: boolean
+}
+
+/**
+ * รวมผลจาก dueVaccinations() ให้เหลือสัตว์ละรายการ
+ *
+ * สัตว์ตัวหนึ่งมักครบกำหนดหลายเข็มพร้อมกัน (ฉีดวันเดียวกันก็ครบพร้อมกัน) แยกบรรทัดแล้ว
+ * รายชื่อยาวเกินจริงและโทรตามซ้ำซ้อน — รวมเป็นตัวเดียวแล้วไล่เข็มข้างในแทน
+ *
+ * สัตว์ที่มีทั้งเข็มเกินกำหนดและเข็มที่ยังไม่ถึง ให้ถือว่าเกินกำหนด (overdue = true)
+ * จะได้ไม่โผล่สองที่ แล้วค่อยดูสถานะรายเข็มในนั้น
+ */
+export function groupDueByPet<T extends DueVaccinationRow>(due: DueVaccination<T>[]): DuePet<T>[] {
+  const byPet = new Map<string, DueVaccination<T>[]>()
+  for (const d of due) {
+    const list = byPet.get(d.row.pet_id)
+    if (list) list.push(d)
+    else byPet.set(d.row.pet_id, [d])
+  }
+
+  const pets = Array.from(byPet, ([petId, doses]) => {
+    doses.sort((a, b) => (a.row.next_due_date ?? '').localeCompare(b.row.next_due_date ?? ''))
+    return {
+      petId,
+      doses,
+      earliestDue: doses[0].row.next_due_date ?? '',
+      overdue: doses.some((d) => d.overdue),
+    }
+  })
+  pets.sort((a, b) => a.earliestDue.localeCompare(b.earliestDue))
+  return pets
+}
