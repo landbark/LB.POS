@@ -434,6 +434,10 @@ export interface Transaction {
   cancel_reason: string | null
   restocked: boolean | null
   refund_method: RefundMethod | null
+  /** วิธีรับเงินที่บันทึกไว้ตอนขายครั้งแรก — มีค่าเมื่อมีคนแก้วิธีรับเงินภายหลัง */
+  payment_method_original: PaymentMethod | null
+  payment_edited_at: string | null
+  payment_edited_by: string | null
   created_at: string
   profiles?: Profile
   customers?: Customer

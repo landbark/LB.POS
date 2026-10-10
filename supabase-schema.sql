@@ -450,6 +450,9 @@ CREATE POLICY "auth read points_config" ON points_config FOR SELECT TO authentic
 CREATE POLICY "auth read promotions" ON promotions FOR SELECT TO authenticated USING (true);
 CREATE POLICY "auth manage transactions" ON transactions FOR ALL TO authenticated USING (true);
 CREATE POLICY "auth manage transaction_items" ON transaction_items FOR ALL TO authenticated USING (true);
+-- ใบเสร็จลบไม่ได้ ยกเลิกได้เท่านั้น (FOR ALL ข้างบนเปิด DELETE ไว้ — ทับด้วย RESTRICTIVE)
+CREATE POLICY "no delete transactions" ON transactions AS RESTRICTIVE FOR DELETE TO authenticated USING (false);
+CREATE POLICY "no delete transaction_items" ON transaction_items AS RESTRICTIVE FOR DELETE TO authenticated USING (false);
 CREATE POLICY "auth read stock_movements" ON stock_movements FOR SELECT TO authenticated USING (true);
 CREATE POLICY "auth insert stock_movements" ON stock_movements FOR INSERT TO authenticated WITH CHECK (true);
 CREATE POLICY "auth update product_lots" ON product_lots FOR UPDATE TO authenticated USING (true);

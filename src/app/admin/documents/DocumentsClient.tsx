@@ -3,8 +3,10 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { Receipt, ShoppingBag, Printer, Ban } from 'lucide-react'
+import { Receipt, ShoppingBag, Printer, Ban, Wallet } from 'lucide-react'
 import CancelReceiptModal from './CancelReceiptModal'
+import EditPaymentModal from './EditPaymentModal'
+import type { PaymentMethod } from '@/lib/types'
 
 interface ReceiptRow {
   id: string
@@ -13,6 +15,8 @@ interface ReceiptRow {
   total: number
   status: 'completed' | 'cancelled'
   customer_id: string | null
+  payment_method: PaymentMethod
+  payment_method_original: PaymentMethod | null
   profiles: { name: string } | null
 }
 
@@ -30,6 +34,12 @@ type Tab = 'receipt' | 'purchase'
 const fmtDate = (d: string) =>
   new Date(d).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit', hour: '2-digit', minute: '2-digit' })
 const money = (n: number) => n.toLocaleString('th-TH', { minimumFractionDigits: 2 })
+const PAYMENT_TH: Record<PaymentMethod, string> = {
+  cash: 'เงินสด',
+  transfer: 'โอนเงิน',
+  card: 'บัตรเครดิต',
+  qr: 'QR Code',
+}
 
 export default function DocumentsClient({
   receipts,
@@ -44,6 +54,7 @@ export default function DocumentsClient({
   const [tab, setTab] = useState<Tab>('receipt')
   const [query, setQuery] = useState('')
   const [cancelling, setCancelling] = useState<ReceiptRow | null>(null)
+  const [editingPayment, setEditingPayment] = useState<ReceiptRow | null>(null)
 
   const q = query.trim().toLowerCase()
   const filteredReceipts = q
@@ -93,6 +104,7 @@ export default function DocumentsClient({
                 <th className="text-left text-xs font-medium text-gray-500 uppercase px-4 py-3">เลขที่</th>
                 <th className="text-left text-xs font-medium text-gray-500 uppercase px-4 py-3">วันที่</th>
                 <th className="text-left text-xs font-medium text-gray-500 uppercase px-4 py-3">แคชเชียร์</th>
+                <th className="text-left text-xs font-medium text-gray-500 uppercase px-4 py-3">รับเงิน</th>
                 <th className="text-center text-xs font-medium text-gray-500 uppercase px-4 py-3">สถานะ</th>
                 <th className="text-right text-xs font-medium text-gray-500 uppercase px-4 py-3">ยอด</th>
                 <th className="px-4 py-3"></th>
@@ -104,6 +116,17 @@ export default function DocumentsClient({
                   <td className="px-4 py-3 text-sm font-mono text-gray-600">{r.transaction_number}</td>
                   <td className="px-4 py-3 text-sm text-gray-600">{fmtDate(r.created_at)}</td>
                   <td className="px-4 py-3 text-sm text-gray-700">{r.profiles?.name ?? '—'}</td>
+                  <td className="px-4 py-3 text-sm text-gray-600">
+                    {PAYMENT_TH[r.payment_method] ?? r.payment_method}
+                    {r.payment_method_original && (
+                      <span
+                        className="ml-1 text-xs text-amber-600"
+                        title={`แก้จาก${PAYMENT_TH[r.payment_method_original] ?? r.payment_method_original}`}
+                      >
+                        (แก้แล้ว)
+                      </span>
+                    )}
+                  </td>
                   <td className="px-4 py-3 text-center">
                     <span className={`inline-flex text-xs px-2 py-0.5 rounded-full font-medium ${
                       r.status === 'cancelled' ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'
@@ -124,6 +147,15 @@ export default function DocumentsClient({
                       </Link>
                       {r.status !== 'cancelled' && (
                         <button
+                          onClick={() => setEditingPayment(r)}
+                          title="แก้วิธีรับเงิน"
+                          className="p-1.5 text-gray-400 hover:text-blue-600 rounded"
+                        >
+                          <Wallet size={15} />
+                        </button>
+                      )}
+                      {r.status !== 'cancelled' && (
+                        <button
                           onClick={() => setCancelling(r)}
                           title="ยกเลิกใบเสร็จ"
                           className="p-1.5 text-gray-400 hover:text-red-600 rounded"
@@ -137,7 +169,7 @@ export default function DocumentsClient({
               ))}
               {filteredReceipts.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="px-4 py-10 text-center text-sm text-gray-400">ไม่พบใบเสร็จ</td>
+                  <td colSpan={7} className="px-4 py-10 text-center text-sm text-gray-400">ไม่พบใบเสร็จ</td>
                 </tr>
               )}
             </tbody>
@@ -191,6 +223,21 @@ export default function DocumentsClient({
           </table>
         )}
       </div>
+
+      {editingPayment && (
+        <EditPaymentModal
+          transactionId={editingPayment.id}
+          transactionNumber={editingPayment.transaction_number}
+          total={editingPayment.total}
+          currentMethod={editingPayment.payment_method}
+          currentUserId={currentUserId}
+          onClose={() => setEditingPayment(null)}
+          onSaved={() => {
+            setEditingPayment(null)
+            router.refresh()
+          }}
+        />
+      )}
 
       {cancelling && (
         <CancelReceiptModal
