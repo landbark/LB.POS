@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from 'react'
 import PrintToolbar from '@/components/PrintToolbar'
-import type { StoreSettings, PaymentMethod } from '@/lib/types'
+import type { StoreSettings, PaymentMethod, SalesChannel } from '@/lib/types'
+import { CHANNEL_LABEL, isOnlineChannel } from '@/lib/salesChannel'
 
 interface ReceiptTx {
   id: string
@@ -13,6 +14,8 @@ interface ReceiptTx {
   total: number
   status: 'completed' | 'cancelled'
   payment_method: PaymentMethod
+  sales_channel: SalesChannel | null
+  external_order_no: string | null
   cash_received: number | null
   change_given: number | null
   points_earned: number
@@ -158,6 +161,14 @@ export default function ReceiptView({
               <span>ยอดสุทธิ</span><span>{money(tx.total)}</span>
             </div>
             <div className="flex justify-between pt-1"><span>ชำระโดย</span><span>{PAYMENT_LABELS[tx.payment_method]}</span></div>
+            {tx.sales_channel && isOnlineChannel(tx.sales_channel) && (
+              <>
+                <div className="flex justify-between"><span>ช่องทาง</span><span>{CHANNEL_LABEL[tx.sales_channel]}</span></div>
+                {tx.external_order_no && (
+                  <div className="flex justify-between"><span>เลขที่ออเดอร์</span><span>{tx.external_order_no}</span></div>
+                )}
+              </>
+            )}
             {tx.payment_method === 'cash' && tx.cash_received != null && (
               <>
                 <div className="flex justify-between"><span>รับเงิน</span><span>{money(tx.cash_received)}</span></div>

@@ -29,6 +29,7 @@ import {
   ShoppingBag,
   Megaphone,
   Globe,
+  BookOpen,
 } from 'lucide-react'
 
 // vetHidden = หน้าที่หมอเข้าไม่ได้ (proxy.ts กันไว้แล้ว ตรงนี้แค่ไม่ให้เห็นเมนู)
@@ -54,6 +55,7 @@ const navItems = [
   { href: '/admin/reports', label: 'รายงาน', icon: BarChart2, adminOnly: true },
   { href: '/admin/notifications', label: 'แจ้งเตือน Telegram', icon: Bell, adminOnly: false },
   { href: '/admin/settings', label: 'ตั้งค่า', icon: Settings, adminOnly: true },
+  { href: '/admin/help', label: 'คู่มือพนักงาน', icon: BookOpen, adminOnly: false },
 ]
 
 export default function AdminNav({ userName, role }: { userName: string; role: string }) {

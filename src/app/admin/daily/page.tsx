@@ -19,7 +19,7 @@ export default async function DailySummaryPage({
   const [{ data: completedTx }, { data: cancelledTx }, { data: items }, { data: shifts }] = await Promise.all([
     supabase
       .from('transactions')
-      .select('total, discount, payment_method')
+      .select('total, discount, payment_method, sales_channel')
       .eq('status', 'completed')
       .gte('created_at', startISO)
       .lt('created_at', endISO),
@@ -62,6 +62,16 @@ export default async function DailySummaryPage({
     .map(([method, v]) => ({ method, ...v }))
     .sort((a, b) => b.amount - a.amount)
 
+  const byChannelMap: Record<string, { amount: number; count: number }> = {}
+  for (const t of completedTx ?? []) {
+    const c = (byChannelMap[t.sales_channel ?? 'store'] ??= { amount: 0, count: 0 })
+    c.amount += t.total
+    c.count += 1
+  }
+  const byChannel = Object.entries(byChannelMap)
+    .map(([channel, v]) => ({ channel, ...v }))
+    .sort((a, b) => b.amount - a.amount)
+
   const productMap: Record<string, { name: string; unit: string; qty: number; revenue: number }> = {}
   for (const it of (items ?? []) as unknown as { quantity: number; subtotal: number; product_id: string; products: { name: string; unit: string } | null }[]) {
     const p = (productMap[it.product_id] ??= {
@@ -85,6 +95,7 @@ export default async function DailySummaryPage({
       cancelledCount={cancelledTx?.length ?? 0}
       cancelledTotal={cancelledTx?.reduce((s, t) => s + t.total, 0) ?? 0}
       byMethod={byMethod}
+      byChannel={byChannel}
       bestSellers={bestSellers}
       shifts={(shifts as unknown as ShiftSummary[]) ?? []}
     />

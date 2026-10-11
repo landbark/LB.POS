@@ -3,6 +3,8 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { ChevronLeft, ChevronRight, Wallet, Trophy, AlertTriangle } from 'lucide-react'
+import type { SalesChannel } from '@/lib/types'
+import { CHANNEL_LABEL, CHANNEL_BADGE } from '@/lib/salesChannel'
 
 const money = (n: number) => n.toLocaleString('th-TH', { minimumFractionDigits: 2 })
 const fmtTime = (d: string) =>
@@ -37,6 +39,7 @@ interface Props {
   cancelledCount: number
   cancelledTotal: number
   byMethod: { method: string; amount: number; count: number }[]
+  byChannel: { channel: string; amount: number; count: number }[]
   bestSellers: { name: string; unit: string; qty: number; revenue: number }[]
   shifts: ShiftSummary[]
 }
@@ -56,7 +59,7 @@ const thaiDateLabel = (date: string) =>
   })
 
 export default function DailySummaryClient({
-  date, today, netTotal, txCount, discountTotal, cancelledCount, cancelledTotal, byMethod, bestSellers, shifts,
+  date, today, netTotal, txCount, discountTotal, cancelledCount, cancelledTotal, byMethod, byChannel, bestSellers, shifts,
 }: Props) {
   const router = useRouter()
   const [showAll, setShowAll] = useState(false)
@@ -121,6 +124,24 @@ export default function DailySummaryClient({
             ))}
             {byMethod.length === 0 && <p className="text-sm text-gray-400">ยังไม่มีรายการขาย</p>}
           </div>
+        </div>
+      </div>
+
+      <div className="bg-white rounded-xl p-5 shadow-sm border border-gray-100 mb-6">
+        <p className="text-sm text-gray-500 mb-2">แยกตามช่องทางขาย</p>
+        <div className="space-y-1.5">
+          {byChannel.map(({ channel, amount, count }) => (
+            <div key={channel} className="flex justify-between items-center text-sm">
+              <span className="flex items-center gap-2">
+                <span className={`inline-flex text-xs px-2 py-0.5 rounded-full font-medium ${CHANNEL_BADGE[channel as SalesChannel] ?? 'bg-gray-100 text-gray-600'}`}>
+                  {CHANNEL_LABEL[channel as SalesChannel] ?? channel}
+                </span>
+                <span className="text-gray-400">({count} บิล)</span>
+              </span>
+              <span className="font-semibold text-gray-900 tabular-nums">฿{money(amount)}</span>
+            </div>
+          ))}
+          {byChannel.length === 0 && <p className="text-sm text-gray-400">ยังไม่มีรายการขาย</p>}
         </div>
       </div>
 

@@ -6,7 +6,8 @@ import Link from 'next/link'
 import { Receipt, ShoppingBag, Printer, Ban, Wallet } from 'lucide-react'
 import CancelReceiptModal from './CancelReceiptModal'
 import EditPaymentModal from './EditPaymentModal'
-import type { PaymentMethod } from '@/lib/types'
+import type { PaymentMethod, SalesChannel } from '@/lib/types'
+import { CHANNEL_LABEL, CHANNEL_BADGE, isOnlineChannel } from '@/lib/salesChannel'
 
 interface ReceiptRow {
   id: string
@@ -17,6 +18,8 @@ interface ReceiptRow {
   customer_id: string | null
   payment_method: PaymentMethod
   payment_method_original: PaymentMethod | null
+  sales_channel: SalesChannel
+  external_order_no: string | null
   profiles: { name: string } | null
 }
 
@@ -104,6 +107,7 @@ export default function DocumentsClient({
                 <th className="text-left text-xs font-medium text-gray-500 uppercase px-4 py-3">เลขที่</th>
                 <th className="text-left text-xs font-medium text-gray-500 uppercase px-4 py-3">วันที่</th>
                 <th className="text-left text-xs font-medium text-gray-500 uppercase px-4 py-3">แคชเชียร์</th>
+                <th className="text-left text-xs font-medium text-gray-500 uppercase px-4 py-3">ช่องทาง</th>
                 <th className="text-left text-xs font-medium text-gray-500 uppercase px-4 py-3">รับเงิน</th>
                 <th className="text-center text-xs font-medium text-gray-500 uppercase px-4 py-3">สถานะ</th>
                 <th className="text-right text-xs font-medium text-gray-500 uppercase px-4 py-3">ยอด</th>
@@ -116,6 +120,14 @@ export default function DocumentsClient({
                   <td className="px-4 py-3 text-sm font-mono text-gray-600">{r.transaction_number}</td>
                   <td className="px-4 py-3 text-sm text-gray-600">{fmtDate(r.created_at)}</td>
                   <td className="px-4 py-3 text-sm text-gray-700">{r.profiles?.name ?? '—'}</td>
+                  <td className="px-4 py-3">
+                    <span className={`inline-flex text-xs px-2 py-0.5 rounded-full font-medium ${CHANNEL_BADGE[r.sales_channel]}`}>
+                      {CHANNEL_LABEL[r.sales_channel] ?? r.sales_channel}
+                    </span>
+                    {isOnlineChannel(r.sales_channel) && r.external_order_no && (
+                      <span className="block mt-0.5 text-[11px] font-mono text-gray-400">{r.external_order_no}</span>
+                    )}
+                  </td>
                   <td className="px-4 py-3 text-sm text-gray-600">
                     {PAYMENT_TH[r.payment_method] ?? r.payment_method}
                     {r.payment_method_original && (
@@ -169,7 +181,7 @@ export default function DocumentsClient({
               ))}
               {filteredReceipts.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="px-4 py-10 text-center text-sm text-gray-400">ไม่พบใบเสร็จ</td>
+                  <td colSpan={8} className="px-4 py-10 text-center text-sm text-gray-400">ไม่พบใบเสร็จ</td>
                 </tr>
               )}
             </tbody>

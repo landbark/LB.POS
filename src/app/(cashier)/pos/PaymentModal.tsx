@@ -4,7 +4,8 @@ import { useState, useEffect, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { X, CheckCircle2, Printer } from 'lucide-react'
 import toast from 'react-hot-toast'
-import type { CartItem, Customer, PointsConfig, PaymentMethod } from '@/lib/types'
+import type { CartItem, Customer, PointsConfig, PaymentMethod, SalesChannel } from '@/lib/types'
+import { SALES_CHANNELS, isOnlineChannel } from '@/lib/salesChannel'
 import { POS_DISPLAY_CHANNEL, type PosDisplayMessage } from '@/lib/posDisplay'
 import { isVatApplicable } from '@/lib/vat'
 
@@ -33,6 +34,8 @@ const PAYMENT_LABELS: Record<Exclude<PaymentMethod, 'qr'>, string> = {
 export default function PaymentModal({
   cart, subtotal, totalDiscount, total, customer, pointsConfig, cashierId, promptpayId, visitId, onClose, onSuccess,
 }: Props) {
+  const [channel, setChannel] = useState<SalesChannel>('store')
+  const [orderNo, setOrderNo] = useState('')
   const [method, setMethod] = useState<PaymentMethod>('cash')
   const [cashReceived, setCashReceived] = useState('')
   const [usePoints, setUsePoints] = useState(0)
@@ -130,6 +133,8 @@ export default function PaymentModal({
           discount: totalDiscount + manualDiscountAmount + pointsDiscount,
           total: finalTotal,
           payment_method: method,
+          sales_channel: channel,
+          external_order_no: isOnlineChannel(channel) ? (orderNo.trim() || null) : null,
           cash_received: method === 'cash' ? parseFloat(cashReceived) : null,
           change_given: method === 'cash' ? Math.max(0, change) : null,
           points_earned: earnedPoints,
@@ -319,6 +324,43 @@ export default function PaymentModal({
         </div>
 
         <div className="p-4 space-y-4">
+          {/* ช่องทางขาย — ออนไลน์เงินเข้าผ่านแพลตฟอร์ม ไม่ใช่เงินสดหน้าร้าน */}
+          <div>
+            <p className="text-sm font-medium text-gray-700 mb-2">ช่องทางขาย</p>
+            <div className="grid grid-cols-4 gap-1.5">
+              {SALES_CHANNELS.map((c) => (
+                <button
+                  key={c.value}
+                  onClick={() => {
+                    setChannel(c.value)
+                    // ขายออนไลน์เงินเข้าบัญชีร้านผ่านแพลตฟอร์ม ตั้งเป็นโอนให้เลย
+                    if (isOnlineChannel(c.value) && method === 'cash') setMethod('transfer')
+                  }}
+                  className={`py-2 rounded-lg text-xs font-medium border-2 transition-colors ${
+                    channel === c.value
+                      ? 'border-[#C4865A] bg-[#FDF6EE] text-[#7A4E2D]'
+                      : 'border-gray-200 text-gray-600 hover:border-gray-300'
+                  }`}
+                >
+                  {c.short}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {isOnlineChannel(channel) && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">เลขที่ออเดอร์ (ถ้ามี)</label>
+              <input
+                type="text"
+                value={orderNo}
+                onChange={(e) => setOrderNo(e.target.value)}
+                placeholder="เช่น 250110ABCDEFGH"
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+          )}
+
           {/* Payment Method */}
           <div>
             <p className="text-sm font-medium text-gray-700 mb-2">วิธีชำระเงิน</p>

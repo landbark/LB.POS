@@ -410,6 +410,8 @@ export interface Promotion {
 }
 
 export type PaymentMethod = 'cash' | 'transfer' | 'card' | 'qr'
+/** ช่องทางที่บิลนี้ขายออกไป — store = หน้าร้าน ที่เหลือคือ marketplace */
+export type SalesChannel = 'store' | 'shopee' | 'tiktok' | 'lazada'
 export type TransactionStatus = 'completed' | 'cancelled'
 export type RefundMethod = 'cash' | 'transfer' | 'credit'
 
@@ -435,6 +437,9 @@ export interface Transaction {
   restocked: boolean | null
   refund_method: RefundMethod | null
   /** วิธีรับเงินที่บันทึกไว้ตอนขายครั้งแรก — มีค่าเมื่อมีคนแก้วิธีรับเงินภายหลัง */
+  sales_channel: SalesChannel
+  /** เลขที่ออเดอร์ฝั่ง marketplace — มีเฉพาะบิลที่ไม่ใช่หน้าร้าน */
+  external_order_no: string | null
   payment_method_original: PaymentMethod | null
   payment_edited_at: string | null
   payment_edited_by: string | null
