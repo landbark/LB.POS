@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
-import { Plus, Trash2, PackagePlus, Printer, PackageCheck } from 'lucide-react'
+import { Plus, Trash2, PackagePlus, Printer, PackageCheck, ListPlus, X, Search, Check } from 'lucide-react'
 import toast from 'react-hot-toast'
 import type { PurchaseStatus, Supplier } from '@/lib/types'
 
@@ -16,6 +16,28 @@ interface ProductOption {
   unit: string
   cost: number | null
   supplier_id: string | null
+  product_lots?: { quantity: number }[]
+}
+
+const stockOf = (p: ProductOption) => (p.product_lots ?? []).reduce((s, l) => s + l.quantity, 0)
+
+function matchProduct(p: ProductOption, q: string) {
+  if (!q) return true
+  return (
+    p.name.toLowerCase().includes(q) ||
+    (p.sku ?? '').toLowerCase().includes(q) ||
+    (p.barcode ?? '').toLowerCase().includes(q)
+  )
+}
+
+// ป้ายคงเหลือ — สต็อคหมดให้เด่นหน่อย เพราะเป็นตัวที่ควรสั่งเข้าก่อน
+function StockBadge({ product }: { product: ProductOption }) {
+  const n = stockOf(product)
+  return (
+    <span className={`text-xs ${n <= 0 ? 'text-red-500 font-medium' : 'text-gray-400'}`}>
+      {n <= 0 ? 'หมด' : `คงเหลือ ${n}`} {product.unit}
+    </span>
+  )
 }
 
 interface PurchaseRow {
@@ -58,15 +80,9 @@ function ProductPicker({
   const [open, setOpen] = useState(false)
 
   const q = query.trim().toLowerCase()
-  const matches = (q
-    ? products.filter(
-        (p) =>
-          p.name.toLowerCase().includes(q) ||
-          (p.sku ?? '').toLowerCase().includes(q) ||
-          (p.barcode ?? '').includes(q)
-      )
-    : products
-  ).slice(0, 8)
+  const hits = products.filter((p) => matchProduct(p, q))
+  // เดิมตัดไว้แค่ 8 ตัว พิมพ์ค้นแล้วของที่ต้องการตกหล่นบ่อย — ยาวได้ ลิสต์เลื่อนอยู่แล้ว
+  const matches = hits.slice(0, 50)
 
   function pick(p: ProductOption) {
     onChange(p.id)
@@ -97,6 +113,11 @@ function ProductPicker({
           {matches.length === 0 && (
             <p className="px-3 py-2.5 text-sm text-gray-400">ไม่พบสินค้า</p>
           )}
+          {hits.length > matches.length && (
+            <p className="px-3 py-1.5 text-xs text-gray-400 bg-gray-50 sticky top-0">
+              เจอ {hits.length} รายการ — แสดง {matches.length} ตัวแรก พิมพ์เพิ่มเพื่อแคบลง
+            </p>
+          )}
           {matches.map((p) => (
             <button
               type="button"
@@ -111,15 +132,143 @@ function ProductPicker({
                   <span className="text-yellow-500 ml-1">★</span>
                 )}
               </p>
-              {(p.sku || p.barcode) && (
-                <p className="text-xs text-gray-400 font-mono">
-                  {[p.sku, p.barcode].filter(Boolean).join(' · ')}
-                </p>
-              )}
+              <p className="text-xs text-gray-400 flex items-center gap-2">
+                {(p.sku || p.barcode) && (
+                  <span className="font-mono">{[p.sku, p.barcode].filter(Boolean).join(' · ')}</span>
+                )}
+                <StockBadge product={p} />
+              </p>
             </button>
           ))}
         </div>
       )}
+    </div>
+  )
+}
+
+// เลือกสินค้าทีละหลายรายการ — ค้นด้วยชื่อ/รหัส/บาร์โค้ด เห็นสต็อคคงเหลือ ติ๊กแล้วเพิ่มรวดเดียว
+function MultiPicker({
+  products,
+  supplierId,
+  supplierName,
+  alreadyPicked,
+  onAdd,
+  onClose,
+}: {
+  products: ProductOption[]
+  supplierId: string
+  supplierName: string
+  alreadyPicked: Set<string>
+  onAdd: (ids: string[]) => void
+  onClose: () => void
+}) {
+  const [query, setQuery] = useState('')
+  const [onlySupplier, setOnlySupplier] = useState(!!supplierId)
+  const [picked, setPicked] = useState<Set<string>>(new Set())
+
+  const q = query.trim().toLowerCase()
+  const hits = products.filter((p) => {
+    if (onlySupplier && supplierId && p.supplier_id !== supplierId) return false
+    return matchProduct(p, q)
+  })
+  const shown = hits.slice(0, 200)
+
+  function toggle(id: string) {
+    const next = new Set(picked)
+    if (next.has(id)) next.delete(id)
+    else next.add(id)
+    setPicked(next)
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={onClose}>
+      <div
+        className="bg-white rounded-2xl w-full max-w-2xl shadow-2xl flex flex-col max-h-[85dvh]"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+          <h2 className="font-semibold text-gray-900">เลือกสินค้าหลายรายการ</h2>
+          <button onClick={onClose} className="p-1 text-gray-400 hover:text-gray-600"><X size={18} /></button>
+        </div>
+
+        <div className="px-5 py-3 border-b border-gray-100 space-y-2">
+          <div className="relative">
+            <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+            <input
+              type="text"
+              autoFocus
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="พิมพ์ชื่อสินค้า / รหัสสินค้า / บาร์โค้ด..."
+              className={`${inputClass} pl-9`}
+            />
+          </div>
+          {supplierId && (
+            <label className="flex items-center gap-2 text-sm text-gray-600">
+              <input type="checkbox" checked={onlySupplier} onChange={(e) => setOnlySupplier(e.target.checked)} />
+              เฉพาะสินค้าที่ผูกกับ {supplierName}
+            </label>
+          )}
+        </div>
+
+        <div className="flex-1 overflow-y-auto divide-y divide-gray-50">
+          {shown.length === 0 && (
+            <p className="px-5 py-10 text-center text-sm text-gray-400">
+              {onlySupplier ? 'ไม่พบสินค้าที่ผูกกับซัพพลายเออร์นี้ — ลองเอาเครื่องหมายถูกออก' : 'ไม่พบสินค้า'}
+            </p>
+          )}
+          {shown.map((p) => {
+            const added = alreadyPicked.has(p.id)
+            const on = picked.has(p.id)
+            return (
+              <button
+                type="button"
+                key={p.id}
+                disabled={added}
+                onClick={() => toggle(p.id)}
+                className={`w-full flex items-center gap-3 px-5 py-2.5 text-left ${
+                  added ? 'opacity-40 cursor-not-allowed' : on ? 'bg-blue-50' : 'hover:bg-gray-50'
+                }`}
+              >
+                <span className={`shrink-0 w-5 h-5 rounded border flex items-center justify-center ${
+                  on ? 'bg-blue-600 border-blue-600 text-white' : 'border-gray-300'
+                }`}>
+                  {on && <Check size={13} />}
+                </span>
+                <span className="flex-1 min-w-0">
+                  <span className="block text-sm text-gray-900 truncate">
+                    {p.name}
+                    {supplierId && p.supplier_id === supplierId && <span className="text-yellow-500 ml-1">★</span>}
+                    {added && <span className="text-xs text-gray-400 ml-1">(อยู่ในใบแล้ว)</span>}
+                  </span>
+                  <span className="block text-xs text-gray-400 font-mono truncate">
+                    {[p.sku, p.barcode].filter(Boolean).join(' · ') || '—'}
+                  </span>
+                </span>
+                <StockBadge product={p} />
+              </button>
+            )
+          })}
+          {hits.length > shown.length && (
+            <p className="px-5 py-3 text-center text-xs text-gray-400">
+              เจอ {hits.length} รายการ — แสดง {shown.length} ตัวแรก พิมพ์ค้นหาเพื่อแคบลง
+            </p>
+          )}
+        </div>
+
+        <div className="flex gap-2 px-5 py-4 border-t border-gray-100">
+          <button
+            onClick={() => { onAdd([...picked]); onClose() }}
+            disabled={picked.size === 0}
+            className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:opacity-40 text-white text-sm font-medium px-4 py-2.5 rounded-lg"
+          >
+            เพิ่ม {picked.size > 0 ? `${picked.size} รายการ` : 'สินค้า'}
+          </button>
+          <button onClick={onClose} className="border border-gray-300 text-gray-600 text-sm px-4 py-2.5 rounded-lg">
+            ปิด
+          </button>
+        </div>
+      </div>
     </div>
   )
 }
@@ -136,6 +285,7 @@ export default function ReceivingClient({ suppliers, products, purchases }: Prop
   const [notes, setNotes] = useState('')
   const [items, setItems] = useState<ItemRow[]>([newItem()])
   const [loading, setLoading] = useState(false)
+  const [showPicker, setShowPicker] = useState(false)
 
   // สินค้าของซัพพลายเออร์ที่เลือกขึ้นก่อนในผลค้นหา
   const sortedProducts = supplierId
@@ -161,6 +311,21 @@ export default function ReceivingClient({ suppliers, products, purchases }: Prop
   function addRow() {
     setItems([...items, newItem()])
   }
+
+  // เพิ่มสินค้าหลายตัวรวดเดียว — เติมราคาทุนล่าสุดให้เลย แล้วเขียนทับแถวว่างที่ค้างอยู่
+  function addMany(ids: string[]) {
+    if (ids.length === 0) return
+    const rows: ItemRow[] = ids.map((id) => {
+      const p = products.find((x) => x.id === id)
+      return { product_id: id, quantity: '1', unit_cost: p?.cost != null ? String(p.cost) : '' }
+    })
+    const kept = items.filter((it) => it.product_id)
+    setItems([...kept, ...rows])
+    toast.success(`เพิ่ม ${rows.length} รายการแล้ว`)
+  }
+
+  const pickedIds = new Set(items.map((it) => it.product_id).filter(Boolean))
+  const supplierName = suppliers.find((s) => s.id === supplierId)?.name ?? ''
 
   function removeRow(index: number) {
     if (items.length === 1) {
@@ -210,14 +375,36 @@ export default function ReceivingClient({ suppliers, products, purchases }: Prop
       }))
     )
 
-    setLoading(false)
     if (iErr) {
+      setLoading(false)
       toast.error('บันทึกรายการไม่สำเร็จ: ' + iErr.message)
       return
     }
 
+    // สั่งของตัวนี้จากเจ้านี้ = ผูกให้เลย ครั้งหน้าจะขึ้นมาก่อนในช่องเลือก
+    // แตะเฉพาะตัวที่ยังไม่มีเจ้าประจำ ไม่ไปทับของที่ตั้งไว้แล้ว
+    let linked = 0
+    if (supplierId) {
+      const unlinked = validItems
+        .map((it) => products.find((p) => p.id === it.product_id))
+        .filter((p): p is ProductOption => !!p && !p.supplier_id)
+        .map((p) => p.id)
+      if (unlinked.length > 0) {
+        const { error: linkErr } = await supabase
+          .from('products')
+          .update({ supplier_id: supplierId })
+          .in('id', unlinked)
+        if (!linkErr) linked = unlinked.length
+      }
+    }
+
+    setLoading(false)
+
     // ยังไม่เพิ่มสต็อค — สต็อคจะเข้าตอนพนักงานกด "รับสินค้า" พร้อมใส่ล็อต/วันหมดอายุ
-    toast.success(`บันทึกใบสั่งซื้อ ${validItems.length} รายการแล้ว รอรับสินค้า`)
+    toast.success(
+      `บันทึกใบสั่งซื้อ ${validItems.length} รายการแล้ว รอรับสินค้า` +
+      (linked > 0 ? ` · ผูก ${linked} สินค้ากับซัพพลายเออร์นี้ให้แล้ว` : '')
+    )
     setSupplierId('')
     setNotes('')
     setItems([newItem()])
@@ -249,6 +436,17 @@ export default function ReceivingClient({ suppliers, products, purchases }: Prop
           </div>
         </div>
 
+        <div className="mb-3">
+          <button
+            type="button"
+            onClick={() => setShowPicker(true)}
+            className="flex items-center gap-1.5 border border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 text-sm font-medium px-3 py-2 rounded-lg"
+          >
+            <ListPlus size={15} />
+            เลือกสินค้าหลายรายการ
+          </button>
+        </div>
+
         {/* รายการสินค้า — ห้ามใส่ overflow-x-auto ที่นี่ เพราะจะ clip dropdown ของ ProductPicker */}
         <div>
           <table className="w-full">
@@ -273,6 +471,10 @@ export default function ReceivingClient({ suppliers, products, purchases }: Prop
                         onChange={(id) => setItem(i, 'product_id', id)}
                         supplierId={supplierId}
                       />
+                      {(() => {
+                        const p = products.find((x) => x.id === it.product_id)
+                        return p ? <p className="mt-0.5 pl-1"><StockBadge product={p} /></p> : null
+                      })()}
                     </td>
                     <td className="pr-2 py-1.5">
                       <input type="number" min="1" value={it.quantity} onChange={(e) => setItem(i, 'quantity', e.target.value)} className={inputClass} placeholder="0" />
@@ -380,6 +582,18 @@ export default function ReceivingClient({ suppliers, products, purchases }: Prop
           </tbody>
         </table>
       </div>
+
+      {showPicker && (
+        <MultiPicker
+          products={sortedProducts}
+          supplierId={supplierId}
+          supplierName={supplierName}
+          alreadyPicked={pickedIds}
+          onAdd={addMany}
+          onClose={() => setShowPicker(false)}
+        />
+      )}
     </div>
+
   )
 }
