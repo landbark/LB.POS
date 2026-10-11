@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Search, X, Plus, Minus, ShoppingCart, User, MonitorPlay, Stethoscope } from 'lucide-react'
@@ -40,7 +40,21 @@ export default function POSClient({ products, promotions, pointsConfig, cashierI
   const [categoryFilter, setCategoryFilter] = useState('')
   const searchRef = useRef<HTMLInputElement>(null)
 
-  // ยิงบาร์โค้ด/พิมพ์จากที่ไหนก็ได้ในหน้าขาย — เด้ง focus เข้าช่องค้นหาให้อัตโนมัติ
+  // เครื่องยิงบาร์โค้ดทำงานเหมือนคีย์บอร์ด ต้องมี focus อยู่ที่ช่องค้นหาตลอดถึงจะยิงได้เลยโดยไม่ต้องคลิกก่อน
+  // เฉพาะเครื่องที่ใช้เมาส์ — มือถือ/แท็บเล็ตจะเด้งคีย์บอร์ดขึ้นมาบังจอ
+  const focusSearch = useCallback(() => {
+    if (typeof window === 'undefined') return
+    if (!window.matchMedia('(pointer: fine)').matches) return
+    searchRef.current?.focus()
+  }, [])
+
+  // โฟกัสตั้งแต่เปิดหน้า และดึงกลับทุกครั้งที่ modal ปิด (ตอน modal เปิดอย่าไปแย่ง)
+  useEffect(() => {
+    if (showPayment || showQueue) return
+    focusSearch()
+  }, [showPayment, showQueue, focusSearch])
+
+  // สำรองไว้เผื่อ focus หลุดไปอยู่ที่ปุ่มอื่น — ตัวอักษรแรกที่ยิงมาจะไม่หาย
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
       if (showPayment) return // อย่าแย่ง focus ตอน modal ชำระเงินเปิดอยู่
@@ -52,7 +66,9 @@ export default function POSClient({ products, promotions, pointsConfig, cashierI
         t.isContentEditable
       ) return
       if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        e.preventDefault()
         searchRef.current?.focus()
+        setSearch((prev) => prev + e.key)
       }
     }
     window.addEventListener('keydown', onKeyDown)
@@ -160,6 +176,8 @@ export default function POSClient({ products, promotions, pointsConfig, cashierI
         },
       ])
     }
+    // กดการ์ดสินค้าแล้ว focus จะไปติดอยู่ที่ปุ่ม — ดึงกลับช่องค้นหาให้ยิงตัวต่อไปได้เลย
+    focusSearch()
   }
 
   // ดึงรายการที่หมอสั่งจ่ายเข้าตะกร้า — ราคาใช้ตามที่บันทึกไว้ในเวชระเบียน ไม่ใช่ราคาสินค้าปัจจุบัน
