@@ -652,7 +652,10 @@ export interface CartItem {
   product: Product
   quantity: number
   unit_price: number
+  /** ส่วนลดรวมของบรรทัดนี้ = โปรโมชั่น + ที่แคชเชียร์ลดเอง (ค่านี้คือที่บันทึกลง transaction_items) */
   discount: number
+  /** ส่วนลดที่แคชเชียร์ใส่เองเป็นบาท — เก็บแยกไว้ ไม่งั้นโปรโมชั่นคำนวณทับทุกครั้งที่แก้จำนวน */
+  manual_discount: number
   subtotal: number
   lot_id: string | null
 }

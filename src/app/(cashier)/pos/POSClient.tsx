@@ -26,6 +26,10 @@ export default function POSClient({ products, promotions, pointsConfig, cashierI
   const [showQueue, setShowQueue] = useState(false)
   // แผงตะกร้าบนมือถือ — จอใหญ่โชว์ตลอดอยู่แล้ว ไม่สนค่านี้
   const [cartOpen, setCartOpen] = useState(false)
+  // แถวในตะกร้าที่กำลังเปิดช่องลดราคา + โหมดลด (บาท/%) ของแถวนั้น
+  const [discountRow, setDiscountRow] = useState<string | null>(null)
+  const [discountMode, setDiscountMode] = useState<'amount' | 'percent'>('amount')
+  const [discountInput, setDiscountInput] = useState('')
   const [search, setSearch] = useState('')
   const [cart, setCart] = useState<CartItem[]>([])
   const [customer, setCustomer] = useState<Customer | null>(null)
@@ -119,6 +123,13 @@ export default function POSClient({ products, promotions, pointsConfig, cashierI
     return discount
   }
 
+  // ยอดของบรรทัดหนึ่งในตะกร้า — โปรโมชั่นบวกกับส่วนลดที่ลดเอง แต่รวมแล้วห้ามเกินราคาของบรรทัดนั้น
+  function lineTotals(product: Product, unitPrice: number, qty: number, manual: number) {
+    const gross = unitPrice * qty
+    const discount = Math.min(gross, applyPromotion(product, qty) + manual)
+    return { discount, subtotal: gross - discount }
+  }
+
   function addToCart(product: Product) {
     const maxStock = getProductStock(product)
     const existing = cart.findIndex((c) => c.product.id === product.id)
@@ -127,25 +138,22 @@ export default function POSClient({ products, promotions, pointsConfig, cashierI
       const item = newCart[existing]
       const newQty = item.quantity + 1
       if (newQty > maxStock) toast(`ขายเกินสต็อค — คงเหลือในระบบ ${maxStock} ${product.unit}`, { icon: '⚠️' })
-      const discount = applyPromotion(product, newQty)
       newCart[existing] = {
         ...item,
         quantity: newQty,
-        discount,
-        subtotal: product.price * newQty - discount,
+        ...lineTotals(product, item.unit_price, newQty, item.manual_discount),
       }
       setCart(newCart)
     } else {
       const lot_id = getBestLot(product)
-      const discount = applyPromotion(product, 1)
       setCart([
         ...cart,
         {
           product,
           quantity: 1,
           unit_price: product.price,
-          discount,
-          subtotal: product.price - discount,
+          manual_discount: 0,
+          ...lineTotals(product, product.price, 1, 0),
           lot_id,
         },
       ])
@@ -174,6 +182,7 @@ export default function POSClient({ products, promotions, pointsConfig, cashierI
       quantity: i.quantity,
       unit_price: i.unit_price,
       discount: 0,
+      manual_discount: 0,
       subtotal: i.unit_price * i.quantity,
       lot_id: getBestLot(i.product),
     })))
@@ -196,12 +205,10 @@ export default function POSClient({ products, promotions, pointsConfig, cashierI
         const maxStock = getProductStock(item.product)
         if (newQty > maxStock) toast(`ขายเกินสต็อค — คงเหลือในระบบ ${maxStock} ${item.product.unit}`, { icon: '⚠️' })
       }
-      const discount = applyPromotion(item.product, newQty)
       newCart[index] = {
         ...item,
         quantity: newQty,
-        discount,
-        subtotal: item.unit_price * newQty - discount,
+        ...lineTotals(item.product, item.unit_price, newQty, item.manual_discount),
       }
     }
     setCart(newCart)
@@ -216,13 +223,11 @@ export default function POSClient({ products, promotions, pointsConfig, cashierI
     const maxStock = getProductStock(item.product)
     if (n > maxStock) toast(`ขายเกินสต็อค — คงเหลือในระบบ ${maxStock} ${item.product.unit}`, { icon: '⚠️' })
     if (n < 1) n = 1
-    const discount = applyPromotion(item.product, n)
     const newCart = [...cart]
     newCart[index] = {
       ...item,
       quantity: n,
-      discount,
-      subtotal: item.unit_price * n - discount,
+      ...lineTotals(item.product, item.unit_price, n, item.manual_discount),
     }
     setCart(newCart)
   }
@@ -283,7 +288,27 @@ export default function POSClient({ products, promotions, pointsConfig, cashierI
     }
   }
 
-  const subtotal = cart.reduce((s, item) => s + item.product.price * item.quantity, 0)
+  // ลดเองรายบรรทัด — โปรโมชั่นของบรรทัดนั้นยังอยู่ ลดเพิ่มทับลงไป
+  function setLineDiscount(index: number, raw: string, mode: 'amount' | 'percent') {
+    const item = cart[index]
+    const gross = item.unit_price * item.quantity
+    const value = parseFloat(raw || '0')
+    const manual = isNaN(value) || value <= 0
+      ? 0
+      : mode === 'percent'
+        ? Math.min(gross, (gross * Math.min(value, 100)) / 100)
+        : Math.min(gross, value)
+    const newCart = [...cart]
+    newCart[index] = {
+      ...item,
+      manual_discount: manual,
+      ...lineTotals(item.product, item.unit_price, item.quantity, manual),
+    }
+    setCart(newCart)
+  }
+
+  // ใช้ unit_price ไม่ใช่ราคาสินค้าปัจจุบัน — บิลจากคลินิกใช้ราคาที่หมอบันทึกไว้
+  const subtotal = cart.reduce((s, item) => s + item.unit_price * item.quantity, 0)
   const totalDiscount = cart.reduce((s, item) => s + item.discount, 0)
   const total = subtotal - totalDiscount
 
@@ -458,7 +483,7 @@ export default function POSClient({ products, promotions, pointsConfig, cashierI
                 <p className="text-[11px] text-amber-600 font-mono">{activeVisit.visit_number}</p>
               </div>
               <button
-                onClick={() => { setActiveVisit(null); setCart([]) }}
+                onClick={() => { setActiveVisit(null); setCart([]); setDiscountRow(null) }}
                 title="ยกเลิกการเก็บเงินรายการนี้"
                 className="text-amber-500 hover:text-amber-700 shrink-0"
               >
@@ -589,6 +614,52 @@ export default function POSClient({ products, promotions, pointsConfig, cashierI
                       </p>
                     </div>
                   </div>
+
+                  {discountRow === item.product.id ? (
+                    <div className="mt-2 flex items-center gap-1.5">
+                      <div className="flex bg-gray-100 rounded-lg p-0.5 shrink-0">
+                        {(['amount', 'percent'] as const).map((m) => (
+                          <button
+                            key={m}
+                            onClick={() => { setDiscountMode(m); setLineDiscount(i, discountInput, m) }}
+                            className={`px-2 py-1 rounded-md text-xs font-medium ${
+                              discountMode === m ? 'bg-orange-500 text-white' : 'text-gray-500'
+                            }`}
+                          >
+                            {m === 'amount' ? '฿' : '%'}
+                          </button>
+                        ))}
+                      </div>
+                      <input
+                        type="number"
+                        inputMode="decimal"
+                        min={0}
+                        step="0.01"
+                        autoFocus
+                        value={discountInput}
+                        onChange={(e) => { setDiscountInput(e.target.value); setLineDiscount(i, e.target.value, discountMode) }}
+                        placeholder="ลดเท่าไหร่"
+                        className="flex-1 min-w-0 border border-gray-200 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-orange-400"
+                      />
+                      <button
+                        onClick={() => setDiscountRow(null)}
+                        className="shrink-0 text-xs font-medium text-gray-500 hover:text-gray-700 px-2 py-1"
+                      >
+                        เสร็จ
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => {
+                        setDiscountRow(item.product.id)
+                        setDiscountMode('amount')
+                        setDiscountInput(item.manual_discount > 0 ? String(item.manual_discount) : '')
+                      }}
+                      className="mt-1 text-xs text-gray-400 hover:text-orange-600"
+                    >
+                      {item.manual_discount > 0 ? `ลดเอง ฿${item.manual_discount.toFixed(2)} — แก้` : '+ ลดราคารายการนี้'}
+                    </button>
+                  )}
                 </div>
               ))}
             </div>
@@ -622,7 +693,7 @@ export default function POSClient({ products, promotions, pointsConfig, cashierI
 
           {cart.length > 0 && (
             <button
-              onClick={() => setCart([])}
+              onClick={() => { setCart([]); setDiscountRow(null) }}
               className="w-full text-sm text-gray-400 hover:text-red-500 py-1 transition-colors"
             >
               ล้างตะกร้า
@@ -646,6 +717,7 @@ export default function POSClient({ products, promotions, pointsConfig, cashierI
           onClose={() => setShowPayment(false)}
           onSuccess={() => {
             setCart([])
+            setDiscountRow(null)
             setCustomer(null)
             setCustomerPhone('')
             setShowAddCustomer(false)
