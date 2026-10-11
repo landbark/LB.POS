@@ -6,6 +6,7 @@ import { X, CheckCircle2, Printer } from 'lucide-react'
 import toast from 'react-hot-toast'
 import type { CartItem, Customer, PointsConfig, PaymentMethod, SalesChannel, RoundingMode } from '@/lib/types'
 import { roundTotal } from '@/lib/rounding'
+import { deductStock } from '@/lib/deductStock'
 import { SALES_CHANNELS, isOnlineChannel } from '@/lib/salesChannel'
 import { POS_DISPLAY_CHANNEL, type PosDisplayMessage } from '@/lib/posDisplay'
 import { isVatApplicable } from '@/lib/vat'
@@ -23,7 +24,7 @@ interface Props {
   /** เก็บเงินให้เวชระเบียนคลินิกใบไหน — จ่ายเสร็จจะ mark เป็น paid พร้อมผูกเลขที่บิล */
   visitId: string | null
   onClose: () => void
-  onSuccess: () => void
+  onSuccess: (info?: { writeoff?: boolean }) => void
 }
 
 // qr ตัดออกจากตัวเลือก — ถือเป็นการโอนเงินแบบเดียวกับ transfer (ยังรองรับอ่านรายการเก่าที่บันทึกเป็น qr ไว้ที่อื่น)
@@ -36,6 +37,10 @@ const PAYMENT_LABELS: Record<Exclude<PaymentMethod, 'qr'>, string> = {
 export default function PaymentModal({
   cart, subtotal, totalDiscount, total, customer, pointsConfig, cashierId, promptpayId, roundingMode, visitId, onClose, onSuccess,
 }: Props) {
+  // writeoff = ตัดของออกจากสต็อกเฉยๆ ไม่ใช่การขาย (ของเสีย/ของแถม/ใช้ในร้าน) — ไม่สร้างใบเสร็จ
+  const [mode, setMode] = useState<'sale' | 'writeoff'>('sale')
+  const [writeoffReason, setWriteoffReason] = useState('')
+  const [writtenOff, setWrittenOff] = useState(false)
   const [channel, setChannel] = useState<SalesChannel>('store')
   const [orderNo, setOrderNo] = useState('')
   const [method, setMethod] = useState<PaymentMethod>('cash')
@@ -82,7 +87,8 @@ export default function PaymentModal({
     ? parseFloat(cashReceived) - finalTotal
     : 0
 
-  const online = isOnlineChannel(channel)
+  const writeoff = mode === 'writeoff'
+  const online = !writeoff && isOnlineChannel(channel)
   const earnedPoints = !online && pointsConfig && finalTotal > 0
     ? Math.floor(finalTotal / pointsConfig.spend_amount) * pointsConfig.earn_points
     : 0
@@ -93,8 +99,9 @@ export default function PaymentModal({
     : null
 
   // ส่งสถานะให้จอลูกค้า (จอสอง) ทุกครั้งที่ยอด/วิธีจ่าย/แต้มเปลี่ยน จนกว่าจะบันทึกสำเร็จ
+  // โหมดตัดสต็อกไม่ใช่การขาย — อย่าขึ้นยอดให้ลูกค้าเห็น
   useEffect(() => {
-    if (completedTxId) return
+    if (completedTxId || mode === 'writeoff') return
     const msg: PosDisplayMessage = {
       stage: 'payment',
       subtotal,
@@ -106,9 +113,28 @@ export default function PaymentModal({
     }
     displayChannelRef.current?.postMessage(msg)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [finalTotal, method, promptpayId, customer, earnedPoints, usePoints, completedTxId])
+  }, [finalTotal, method, promptpayId, customer, earnedPoints, usePoints, completedTxId, mode])
 
   async function handleConfirm() {
+    // ตัดสต็อกออกเฉยๆ — ไม่สร้างใบเสร็จ ไม่แตะแต้ม/เครดิต/เวชระเบียน
+    if (writeoff) {
+      const reason = writeoffReason.trim()
+      if (!reason) {
+        toast.error('ใส่เหตุผลที่ตัดออกด้วย')
+        return
+      }
+      setLoading(true)
+      await deductStock(createClient(), cart, {
+        transactionId: null,
+        type: 'adjust_out',
+        reason: `ตัดสต็อกออก: ${reason}`,
+        createdBy: cashierId,
+      })
+      setLoading(false)
+      setWrittenOff(true)
+      return
+    }
+
     if (method === 'cash' && parseFloat(cashReceived || '0') < finalTotal) {
       toast.error('รับเงินไม่พอ')
       return
@@ -182,74 +208,12 @@ export default function PaymentModal({
 
     await supabase.from('transaction_items').insert(itemInserts)
 
-    // Deduct stock from lots (FEFO)
-    for (const item of cart) {
-      let remaining = item.quantity
-      const lots = (item.product.product_lots ?? [])
-        .filter((l: any) => l.quantity > 0)
-        .sort((a: any, b: any) => {
-          if (!a.expiry_date) return 1
-          if (!b.expiry_date) return -1
-          return a.expiry_date.localeCompare(b.expiry_date)
-        })
-
-      for (const lot of lots) {
-        if (remaining <= 0) break
-        const deduct = Math.min(remaining, (lot as any).quantity)
-        await supabase
-          .from('product_lots')
-          .update({ quantity: (lot as any).quantity - deduct })
-          .eq('id', (lot as any).id)
-        await supabase.from('stock_movements').insert({
-          product_id: item.product.id,
-          product_lot_id: (lot as any).id,
-          transaction_id: tx.id,
-          type: 'sale',
-          quantity: deduct,
-          reason: tx.transaction_number,
-          created_by: cashierId,
-        })
-        remaining -= deduct
-      }
-
-      // ขายเกินสต็อค — ของมีจริงบนชั้นแต่ยอดในระบบหมด ตัดต่อให้ติดลบไว้ฟ้องว่าต้องไปนับสต็อคใหม่
-      // (ต้องถอด CHECK (quantity >= 0) ออกจาก product_lots ก่อน ดู supabase-migration-oversell.sql)
-      if (remaining > 0 && !item.product.is_service) {
-        const { data: fallback } = await supabase
-          .from('product_lots')
-          .select('id, quantity')
-          .eq('product_id', item.product.id)
-          .order('expiry_date', { ascending: true, nullsFirst: false })
-          .limit(1)
-          .maybeSingle()
-
-        let lotId = fallback?.id ?? null
-        let current = fallback?.quantity ?? 0
-        if (!lotId) {
-          // สินค้าไม่เคยมีล็อตเลย — สร้างล็อตไว้รับยอดติดลบ จะได้คืนของได้ตอนยกเลิกบิล
-          const { data: created } = await supabase
-            .from('product_lots')
-            .insert({ product_id: item.product.id, lot_number: 'OVERSELL', expiry_date: null, quantity: 0, initial_quantity: 0 })
-            .select('id')
-            .single()
-          lotId = created?.id ?? null
-          current = 0
-        }
-
-        if (lotId) {
-          await supabase.from('product_lots').update({ quantity: current - remaining }).eq('id', lotId)
-          await supabase.from('stock_movements').insert({
-            product_id: item.product.id,
-            product_lot_id: lotId,
-            transaction_id: tx.id,
-            type: 'sale',
-            quantity: remaining,
-            reason: `${tx.transaction_number} (ขายเกินสต็อค)`,
-            created_by: cashierId,
-          })
-        }
-      }
-    }
+    await deductStock(supabase, cart, {
+      transactionId: tx.id,
+      type: 'sale',
+      reason: tx.transaction_number,
+      createdBy: cashierId,
+    })
 
     // ปิดเวชระเบียนคลินิกที่เพิ่งเก็บเงิน — ผูกกับบิลไว้เพื่อพิมพ์ใบเสร็จซ้ำ/คืนสถานะตอนยกเลิกบิล
     if (visitId) {
@@ -287,6 +251,26 @@ export default function PaymentModal({
     } satisfies PosDisplayMessage)
   }
 
+  if (writtenOff) {
+    const pieces = cart.reduce((n, i) => n + i.quantity, 0)
+    return (
+      <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+        <div className="bg-white rounded-2xl w-full max-w-sm shadow-2xl p-6 text-center">
+          <CheckCircle2 size={48} className="mx-auto text-red-500 mb-3" />
+          <h2 className="text-lg font-bold text-gray-900 mb-1">ตัดสต็อกออกแล้ว</h2>
+          <p className="text-sm text-gray-500 mb-1">{cart.length} รายการ · {pieces} ชิ้น</p>
+          <p className="text-xs text-gray-400 mb-4">{writeoffReason.trim()}</p>
+          <button
+            onClick={() => onSuccess({ writeoff: true })}
+            className="w-full bg-gray-900 hover:bg-gray-800 text-white font-bold py-3 rounded-xl text-base transition-colors"
+          >
+            เสร็จสิ้น
+          </button>
+        </div>
+      </div>
+    )
+  }
+
   if (completedTxId) {
     return (
       <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
@@ -301,7 +285,7 @@ export default function PaymentModal({
 
           <div className="space-y-2">
             <button
-              onClick={onSuccess}
+              onClick={() => onSuccess()}
               className="w-full flex items-center justify-center gap-2 bg-green-600 hover:bg-green-700 text-white font-bold py-3 rounded-xl text-base transition-colors"
             >
               <CheckCircle2 size={18} />
@@ -330,7 +314,9 @@ export default function PaymentModal({
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-2xl w-full max-w-sm shadow-2xl max-h-[90dvh] overflow-y-auto">
         <div className="sticky top-0 bg-white rounded-t-2xl flex items-center justify-between p-4 border-b border-gray-100">
-          <h2 className="font-bold text-gray-900">{online ? 'บันทึกออเดอร์ออนไลน์' : 'ชำระเงิน'}</h2>
+          <h2 className="font-bold text-gray-900">
+            {writeoff ? 'ตัดสต็อกออก' : online ? 'บันทึกออเดอร์ออนไลน์' : 'ชำระเงิน'}
+          </h2>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
             <X size={20} />
           </button>
@@ -345,12 +331,13 @@ export default function PaymentModal({
                 <button
                   key={c.value}
                   onClick={() => {
+                    setMode('sale')
                     setChannel(c.value)
                     // ขายออนไลน์เงินเข้าบัญชีร้านผ่านแพลตฟอร์ม ตั้งเป็นโอนให้เลย
                     if (isOnlineChannel(c.value) && method === 'cash') setMethod('transfer')
                   }}
                   className={`py-2 rounded-lg text-xs font-medium border-2 transition-colors ${
-                    channel === c.value
+                    !writeoff && channel === c.value
                       ? 'border-[#C4865A] bg-[#FDF6EE] text-[#7A4E2D]'
                       : 'border-gray-200 text-gray-600 hover:border-gray-300'
                   }`}
@@ -359,9 +346,19 @@ export default function PaymentModal({
                 </button>
               ))}
             </div>
+            <button
+              onClick={() => setMode(writeoff ? 'sale' : 'writeoff')}
+              className={`mt-1.5 w-full py-2 rounded-lg text-xs font-medium border-2 transition-colors ${
+                writeoff
+                  ? 'border-red-400 bg-red-50 text-red-700'
+                  : 'border-gray-200 text-gray-600 hover:border-gray-300'
+              }`}
+            >
+              ตัดสต็อกออก (ไม่ใช่การขาย)
+            </button>
           </div>
 
-          {isOnlineChannel(channel) && (
+          {online && (
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">เลขที่ออเดอร์ (ถ้ามี)</label>
               <input
@@ -374,6 +371,37 @@ export default function PaymentModal({
             </div>
           )}
 
+          {writeoff && (
+            <div className="space-y-2">
+              <p className="text-xs text-red-700 bg-red-50 rounded-lg px-3 py-2">
+                ของจะถูกหักออกจากสต็อกตามตะกร้า แต่ <b>ไม่บันทึกเป็นการขาย</b> ไม่มีใบเสร็จ ไม่มียอดเงิน
+              </p>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">เหตุผล</label>
+                <div className="flex flex-wrap gap-1.5 mb-2">
+                  {['ของเสีย/หมดอายุ', 'ของแถม/ตัวอย่าง', 'ใช้ในร้าน', 'ของหาย'].map((r) => (
+                    <button
+                      key={r}
+                      onClick={() => setWriteoffReason(r)}
+                      className={`px-2.5 py-1 rounded-lg text-xs border ${
+                        writeoffReason === r ? 'border-red-400 bg-red-50 text-red-700' : 'border-gray-200 text-gray-600'
+                      }`}
+                    >
+                      {r}
+                    </button>
+                  ))}
+                </div>
+                <input
+                  type="text"
+                  value={writeoffReason}
+                  onChange={(e) => setWriteoffReason(e.target.value)}
+                  placeholder="หรือพิมพ์เหตุผลเอง"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-400"
+                />
+              </div>
+            </div>
+          )}
+
           {online && (
             <p className="text-xs text-gray-500 bg-gray-50 rounded-lg px-3 py-2">
               ไม่ต้องรับเงินที่ร้าน — ยอดเงินไปเก็บจากแพลตฟอร์มโดยตรง ตรงนี้แค่บันทึกบิลและตัดสต็อก
@@ -381,7 +409,7 @@ export default function PaymentModal({
           )}
 
           {/* Payment Method */}
-          <div className={online ? 'hidden' : ''}>
+          <div className={online || writeoff ? 'hidden' : ''}>
             <p className="text-sm font-medium text-gray-700 mb-2">วิธีชำระเงิน</p>
             <div className="grid grid-cols-2 gap-2">
               {(Object.keys(PAYMENT_LABELS) as Exclude<PaymentMethod, 'qr'>[]).map((m) => (
@@ -401,7 +429,7 @@ export default function PaymentModal({
           </div>
 
           {/* Manual discount */}
-          <div className={`bg-orange-50 rounded-lg p-3 ${online ? 'hidden' : ''}`}>
+          <div className={`bg-orange-50 rounded-lg p-3 ${online || writeoff ? 'hidden' : ''}`}>
             <div className="flex items-center justify-between mb-2">
               <p className="text-sm font-medium text-gray-900">ส่วนลดเพิ่มเติม</p>
               <div className="flex bg-white rounded-lg border border-gray-200 p-0.5">
@@ -440,7 +468,7 @@ export default function PaymentModal({
           </div>
 
           {/* Cash input */}
-          {method === 'cash' && !online && (
+          {method === 'cash' && !online && !writeoff && (
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">รับเงิน</label>
               <input
@@ -469,7 +497,7 @@ export default function PaymentModal({
           )}
 
           {/* Points */}
-          {!online && customer && pointsConfig && customer.points > 0 && (
+          {!online && !writeoff && customer && pointsConfig && customer.points > 0 && (
             <div className="bg-blue-50 rounded-lg p-3">
               <div className="flex justify-between items-center">
                 <div>
@@ -553,7 +581,7 @@ export default function PaymentModal({
           )}
 
           {/* Summary */}
-          <div className="bg-gray-50 rounded-lg p-3 space-y-1.5">
+          <div className={`bg-gray-50 rounded-lg p-3 space-y-1.5 ${writeoff ? 'hidden' : ''}`}>
             <div className="flex justify-between text-sm text-gray-500">
               <span>ยอดรวม</span>
               <span>฿{total.toFixed(2)}</span>
@@ -603,10 +631,20 @@ export default function PaymentModal({
         <div className="p-4 border-t border-gray-100">
           <button
             onClick={handleConfirm}
-            disabled={loading || (!online && method === 'cash' && (!cashReceived || parseFloat(cashReceived) < finalTotal))}
-            className="w-full bg-green-600 hover:bg-green-700 disabled:opacity-40 disabled:cursor-not-allowed text-white font-bold py-3 rounded-xl text-base transition-colors"
+            disabled={
+              loading ||
+              (writeoff && !writeoffReason.trim()) ||
+              (!writeoff && !online && method === 'cash' && (!cashReceived || parseFloat(cashReceived) < finalTotal))
+            }
+            className={`w-full disabled:opacity-40 disabled:cursor-not-allowed text-white font-bold py-3 rounded-xl text-base transition-colors ${
+              writeoff ? 'bg-red-600 hover:bg-red-700' : 'bg-green-600 hover:bg-green-700'
+            }`}
           >
-            {loading ? 'กำลังบันทึก...' : online ? '✓ บันทึกและตัดสต็อก' : '✓ ยืนยันชำระเงิน'}
+            {loading
+              ? 'กำลังบันทึก...'
+              : writeoff ? '✓ ตัดสต็อกออก'
+                : online ? '✓ บันทึกและตัดสต็อก'
+                  : '✓ ยืนยันชำระเงิน'}
           </button>
         </div>
       </div>

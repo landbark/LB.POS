@@ -746,8 +746,9 @@ export default function POSClient({ products, promotions, pointsConfig, cashierI
           roundingMode={roundingMode}
           visitId={activeVisit?.id ?? null}
           onClose={() => setShowPayment(false)}
-          onSuccess={() => {
-            if (activeVisit) setPaidVisitIds((ids) => [...ids, activeVisit.id])
+          onSuccess={(info) => {
+            // ตัดสต็อกออกไม่ได้เก็บเงิน เวชระเบียนยังค้างรอเก็บเงินเหมือนเดิม
+            if (activeVisit && !info?.writeoff) setPaidVisitIds((ids) => [...ids, activeVisit.id])
             setCart([])
             setDiscountRow(null)
             setCustomer(null)
@@ -755,7 +756,7 @@ export default function POSClient({ products, promotions, pointsConfig, cashierI
             setShowAddCustomer(false)
             setShowPayment(false)
             setActiveVisit(null)
-            toast.success('บันทึกการขายแล้ว')
+            toast.success(info?.writeoff ? 'ตัดสต็อกออกแล้ว' : 'บันทึกการขายแล้ว')
             // คิวคลินิกอยู่ฝั่ง server — ต้อง refresh ไม่งั้นรายการที่เพิ่งเก็บเงินยังค้างอยู่
             router.refresh()
           }}
