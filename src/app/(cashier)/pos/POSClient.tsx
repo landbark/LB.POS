@@ -68,11 +68,13 @@ export default function POSClient({ products, promotions, pointsConfig, cashierI
     ).values()
   )
 
+  const q = search.trim().toLowerCase()
   const filtered = products.filter((p) => {
     const matchSearch =
-      !search ||
-      p.name.toLowerCase().includes(search.toLowerCase()) ||
-      (p.barcode && p.barcode.includes(search))
+      !q ||
+      p.name.toLowerCase().includes(q) ||
+      (p.sku && p.sku.toLowerCase().includes(q)) ||
+      (p.barcode && p.barcode.toLowerCase().includes(q))
     const matchCategory = !categoryFilter || (p.categories as any)?.name === categoryFilter
     // สินค้าสต็อค 0 ยังโชว์ — ของบนชั้นมักมีจริงแม้ยอดในระบบหมด ขายได้แล้วให้สต็อคติดลบไว้ฟ้องว่าต้องนับใหม่
     return matchSearch && matchCategory
@@ -278,7 +280,9 @@ export default function POSClient({ products, promotions, pointsConfig, cashierI
   function handleSearchEnter() {
     const q = search.trim()
     if (!q) return
-    const exact = products.find((p) => p.barcode === q)
+    const exact =
+      products.find((p) => p.barcode === q) ??
+      products.find((p) => p.sku?.toLowerCase() === q.toLowerCase())
     const target = exact ?? (filtered.length === 1 ? filtered[0] : null)
     if (target) {
       addToCart(target)
@@ -360,7 +364,7 @@ export default function POSClient({ products, promotions, pointsConfig, cashierI
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleSearchEnter() } }}
-              placeholder="ค้นหาสินค้า หรือสแกนบาร์โค้ด..."
+              placeholder="ค้นหาชื่อ / รหัสสินค้า / บาร์โค้ด หรือสแกน..."
               className="w-full pl-9 pr-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
@@ -414,9 +418,12 @@ export default function POSClient({ products, promotions, pointsConfig, cashierI
                       '🐾'
                     )}
                   </div>
-                  <p className="text-xs font-medium text-gray-900 line-clamp-2 leading-tight mb-1">
+                  <p className="text-xs font-medium text-gray-900 line-clamp-2 leading-tight">
                     {product.name}
                   </p>
+                  {product.sku && (
+                    <p className="text-[11px] font-mono text-gray-400 mb-1 truncate">{product.sku}</p>
+                  )}
                   <p className="text-sm font-bold text-blue-600">
                     ฿{product.price.toLocaleString('th-TH', { minimumFractionDigits: 2 })}
                   </p>
