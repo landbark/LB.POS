@@ -13,6 +13,8 @@ const geistSans = Geist({
 export const metadata: Metadata = {
   title: "LANDBARK POS",
   description: "ระบบ POS สำหรับร้าน LANDBARK Pet Shop",
+  // โลโก้ร้านจากหน้าตั้งค่า — เปลี่ยนโลโก้แล้ว favicon ตามเอง (cache 1 ชม.)
+  icons: { icon: "/api/favicon", apple: "/api/favicon" },
 };
 
 export default function RootLayout({

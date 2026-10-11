@@ -27,6 +27,9 @@ export default function POSClient({ products, promotions, pointsConfig, cashierI
   const [showQueue, setShowQueue] = useState(false)
   // แผงตะกร้าบนมือถือ — จอใหญ่โชว์ตลอดอยู่แล้ว ไม่สนค่านี้
   const [cartOpen, setCartOpen] = useState(false)
+  // เวชระเบียนที่เพิ่งเก็บเงินไป — ซ่อนออกจากคิวทันที ไม่ต้องรอ router.refresh() ตามมาทัน
+  // (เก็บเป็นรายการ id แทนการ copy คิวมาเป็น state เพราะถ้า refresh คืนข้อมูลเก่ามา ตัวที่จ่ายแล้วจะโผล่ซ้ำ)
+  const [paidVisitIds, setPaidVisitIds] = useState<string[]>([])
   // แถวในตะกร้าที่กำลังเปิดช่องลดราคา + โหมดลด (บาท/%) ของแถวนั้น
   const [discountRow, setDiscountRow] = useState<string | null>(null)
   const [discountMode, setDiscountMode] = useState<'amount' | 'percent'>('amount')
@@ -367,6 +370,7 @@ export default function POSClient({ products, promotions, pointsConfig, cashierI
   }, [cart, customer, subtotal, totalDiscount, total, pointsConfig, showPayment])
 
   const cartCount = cart.reduce((n, i) => n + i.quantity, 0)
+  const queue = clinicQueue.filter((v) => !paidVisitIds.includes(v.id))
 
   return (
     // มือถือ: สินค้าเต็มจอ ตะกร้าซ่อนอยู่หลังแถบล่าง — จอใหญ่: สองคอลัมน์เหมือนเดิม
@@ -488,14 +492,14 @@ export default function POSClient({ products, promotions, pointsConfig, cashierI
           </button>
         </div>
         {/* คิวเก็บเงินจากคลินิก */}
-        {clinicQueue.length > 0 && !activeVisit && (
+        {queue.length > 0 && !activeVisit && (
           <div className="px-3 pt-3">
             <button
               onClick={() => setShowQueue(true)}
               className="w-full flex items-center justify-center gap-2 bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-800 text-sm font-medium py-2 rounded-lg transition-colors"
             >
               <Stethoscope size={15} />
-              รอเก็บเงินจากคลินิก ({clinicQueue.length})
+              รอเก็บเงินจากคลินิก ({queue.length})
             </button>
           </div>
         )}
@@ -743,6 +747,7 @@ export default function POSClient({ products, promotions, pointsConfig, cashierI
           visitId={activeVisit?.id ?? null}
           onClose={() => setShowPayment(false)}
           onSuccess={() => {
+            if (activeVisit) setPaidVisitIds((ids) => [...ids, activeVisit.id])
             setCart([])
             setDiscountRow(null)
             setCustomer(null)
@@ -771,7 +776,7 @@ export default function POSClient({ products, promotions, pointsConfig, cashierI
             </div>
 
             <div className="max-h-96 overflow-y-auto divide-y divide-gray-50">
-              {clinicQueue.map((v) => {
+              {queue.map((v) => {
                 const visitTotal = v.items.reduce((sum, i) => sum + i.unit_price * i.quantity, 0)
                 return (
                   <button
@@ -794,7 +799,7 @@ export default function POSClient({ products, promotions, pointsConfig, cashierI
                   </button>
                 )
               })}
-              {clinicQueue.length === 0 && (
+              {queue.length === 0 && (
                 <p className="py-8 text-center text-sm text-gray-400">ไม่มีรายการรอเก็บเงิน</p>
               )}
             </div>

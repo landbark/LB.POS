@@ -27,7 +27,7 @@ export default async function VisitPage({ params }: { params: Promise<{ id: stri
     fetchAll((from, to) =>
       supabase
         .from('products')
-        .select('id, name, unit, price, is_service, clinic_only, categories(name, clinic_only), product_lots(quantity)')
+        .select('id, name, unit, price, is_service, clinic_only, is_vaccine, booster_type, booster_interval_days, categories(name, clinic_only, is_vaccine), product_lots(quantity)')
         .eq('active', true)
         .order('name')
         .order('id')   // ชื่อสินค้าซ้ำได้ ต้องมีคีย์ไม่ซ้ำปิดท้าย ไม่งั้นแถวซ้ำ/หายระหว่างหน้า

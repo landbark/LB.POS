@@ -20,7 +20,10 @@ interface DispensableProduct {
   price: number
   is_service: boolean
   clinic_only: boolean | null
-  categories?: { name: string; clinic_only: boolean } | null
+  is_vaccine: boolean | null
+  booster_type: string | null
+  booster_interval_days: number | null
+  categories?: { name: string; clinic_only: boolean; is_vaccine?: boolean | null } | null
   product_lots?: { quantity: number }[]
 }
 
@@ -143,6 +146,32 @@ export default function VisitDetail({
       toast.error('เพิ่มรายการไม่สำเร็จ')
       return
     }
+
+    // วัคซีน → ขึ้นประวัติให้เลยตอนเลือก จะได้ตั้งวันนัดต่อได้ทันทีโดยไม่ต้องรอส่งเก็บเงิน
+    if (isVaccine(product)) {
+      const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Bangkok' })
+      const { data: dup } = await supabase
+        .from('pet_vaccinations')
+        .select('id')
+        .eq('visit_id', visit.id)
+        .eq('product_id', product.id)
+        .maybeSingle()
+      if (!dup) {
+        const { error: vErr } = await supabase.from('pet_vaccinations').insert({
+          pet_id: visit.pet_id,
+          vaccine_name: product.name,
+          dose_date: today,
+          next_due_date: computeNextDue(today, product.booster_type, product.booster_interval_days),
+          vet_id: visit.vet_id,
+          visit_id: visit.id,
+          product_id: product.id,
+          created_by: userId,
+        })
+        if (vErr) toast.error('ลงประวัติวัคซีนไม่สำเร็จ: ' + vErr.message)
+        else toast.success('ลงประวัติวัคซีนให้แล้ว — ตั้งวันนัดได้ที่หัวข้อวัคซีนด้านล่าง')
+      }
+    }
+
     setServiceQuery('')
     setRxQuery('')
     refresh()
@@ -164,6 +193,14 @@ export default function VisitDetail({
     if (error) {
       toast.error('ลบรายการไม่สำเร็จ')
       return
+    }
+    // ถอนประวัติวัคซีนที่ลงอัตโนมัติจากใบนี้ออกด้วย ไม่งั้นค้างทั้งที่ไม่ได้ฉีด
+    if (item.products && isVaccine(item.products as never)) {
+      await supabase
+        .from('pet_vaccinations')
+        .delete()
+        .eq('visit_id', visit.id)
+        .eq('product_id', item.product_id)
     }
     refresh()
   }

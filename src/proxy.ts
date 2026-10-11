@@ -37,6 +37,8 @@ export async function proxy(request: NextRequest) {
     || publicSitePaths.some((p) => pathname === p || pathname.startsWith(p + '/'))
     || pathname === '/member' || pathname.startsWith('/api/member')
     || pathname.startsWith('/print/receipt')
+    // favicon โหลดก่อนล็อกอิน (หน้า login ก็ต้องเห็นไอคอน)
+    || pathname === '/api/favicon'
     // Vercel Cron ไม่มี session พนักงาน — route เช็ค CRON_SECRET เอง
     || pathname.startsWith('/api/cron')
     // Telegram เรียก webhook เอง (ไม่มี session) — route เช็ค secret token header เอง
