@@ -326,6 +326,7 @@ export async function sendStockAlerts(
     return { sent: false, reason: 'disabled' }
   }
 
+  // สรุปรอบเช้ารวมสต็อก+นัด+วัคซีน ไม่มีเรื่องเงิน — ส่งทุกคนที่อนุมัติแล้วไม่แยก role
   const chatIds = (recipients ?? []).map((r) => r.chat_id)
   if (chatIds.length === 0) return { sent: false, reason: 'no_recipients' }
 
@@ -367,6 +368,7 @@ export async function sendStockAlerts(
 
 export type NotifyEvent =
   | 'new_order' | 'payment_slip' | 'new_appointment' | 'shift_close' | 'daily_sales'
+  | 'sale' | 'purchase_order' | 'stock_received'
 
 const EVENT_COLUMN: Record<NotifyEvent, string> = {
   new_order: 'notify_new_order',
@@ -374,10 +376,38 @@ const EVENT_COLUMN: Record<NotifyEvent, string> = {
   new_appointment: 'notify_new_appointment',
   shift_close: 'notify_shift_close',
   daily_sales: 'notify_daily_sales',
+  sale: 'notify_sale',
+  purchase_order: 'notify_purchase_order',
+  stock_received: 'notify_stock_received',
 }
 
-// เรื่องเงิน — ส่งเฉพาะผู้รับที่ติ๊กว่าเป็นเจ้าของ พนักงานไม่ต้องเห็นยอดขาย/เงินขาดเกิน
-const OWNER_ONLY: ReadonlySet<NotifyEvent> = new Set<NotifyEvent>(['shift_close', 'daily_sales'])
+export type RecipientRole = 'owner' | 'staff' | 'vet'
+
+export const RECIPIENT_ROLE_LABEL: Record<RecipientRole, string> = {
+  owner: 'เจ้าของ',
+  staff: 'พนักงาน',
+  vet: 'สัตวแพทย์',
+}
+
+// ใครได้ข้อความเรื่องไหน — ยอดขาย/เงินในกะ ส่งเจ้าของอย่างเดียว, นัดหมายส่งหมอด้วย
+const EVENT_ROLES: Record<NotifyEvent, readonly RecipientRole[]> = {
+  new_order: ['owner', 'staff'],
+  payment_slip: ['owner', 'staff'],
+  new_appointment: ['owner', 'staff', 'vet'],
+  shift_close: ['owner'],
+  daily_sales: ['owner'],
+  sale: ['owner'],
+  purchase_order: ['owner', 'staff'],
+  stock_received: ['owner', 'staff'],
+}
+
+/** role ของผู้รับ — รองรับข้อมูลเก่าที่ยังมีแต่ธง is_owner (ก่อนรัน migration) */
+export function recipientRole(r: { recipient_role?: string | null; is_owner?: boolean | null }): RecipientRole {
+  if (r.recipient_role === 'owner' || r.recipient_role === 'staff' || r.recipient_role === 'vet') {
+    return r.recipient_role
+  }
+  return r.is_owner ? 'owner' : 'staff'
+}
 
 /** ลิงก์กลับเข้าหลังร้าน — ตั้ง NEXT_PUBLIC_SITE_URL บน Vercel ไว้ให้ลิงก์ในข้อความกดได้ */
 export function adminLink(path: string): string {
@@ -419,8 +449,9 @@ export async function notifyEvent(
       .eq('approved', true)
 
     // ไม่มี fallback ตั้งใจ: ถ้ายังไม่มีใครเป็นเจ้าของ ข้อความเรื่องเงินจะไม่ถูกส่ง
-    // ดีกว่าเผลอส่งยอดขายให้พนักงาน — หน้าแจ้งเตือนจะขึ้นเตือนให้ไปติ๊กเอง
-    const list = (recipients ?? []).filter((r) => !OWNER_ONLY.has(event) || r.is_owner === true)
+    // ดีกว่าเผลอส่งยอดขายให้พนักงาน — หน้าแจ้งเตือนจะขึ้นเตือนให้ไปตั้งเอง
+    const roles = EVENT_ROLES[event]
+    const list = (recipients ?? []).filter((r) => roles.includes(recipientRole(r)))
 
     const chatIds = list.map((r) => r.chat_id)
     if (chatIds.length === 0) return
@@ -628,4 +659,54 @@ export function buildDailySalesMessage(s: Awaited<ReturnType<typeof gatherDailyS
   }
 
   return lines.join('\n') + adminLink('/admin/daily')
+}
+
+export interface SaleInfo {
+  transactionNumber: string
+  total: number
+  itemCount: number
+  paymentLabel: string
+  channelLabel: string | null
+  cashier: string | null
+  customer: string | null
+}
+
+export function buildSaleMessage(s: SaleInfo): string {
+  const lines = [
+    `🧾 ขายแล้ว ${s.transactionNumber}`,
+    `ยอด ${baht(s.total)} · ${s.itemCount} รายการ`,
+    `รับเงิน: ${s.paymentLabel}${s.channelLabel ? ` · ${s.channelLabel}` : ''}`,
+  ]
+  if (s.customer) lines.push(`ลูกค้า: ${s.customer}`)
+  if (s.cashier) lines.push(`พนักงาน: ${s.cashier}`)
+  lines.push(`เวลา ${timeThai()} น.`)
+  return lines.join('\n') + adminLink('/admin/documents')
+}
+
+export interface PurchaseInfo {
+  purchaseNumber: string
+  supplier: string | null
+  itemCount: number
+  totalCost: number
+  by: string | null
+}
+
+export function buildPurchaseOrderMessage(p: PurchaseInfo): string {
+  return [
+    `📝 ใบสั่งซื้อใหม่ ${p.purchaseNumber}`,
+    `ซัพพลายเออร์: ${p.supplier ?? 'ไม่ระบุ'}`,
+    `${p.itemCount} รายการ · ทุนรวม ${baht(p.totalCost)}`,
+    p.by ? `บันทึกโดย: ${p.by}` : null,
+    `เวลา ${timeThai()} น.`,
+  ].filter(Boolean).join('\n') + adminLink('/admin/receiving')
+}
+
+export function buildStockReceivedMessage(p: PurchaseInfo): string {
+  return [
+    `📦 รับของเข้าสต็อกแล้ว ${p.purchaseNumber}`,
+    `ซัพพลายเออร์: ${p.supplier ?? 'ไม่ระบุ'}`,
+    `${p.itemCount} รายการ · ทุนรวม ${baht(p.totalCost)}`,
+    p.by ? `รับโดย: ${p.by}` : null,
+    `เวลา ${timeThai()} น.`,
+  ].filter(Boolean).join('\n') + adminLink('/admin/inventory')
 }

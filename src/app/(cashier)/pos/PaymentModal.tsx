@@ -271,6 +271,13 @@ export default function PaymentModal({
         .eq('id', customer.id)
     }
 
+    // แจ้งเตือน Telegram — งานเสริม ล้มเหลวไม่ให้กระทบการขาย
+    fetch('/api/notify/sale', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ transactionId: tx.id }),
+    }).catch(() => {})
+
     setLoading(false)
     setCompletedTxId(tx.id)
     displayChannelRef.current?.postMessage({

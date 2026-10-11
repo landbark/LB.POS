@@ -398,6 +398,12 @@ export default function ReceivingClient({ suppliers, products, purchases }: Prop
       }
     }
 
+    fetch('/api/notify/purchase', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ purchaseId: purchase.id, stage: 'created' }),
+    }).catch(() => {})
+
     setLoading(false)
 
     // ยังไม่เพิ่มสต็อค — สต็อคจะเข้าตอนพนักงานกด "รับสินค้า" พร้อมใส่ล็อต/วันหมดอายุ

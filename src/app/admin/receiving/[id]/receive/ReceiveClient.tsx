@@ -149,6 +149,13 @@ export default function ReceiveClient({ purchase, receivedBy }: { purchase: Rece
       return
     }
 
+    // แจ้งเตือน Telegram — งานเสริม ล้มเหลวไม่ให้กระทบการรับของ
+    fetch('/api/notify/purchase', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ purchaseId: purchase.id, stage: 'received' }),
+    }).catch(() => {})
+
     toast.success('รับสินค้าเรียบร้อย สต็อคเพิ่มแล้ว')
     router.push('/admin/receiving')
     router.refresh()

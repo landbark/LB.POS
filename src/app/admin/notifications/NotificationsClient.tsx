@@ -18,6 +18,9 @@ interface NotifySettings {
   notify_new_appointment?: boolean
   notify_shift_close?: boolean
   notify_daily_sales?: boolean
+  notify_sale?: boolean
+  notify_purchase_order?: boolean
+  notify_stock_received?: boolean
   notify_customer_appointment?: boolean
   customer_reminder_footer?: string | null
   cash_diff_threshold?: number
@@ -30,9 +33,22 @@ const EVENTS = [
   { key: 'notify_new_appointment', label: 'มีการจองนัดใหม่', hint: 'ทันทีที่บันทึกนัดจากหน้านัดหมายหรือหน้า OPD' },
   { key: 'notify_shift_close', label: 'ปิดกะ / นับเงิน', hint: 'สรุปยอดขายในกะ + เงินขาดเกิน', ownerOnly: true },
   { key: 'notify_daily_sales', label: 'สรุปยอดขายรายวัน', hint: 'ส่งทุกเย็น 20:00 น. (เฉพาะวันที่มีการขาย)', ownerOnly: true },
+  { key: 'notify_sale', label: 'ทุกครั้งที่ขายของ', hint: 'เด้งทุกบิลที่ปิดการขาย — ร้านขายวันละหลายสิบบิลจะเด้งบ่อยมาก', ownerOnly: true },
+  { key: 'notify_purchase_order', label: 'สร้างใบสั่งซื้อ', hint: 'มีคนบันทึกใบสั่งซื้อใหม่ส่งซัพพลายเออร์' },
+  { key: 'notify_stock_received', label: 'รับของเข้าสต็อก', hint: 'ของมาส่งแล้วและกดรับเข้าสต็อกเรียบร้อย' },
 ] as const
 
 type EventKey = (typeof EVENTS)[number]['key']
+
+type Role = 'owner' | 'staff' | 'vet'
+
+// รองรับข้อมูลเก่าที่ยังมีแต่ธง is_owner (ก่อนรัน migration)
+function roleOf(r: { recipient_role?: string | null; is_owner?: boolean }): Role {
+  if (r.recipient_role === 'owner' || r.recipient_role === 'staff' || r.recipient_role === 'vet') {
+    return r.recipient_role
+  }
+  return r.is_owner ? 'owner' : 'staff'
+}
 
 interface Recipient {
   id: string
@@ -40,6 +56,7 @@ interface Recipient {
   name: string | null
   approved: boolean
   is_owner?: boolean
+  recipient_role?: 'owner' | 'staff' | 'vet' | null
   created_at: string
 }
 
@@ -93,13 +110,14 @@ export default function NotificationsClient({
     }
   }
 
-  // ติ๊กว่าใครเป็นเจ้าของ — เฉพาะเจ้าของถึงจะได้ข้อความเรื่องเงิน (ปิดกะ / ยอดขายรายวัน)
-  async function toggleOwner(r: Recipient) {
+  // ตั้งว่าใครเป็นเจ้าของ / พนักงาน / หมอ — เรื่องเงินส่งเฉพาะเจ้าของ, หมอได้เฉพาะเรื่องนัดหมาย
+  async function setRole(r: Recipient, role: 'owner' | 'staff' | 'vet') {
     setBusyId(r.id)
     const supabase = createClient()
     const { error } = await supabase
       .from('telegram_recipients')
-      .update({ is_owner: !r.is_owner })
+      // คงธง is_owner ไว้ให้ตรงกัน เผื่อโค้ดเก่าที่ยังอ่านคอลัมน์นี้อยู่
+      .update({ recipient_role: role, is_owner: role === 'owner' })
       .eq('id', r.id)
     setBusyId(null)
     if (error) toast.error(error.message)
@@ -375,12 +393,18 @@ export default function NotificationsClient({
           เปิดบอทใน Telegram แล้วพิมพ์ <span className="font-mono bg-gray-100 px-1 rounded">/start</span> เพื่อขอรับแจ้งเตือน (ต้องรอแอดมินอนุมัติ) — พิมพ์ <span className="font-mono bg-gray-100 px-1 rounded">/stop</span> เพื่อยกเลิก
         </p>
 
-        {approved.length > 0 && !approved.some((r) => r.is_owner) && (
+        {approved.length > 0 && !approved.some((r) => roleOf(r) === 'owner') && (
           <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-4">
-            ยังไม่มีใครถูกตั้งเป็น <b>เจ้าของ</b> — ข้อความปิดกะและสรุปยอดขายรายวันจะไม่ถูกส่งหาใครเลย
-            กดไอคอนมงกุฎหลังชื่อเพื่อตั้ง
+            ยังไม่มีใครถูกตั้งเป็น <b>เจ้าของ</b> — ข้อความเรื่องเงิน (ปิดกะ / ยอดขาย) จะไม่ถูกส่งหาใครเลย
+            เลือกสิทธิ์หลังชื่อให้เป็นเจ้าของอย่างน้อยหนึ่งคน
           </p>
         )}
+
+        <p className="text-xs text-gray-500 mb-3">
+          สิทธิ์ของผู้รับกำหนดว่าใครได้ข้อความไหน — <b>เจ้าของ</b> ได้ทุกเรื่องรวมเรื่องเงิน ·
+          <b> พนักงาน</b> ได้ออเดอร์ สลิป ใบสั่งซื้อ รับของ นัดหมาย ·
+          <b> สัตวแพทย์</b> ได้เฉพาะนัดหมาย
+        </p>
 
         {approved.length === 0 ? (
           <p className="text-sm text-gray-400 mb-4">ยังไม่มีผู้รับแจ้งเตือน</p>
@@ -390,22 +414,21 @@ export default function NotificationsClient({
               <li key={r.id} className="flex items-center justify-between py-2 gap-2">
                 <div className="min-w-0">
                   <span className="text-sm text-gray-900">{r.name ?? 'ไม่มีชื่อ'}</span>
-                  {r.is_owner && (
-                    <span className="ml-1.5 text-[10px] font-medium text-[#7A4E2D] bg-[#F0E4D4] px-1.5 py-0.5 rounded">
-                      เจ้าของ
-                    </span>
-                  )}
+                  {roleOf(r) === 'owner' && <Crown size={12} className="inline ml-1 -mt-0.5 text-[#C4865A]" />}
                   <span className="text-xs text-gray-400 ml-2">เชื่อมเมื่อ {fmtDate(r.created_at)}</span>
                 </div>
                 <div className="flex items-center gap-1 shrink-0">
-                  <button
-                    onClick={() => toggleOwner(r)}
+                  <select
+                    value={roleOf(r)}
                     disabled={busyId === r.id}
-                    className={`p-1 disabled:opacity-50 ${r.is_owner ? 'text-[#C4865A]' : 'text-gray-300 hover:text-[#C4865A]'}`}
-                    title={r.is_owner ? 'เอาสถานะเจ้าของออก (จะไม่ได้ข้อความเรื่องเงิน)' : 'ตั้งเป็นเจ้าของ (รับข้อความเรื่องเงินด้วย)'}
+                    onChange={(e) => setRole(r, e.target.value as 'owner' | 'staff' | 'vet')}
+                    className="border border-gray-300 rounded-lg px-2 py-1 text-xs disabled:opacity-50"
+                    title="เลือกว่าคนนี้ได้รับข้อความกลุ่มไหน"
                   >
-                    <Crown size={15} />
-                  </button>
+                    <option value="owner">เจ้าของ</option>
+                    <option value="staff">พนักงาน</option>
+                    <option value="vet">สัตวแพทย์</option>
+                  </select>
                   <button
                     onClick={() => removeRecipient(r)}
                     disabled={busyId === r.id}
