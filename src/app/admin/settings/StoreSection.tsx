@@ -6,7 +6,8 @@ import { createClient } from '@/lib/supabase/client'
 import { Store, QrCode, Trash2 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import ImageInput from '@/components/ImageInput'
-import type { StoreSettings } from '@/lib/types'
+import type { StoreSettings, RoundingMode } from '@/lib/types'
+import { ROUNDING_OPTIONS } from '@/lib/rounding'
 
 export default function StoreSection({ config }: { config: StoreSettings | null }) {
   const router = useRouter()
@@ -19,6 +20,7 @@ export default function StoreSection({ config }: { config: StoreSettings | null 
     promptpay_id: config?.promptpay_id ?? '',
     vat_registered: config?.vat_registered ?? false,
     vat_rate: config?.vat_rate?.toString() ?? '7',
+    rounding_mode: (config?.rounding_mode ?? 'none') as RoundingMode,
   })
   const [logoBlob, setLogoBlob] = useState<Blob | null>(null)
   const [logoPreview, setLogoPreview] = useState<string | null>(config?.logo_url ?? null)
@@ -114,6 +116,7 @@ export default function StoreSection({ config }: { config: StoreSettings | null 
         vat_registered: form.vat_registered,
         vat_rate: parseFloat(form.vat_rate) || 7,
         promptpay_id: form.promptpay_id.trim() || null,
+        rounding_mode: form.rounding_mode,
         payment_qr_url: qrUrl,
         logo_url: logoUrl,
         updated_at: new Date().toISOString(),
@@ -221,6 +224,24 @@ export default function StoreSection({ config }: { config: StoreSettings | null 
         </div>
 
         <div>
+          <label className={labelClass}>ปัดเศษสตางค์ท้ายบิล</label>
+          <div className="space-y-1.5 mb-4">
+            {ROUNDING_OPTIONS.map((opt) => (
+              <label key={opt.value} className="flex items-start gap-2 text-sm text-gray-700 cursor-pointer">
+                <input
+                  type="radio"
+                  className="mt-1"
+                  checked={form.rounding_mode === opt.value}
+                  onChange={() => setForm({ ...form, rounding_mode: opt.value })}
+                />
+                <span>
+                  {opt.label}
+                  <span className="block text-xs text-gray-400">{opt.hint}</span>
+                </span>
+              </label>
+            ))}
+          </div>
+
           <label className={labelClass}>PromptPay ID (ไม่บังคับ)</label>
           <input
             type="text" value={form.promptpay_id}

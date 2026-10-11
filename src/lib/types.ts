@@ -152,6 +152,7 @@ export interface StoreSettings {
   pickup_note: string | null
   /** ยอดซื้อขั้นต่ำที่ส่งฟรี (null = ไม่มี) */
   free_shipping_min: number | null
+  rounding_mode: RoundingMode
   updated_at: string
 }
 
@@ -412,6 +413,8 @@ export interface Promotion {
 export type PaymentMethod = 'cash' | 'transfer' | 'card' | 'qr'
 /** ช่องทางที่บิลนี้ขายออกไป — store = หน้าร้าน ที่เหลือคือ marketplace */
 export type SalesChannel = 'store' | 'shopee' | 'tiktok' | 'lazada'
+/** ปัดเศษสตางค์ท้ายบิล — none = ไม่ปัด, normal = .50 ขึ้นไปปัดขึ้น, up/down = ปัดขึ้น/ลงเสมอ */
+export type RoundingMode = 'none' | 'normal' | 'up' | 'down'
 export type TransactionStatus = 'completed' | 'cancelled'
 export type RefundMethod = 'cash' | 'transfer' | 'credit'
 
@@ -437,6 +440,8 @@ export interface Transaction {
   restocked: boolean | null
   refund_method: RefundMethod | null
   /** วิธีรับเงินที่บันทึกไว้ตอนขายครั้งแรก — มีค่าเมื่อมีคนแก้วิธีรับเงินภายหลัง */
+  /** ส่วนต่างจากการปัดเศษท้ายบิล (+ ปัดขึ้น, − ปัดลง) */
+  rounding: number
   sales_channel: SalesChannel
   /** เลขที่ออเดอร์ฝั่ง marketplace — มีเฉพาะบิลที่ไม่ใช่หน้าร้าน */
   external_order_no: string | null

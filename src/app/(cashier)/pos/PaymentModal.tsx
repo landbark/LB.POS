@@ -4,7 +4,8 @@ import { useState, useEffect, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { X, CheckCircle2, Printer } from 'lucide-react'
 import toast from 'react-hot-toast'
-import type { CartItem, Customer, PointsConfig, PaymentMethod, SalesChannel } from '@/lib/types'
+import type { CartItem, Customer, PointsConfig, PaymentMethod, SalesChannel, RoundingMode } from '@/lib/types'
+import { roundTotal } from '@/lib/rounding'
 import { SALES_CHANNELS, isOnlineChannel } from '@/lib/salesChannel'
 import { POS_DISPLAY_CHANNEL, type PosDisplayMessage } from '@/lib/posDisplay'
 import { isVatApplicable } from '@/lib/vat'
@@ -18,6 +19,7 @@ interface Props {
   pointsConfig: PointsConfig | null
   cashierId: string
   promptpayId: string | null
+  roundingMode: RoundingMode
   /** เก็บเงินให้เวชระเบียนคลินิกใบไหน — จ่ายเสร็จจะ mark เป็น paid พร้อมผูกเลขที่บิล */
   visitId: string | null
   onClose: () => void
@@ -32,7 +34,7 @@ const PAYMENT_LABELS: Record<Exclude<PaymentMethod, 'qr'>, string> = {
 }
 
 export default function PaymentModal({
-  cart, subtotal, totalDiscount, total, customer, pointsConfig, cashierId, promptpayId, visitId, onClose, onSuccess,
+  cart, subtotal, totalDiscount, total, customer, pointsConfig, cashierId, promptpayId, roundingMode, visitId, onClose, onSuccess,
 }: Props) {
   const [channel, setChannel] = useState<SalesChannel>('store')
   const [orderNo, setOrderNo] = useState('')
@@ -72,7 +74,9 @@ export default function PaymentModal({
   const afterPointsDiscount = Math.max(0, afterManualDiscount - pointsDiscount)
 
   const maxCredit = customer ? Math.min(customer.credit_balance, afterPointsDiscount) : 0
-  const finalTotal = Math.max(0, afterPointsDiscount - useCredit)
+  const beforeRounding = Math.max(0, afterPointsDiscount - useCredit)
+  // ปัดเศษเป็นขั้นสุดท้าย หลังหักส่วนลด/แต้ม/เครดิตหมดแล้ว — ยอดที่ลูกค้าจ่ายจริงคือยอดที่ปัดแล้ว
+  const { total: finalTotal, rounding } = roundTotal(beforeRounding, roundingMode)
 
   const change = method === 'cash' && cashReceived
     ? parseFloat(cashReceived) - finalTotal
@@ -133,6 +137,7 @@ export default function PaymentModal({
           subtotal,
           discount: totalDiscount + manualDiscountAmount + pointsDiscount,
           total: finalTotal,
+          rounding,
           payment_method: method,
           sales_channel: channel,
           external_order_no: isOnlineChannel(channel) ? (orderNo.trim() || null) : null,
@@ -562,6 +567,12 @@ export default function PaymentModal({
               <div className="flex justify-between text-sm text-emerald-600">
                 <span>ใช้เครดิต</span>
                 <span>-฿{useCredit.toFixed(2)}</span>
+              </div>
+            )}
+            {rounding !== 0 && (
+              <div className="flex justify-between text-sm text-gray-500">
+                <span>ปัดเศษ</span>
+                <span>{rounding > 0 ? '+' : '-'}฿{Math.abs(rounding).toFixed(2)}</span>
               </div>
             )}
             <div className="flex justify-between font-bold text-base text-gray-900 pt-1 border-t border-gray-200">

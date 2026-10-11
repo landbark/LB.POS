@@ -30,7 +30,7 @@ export default async function POSPage() {
       .lte('start_date', new Date().toISOString().split('T')[0])
       .gte('end_date', new Date().toISOString().split('T')[0]),
     supabase.from('points_config').select('*').limit(1).single(),
-    supabase.from('store_settings').select('promptpay_id').limit(1).single(),
+    supabase.from('store_settings').select('promptpay_id, rounding_mode').limit(1).single(),
     // คิวเก็บเงินจากคลินิก — หมอกด "ส่งไปเก็บเงิน" ที่หน้าตรวจรักษาแล้วมาโผล่ตรงนี้
     supabase
       .from('visits')
@@ -70,6 +70,7 @@ export default async function POSPage() {
       pointsConfig={activePointsConfig}
       cashierId={user?.id ?? ''}
       promptpayId={storeSettings?.promptpay_id ?? null}
+      roundingMode={storeSettings?.rounding_mode ?? 'none'}
       clinicQueue={clinicQueue}
     />
   )

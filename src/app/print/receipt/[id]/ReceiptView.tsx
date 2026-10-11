@@ -13,6 +13,7 @@ interface ReceiptTx {
   discount: number
   total: number
   status: 'completed' | 'cancelled'
+  rounding: number | null
   payment_method: PaymentMethod
   sales_channel: SalesChannel | null
   external_order_no: string | null
@@ -157,6 +158,9 @@ export default function ReceiptView({
             <div className="flex justify-between"><span>ยอดรวม</span><span>{money(tx.subtotal)}</span></div>
             {tx.discount > 0 && <div className="flex justify-between"><span>ส่วนลด</span><span>-{money(tx.discount)}</span></div>}
             {tx.credit_used > 0 && <div className="flex justify-between"><span>ใช้เครดิต</span><span>-{money(tx.credit_used)}</span></div>}
+            {!!tx.rounding && tx.rounding !== 0 && (
+              <div className="flex justify-between"><span>ปัดเศษ</span><span>{tx.rounding > 0 ? '+' : '-'}{money(Math.abs(tx.rounding))}</span></div>
+            )}
             <div className="flex justify-between font-bold border-t border-gray-300 pt-1 mt-1" style={{ fontSize: '1.05em' }}>
               <span>ยอดสุทธิ</span><span>{money(tx.total)}</span>
             </div>

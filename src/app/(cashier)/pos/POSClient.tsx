@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Search, X, Plus, Minus, ShoppingCart, User, MonitorPlay, Stethoscope } from 'lucide-react'
 import toast from 'react-hot-toast'
-import type { Product, CartItem, Promotion, PointsConfig, Customer, PaymentMethod, ClinicQueueVisit } from '@/lib/types'
+import type { Product, CartItem, Promotion, PointsConfig, Customer, PaymentMethod, ClinicQueueVisit, RoundingMode } from '@/lib/types'
 import { POS_DISPLAY_CHANNEL, type PosDisplayMessage } from '@/lib/posDisplay'
 import PaymentModal from './PaymentModal'
 import { confirmDialog } from '@/lib/confirm'
@@ -16,10 +16,11 @@ interface Props {
   pointsConfig: PointsConfig | null
   cashierId: string
   promptpayId: string | null
+  roundingMode: RoundingMode
   clinicQueue: ClinicQueueVisit[]
 }
 
-export default function POSClient({ products, promotions, pointsConfig, cashierId, promptpayId, clinicQueue }: Props) {
+export default function POSClient({ products, promotions, pointsConfig, cashierId, promptpayId, roundingMode, clinicQueue }: Props) {
   const router = useRouter()
   // เวชระเบียนที่กำลังเก็บเงินอยู่ — จ่ายเสร็จแล้วจะถูก mark เป็น paid พร้อมผูกเลขที่บิล
   const [activeVisit, setActiveVisit] = useState<ClinicQueueVisit | null>(null)
@@ -738,6 +739,7 @@ export default function POSClient({ products, promotions, pointsConfig, cashierI
           pointsConfig={pointsConfig}
           cashierId={cashierId}
           promptpayId={promptpayId}
+          roundingMode={roundingMode}
           visitId={activeVisit?.id ?? null}
           onClose={() => setShowPayment(false)}
           onSuccess={() => {
