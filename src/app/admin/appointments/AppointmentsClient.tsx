@@ -33,6 +33,8 @@ const STATUS_STYLE: Record<AppointmentStatus, string> = {
 const WEEKDAYS = ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส']
 const localDate = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 const fmtTime = (iso: string) => new Date(iso).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })
+const fmtShortDate = (iso: string) =>
+  new Date(iso).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' })
 
 const emptyForm = {
   pet_id: '',
@@ -137,6 +139,28 @@ export default function AppointmentsClient({
     }).catch(() => {})
   }
 
+  // เช็คอินต้องชั่งน้ำหนักก่อนเข้าคิว เหมือนลงทะเบียนที่หน้าตรวจรักษา
+  const [checkingIn, setCheckingIn] = useState<Appointment | null>(null)
+  const [checkInWeight, setCheckInWeight] = useState('')
+  const [lastWeight, setLastWeight] = useState<{ weight: number; date: string } | null>(null)
+  const [checkingInBusy, setCheckingInBusy] = useState(false)
+
+  async function openCheckIn(a: Appointment) {
+    setCheckingIn(a)
+    setCheckInWeight('')
+    setLastWeight(null)
+    const supabase = createClient()
+    const { data } = await supabase
+      .from('visits')
+      .select('weight, visit_date')
+      .eq('pet_id', a.pet_id)
+      .not('weight', 'is', null)
+      .order('visit_date', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+    if (data?.weight != null) setLastWeight({ weight: Number(data.weight), date: data.visit_date })
+  }
+
   async function setStatus(a: Appointment, status: AppointmentStatus) {
     const supabase = createClient()
     const { error } = await supabase.from('appointments').update({ status }).eq('id', a.id)
@@ -146,6 +170,13 @@ export default function AppointmentsClient({
 
   // เช็คอิน: ลูกค้ามาตามนัด → สร้างเวชระเบียนเข้าคิวรอตรวจ + ปิดนัดเป็น "มาแล้ว"
   async function checkIn(a: Appointment) {
+    const raw = checkInWeight.trim()
+    const weight = raw === '' ? null : Number(raw)
+    if (weight !== null && (isNaN(weight) || weight <= 0)) {
+      toast.error('น้ำหนักต้องเป็นตัวเลขมากกว่า 0')
+      return
+    }
+    setCheckingInBusy(true)
     const supabase = createClient()
     for (let attempt = 0; attempt < 3; attempt++) {
       const { data: visitNumber, error: numberError } = await supabase.rpc('next_visit_number')
@@ -156,16 +187,20 @@ export default function AppointmentsClient({
         customer_id: a.customer_id,
         vet_id: a.vet_id,
         status: 'waiting',
+        weight,
         created_by: userId,
       })
       if (!error) {
         await supabase.from('appointments').update({ status: 'done' }).eq('id', a.id)
+        setCheckingInBusy(false)
+        setCheckingIn(null)
         toast.success('เช็คอินแล้ว — เข้าคิวรอตรวจที่เมนูตรวจรักษา')
         router.push('/admin/visits')
         return
       }
       if (error.code !== '23505') break // ชนเลขก็ขอใหม่, error อื่นหยุด
     }
+    setCheckingInBusy(false)
     toast.error('เช็คอินไม่สำเร็จ')
   }
 
@@ -297,7 +332,7 @@ export default function AppointmentsClient({
                 <div className="flex items-center gap-1.5 mt-2">
                   {a.status === 'scheduled' ? (
                     <>
-                      <button onClick={() => checkIn(a)} className="text-xs px-2 py-1 rounded bg-purple-600 hover:bg-purple-700 text-white">เช็คอิน → คิว</button>
+                      <button onClick={() => openCheckIn(a)} className="text-xs px-2 py-1 rounded bg-purple-600 hover:bg-purple-700 text-white">เช็คอิน → คิว</button>
                       <button onClick={() => setStatus(a, 'done')} className="text-xs px-2 py-1 rounded border border-gray-200 text-gray-600 hover:bg-gray-50">มาแล้ว</button>
                       <button onClick={() => setStatus(a, 'missed')} className="text-xs px-2 py-1 rounded border border-gray-200 text-gray-600 hover:bg-gray-50">ไม่มา</button>
                       <button onClick={() => setStatus(a, 'cancelled')} className="text-xs px-2 py-1 rounded border border-gray-200 text-gray-600 hover:bg-gray-50">ยกเลิก</button>
@@ -400,6 +435,58 @@ export default function AppointmentsClient({
           </div>
         </div>
       )}
+
+      {checkingIn && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={() => setCheckingIn(null)}>
+          <div className="bg-white rounded-2xl w-full max-w-sm shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+              <h2 className="font-semibold text-gray-900">เช็คอิน {checkingIn.pets?.name ?? ''}</h2>
+              <button onClick={() => setCheckingIn(null)} className="p-1 text-gray-400 hover:text-gray-600"><X size={18} /></button>
+            </div>
+
+            <div className="px-5 py-4">
+              <label className="block text-sm font-medium text-gray-700 mb-1">น้ำหนัก (กก.)</label>
+              <input
+                type="number"
+                step="0.01"
+                min="0"
+                autoFocus
+                value={checkInWeight}
+                onChange={(e) => setCheckInWeight(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter' && !checkingInBusy) checkIn(checkingIn) }}
+                placeholder={lastWeight ? String(lastWeight.weight) : '0.00'}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-lg font-bold focus:outline-none focus:ring-2 focus:ring-purple-500"
+              />
+              {lastWeight && (
+                <p className="mt-1.5 text-xs text-gray-500">
+                  น้ำหนักล่าสุด {lastWeight.weight} กก. เมื่อ {fmtShortDate(lastWeight.date)}
+                  {checkInWeight.trim() !== '' && !isNaN(Number(checkInWeight)) && Number(checkInWeight) !== lastWeight.weight && (
+                    <span className={Number(checkInWeight) > lastWeight.weight ? ' text-orange-600' : ' text-blue-600'}>
+                      {' '}({Number(checkInWeight) > lastWeight.weight ? '+' : ''}
+                      {(Number(checkInWeight) - lastWeight.weight).toFixed(2)} กก.)
+                    </span>
+                  )}
+                </p>
+              )}
+              <p className="mt-2 text-xs text-gray-400">ยังไม่ได้ชั่งก็ข้ามได้ หมอใส่เพิ่มทีหลังในเวชระเบียนได้</p>
+            </div>
+
+            <div className="flex gap-2 px-5 py-4 border-t border-gray-100">
+              <button
+                onClick={() => checkIn(checkingIn)}
+                disabled={checkingInBusy}
+                className="flex-1 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white text-sm font-medium px-4 py-2.5 rounded-lg"
+              >
+                {checkingInBusy ? 'กำลังเช็คอิน...' : 'เช็คอิน → เข้าคิว'}
+              </button>
+              <button onClick={() => setCheckingIn(null)} className="border border-gray-300 text-gray-600 text-sm px-4 py-2.5 rounded-lg">
+                ปิด
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   )
 }
