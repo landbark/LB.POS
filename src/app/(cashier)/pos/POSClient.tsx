@@ -24,6 +24,8 @@ export default function POSClient({ products, promotions, pointsConfig, cashierI
   // เวชระเบียนที่กำลังเก็บเงินอยู่ — จ่ายเสร็จแล้วจะถูก mark เป็น paid พร้อมผูกเลขที่บิล
   const [activeVisit, setActiveVisit] = useState<ClinicQueueVisit | null>(null)
   const [showQueue, setShowQueue] = useState(false)
+  // แผงตะกร้าบนมือถือ — จอใหญ่โชว์ตลอดอยู่แล้ว ไม่สนค่านี้
+  const [cartOpen, setCartOpen] = useState(false)
   const [search, setSearch] = useState('')
   const [cart, setCart] = useState<CartItem[]>([])
   const [customer, setCustomer] = useState<Customer | null>(null)
@@ -316,8 +318,11 @@ export default function POSClient({ products, promotions, pointsConfig, cashierI
     displayChannelRef.current?.postMessage(msg)
   }, [cart, customer, subtotal, totalDiscount, total, pointsConfig, showPayment])
 
+  const cartCount = cart.reduce((n, i) => n + i.quantity, 0)
+
   return (
-    <div className="flex h-[calc(100vh-56px)]">
+    // มือถือ: สินค้าเต็มจอ ตะกร้าซ่อนอยู่หลังแถบล่าง — จอใหญ่: สองคอลัมน์เหมือนเดิม
+    <div className="flex h-[calc(100dvh-56px)]">
       {/* Left: Product Grid */}
       <div className="flex-1 flex flex-col bg-gray-50 overflow-hidden">
         {/* Search + Filter */}
@@ -403,10 +408,34 @@ export default function POSClient({ products, promotions, pointsConfig, cashierI
             )}
           </div>
         </div>
+
+        {/* แถบสรุป + เปิดตะกร้า (เฉพาะมือถือ) */}
+        <div className="lg:hidden shrink-0 border-t border-gray-200 bg-white px-3 py-2 flex items-center gap-3">
+          <div className="min-w-0">
+            <p className="text-xs text-gray-500">{cartCount} ชิ้น</p>
+            <p className="font-bold text-gray-900 leading-tight">฿{total.toFixed(2)}</p>
+          </div>
+          <button
+            onClick={() => setCartOpen(true)}
+            className="ml-auto flex items-center gap-1.5 bg-blue-600 text-white text-sm font-semibold px-4 py-2.5 rounded-xl"
+          >
+            <ShoppingCart size={16} />
+            ดูตะกร้า
+          </button>
+        </div>
       </div>
 
-      {/* Right: Cart */}
-      <div className="w-80 bg-white border-l border-gray-200 flex flex-col">
+      {/* Right: Cart — มือถือเปิดทับเต็มจอ */}
+      <div
+        className={`${cartOpen ? 'flex' : 'hidden'} lg:flex fixed lg:static inset-x-0 bottom-0 top-14 z-40 w-full lg:w-80 lg:z-auto bg-white border-l border-gray-200 flex-col`}
+      >
+        {/* หัวแผงตะกร้า (เฉพาะมือถือ) */}
+        <div className="lg:hidden flex items-center justify-between px-3 py-2 border-b border-gray-100">
+          <span className="font-semibold text-gray-900">ตะกร้า ({cartCount} ชิ้น)</span>
+          <button onClick={() => setCartOpen(false)} className="p-1.5 text-gray-400 hover:text-gray-600">
+            <X size={18} />
+          </button>
+        </div>
         {/* คิวเก็บเงินจากคลินิก */}
         {clinicQueue.length > 0 && !activeVisit && (
           <div className="px-3 pt-3">
@@ -585,7 +614,7 @@ export default function POSClient({ products, promotions, pointsConfig, cashierI
 
           <button
             disabled={cart.length === 0}
-            onClick={() => setShowPayment(true)}
+            onClick={() => { setCartOpen(false); setShowPayment(true) }}
             className="w-full bg-blue-600 hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold py-3 rounded-xl text-base transition-colors"
           >
             ชำระเงิน

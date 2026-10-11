@@ -78,7 +78,8 @@ export default function PaymentModal({
     ? parseFloat(cashReceived) - finalTotal
     : 0
 
-  const earnedPoints = pointsConfig && finalTotal > 0
+  const online = isOnlineChannel(channel)
+  const earnedPoints = !online && pointsConfig && finalTotal > 0
     ? Math.floor(finalTotal / pointsConfig.spend_amount) * pointsConfig.earn_points
     : 0
 
@@ -279,7 +280,7 @@ export default function PaymentModal({
       <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
         <div className="bg-white rounded-2xl w-full max-w-sm shadow-2xl p-6 text-center">
           <CheckCircle2 size={48} className="mx-auto text-green-500 mb-3" />
-          <h2 className="text-lg font-bold text-gray-900 mb-1">ชำระเงินสำเร็จ</h2>
+          <h2 className="text-lg font-bold text-gray-900 mb-1">{online ? 'บันทึกออเดอร์แล้ว' : 'ชำระเงินสำเร็จ'}</h2>
           <p className="text-2xl font-bold text-gray-900 mb-1">฿{finalTotal.toFixed(2)}</p>
           {method === 'cash' && change > 0 && (
             <p className="text-sm text-blue-600 mb-4">เงินทอน ฿{change.toFixed(2)}</p>
@@ -315,9 +316,9 @@ export default function PaymentModal({
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-2xl w-full max-w-sm shadow-2xl">
-        <div className="flex items-center justify-between p-4 border-b border-gray-100">
-          <h2 className="font-bold text-gray-900">ชำระเงิน</h2>
+      <div className="bg-white rounded-2xl w-full max-w-sm shadow-2xl max-h-[90dvh] overflow-y-auto">
+        <div className="sticky top-0 bg-white rounded-t-2xl flex items-center justify-between p-4 border-b border-gray-100">
+          <h2 className="font-bold text-gray-900">{online ? 'บันทึกออเดอร์ออนไลน์' : 'ชำระเงิน'}</h2>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
             <X size={20} />
           </button>
@@ -361,8 +362,14 @@ export default function PaymentModal({
             </div>
           )}
 
+          {online && (
+            <p className="text-xs text-gray-500 bg-gray-50 rounded-lg px-3 py-2">
+              ไม่ต้องรับเงินที่ร้าน — ยอดเงินไปเก็บจากแพลตฟอร์มโดยตรง ตรงนี้แค่บันทึกบิลและตัดสต็อก
+            </p>
+          )}
+
           {/* Payment Method */}
-          <div>
+          <div className={online ? 'hidden' : ''}>
             <p className="text-sm font-medium text-gray-700 mb-2">วิธีชำระเงิน</p>
             <div className="grid grid-cols-2 gap-2">
               {(Object.keys(PAYMENT_LABELS) as Exclude<PaymentMethod, 'qr'>[]).map((m) => (
@@ -382,7 +389,7 @@ export default function PaymentModal({
           </div>
 
           {/* Manual discount */}
-          <div className="bg-orange-50 rounded-lg p-3">
+          <div className={`bg-orange-50 rounded-lg p-3 ${online ? 'hidden' : ''}`}>
             <div className="flex items-center justify-between mb-2">
               <p className="text-sm font-medium text-gray-900">ส่วนลดเพิ่มเติม</p>
               <div className="flex bg-white rounded-lg border border-gray-200 p-0.5">
@@ -421,7 +428,7 @@ export default function PaymentModal({
           </div>
 
           {/* Cash input */}
-          {method === 'cash' && (
+          {method === 'cash' && !online && (
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">รับเงิน</label>
               <input
@@ -450,7 +457,7 @@ export default function PaymentModal({
           )}
 
           {/* Points */}
-          {customer && pointsConfig && customer.points > 0 && (
+          {!online && customer && pointsConfig && customer.points > 0 && (
             <div className="bg-blue-50 rounded-lg p-3">
               <div className="flex justify-between items-center">
                 <div>
@@ -578,10 +585,10 @@ export default function PaymentModal({
         <div className="p-4 border-t border-gray-100">
           <button
             onClick={handleConfirm}
-            disabled={loading || (method === 'cash' && (!cashReceived || parseFloat(cashReceived) < finalTotal))}
+            disabled={loading || (!online && method === 'cash' && (!cashReceived || parseFloat(cashReceived) < finalTotal))}
             className="w-full bg-green-600 hover:bg-green-700 disabled:opacity-40 disabled:cursor-not-allowed text-white font-bold py-3 rounded-xl text-base transition-colors"
           >
-            {loading ? 'กำลังบันทึก...' : '✓ ยืนยันชำระเงิน'}
+            {loading ? 'กำลังบันทึก...' : online ? '✓ บันทึกและตัดสต็อก' : '✓ ยืนยันชำระเงิน'}
           </button>
         </div>
       </div>
