@@ -469,6 +469,18 @@ export interface TransactionItem {
   products?: Product
 }
 
+/** เงินเข้า-ออกลิ้นชักระหว่างกะ — in = เติมเข้า, out = หยิบออก */
+export interface CashMovement {
+  id: string
+  shift_id: string
+  direction: 'in' | 'out'
+  amount: number
+  reason: string | null
+  created_by: string | null
+  created_at: string
+  profiles?: { name: string } | null
+}
+
 export interface Shift {
   id: string
   opened_at: string

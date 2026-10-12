@@ -5,11 +5,14 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Wallet, Lock, Unlock, Pencil } from 'lucide-react'
 import toast from 'react-hot-toast'
-import type { Shift } from '@/lib/types'
+import { confirmDialog } from '@/lib/confirm'
+import type { Shift, CashMovement } from '@/lib/types'
 
 const money = (n: number) => n.toLocaleString('th-TH', { minimumFractionDigits: 2 })
 const fmtDate = (d: string) =>
   new Date(d).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit', hour: '2-digit', minute: '2-digit' })
+const fmtTime = (iso: string) =>
+  new Date(iso).toLocaleTimeString('th-TH', { timeZone: 'Asia/Bangkok', hour: '2-digit', minute: '2-digit' })
 
 const PAYMENT_LABELS: Record<string, string> = { cash: 'เงินสด', transfer: 'โอนเงิน', card: 'บัตรเครดิต', qr: 'QR Code' }
 
@@ -72,6 +75,16 @@ export default function ShiftClient({
   const [loadingSummary, setLoadingSummary] = useState(true)
   const [breakdown, setBreakdown] = useState<Record<string, number>>({})
   const [cashRefunds, setCashRefunds] = useState(0)
+  // เงินเข้า-ออกเก๊ะระหว่างกะ (เจ้าของมารับ / เอาเงินทอนมาเติม / จ่ายค่าส่งของ)
+  const [movements, setMovements] = useState<CashMovement[]>([])
+  const [moveDir, setMoveDir] = useState<'in' | 'out'>('out')
+  const [moveAmount, setMoveAmount] = useState('')
+  const [moveReason, setMoveReason] = useState('')
+  const [moveBusy, setMoveBusy] = useState(false)
+  // แก้เงินตั้งต้นของกะที่เปิดอยู่ (เจ้าของเท่านั้น)
+  const [editOpening, setEditOpening] = useState(false)
+  const [openingEdit, setOpeningEdit] = useState('')
+  const [openingNote, setOpeningNote] = useState('')
 
   useEffect(() => {
     if (!openShift) return
@@ -79,11 +92,13 @@ export default function ShiftClient({
 
     async function loadSummary(shift: Shift) {
       const supabase = createClient()
-      const [{ data: completed }, { data: refunds }] = await Promise.all([
+      const [{ data: completed }, { data: refunds }, { data: moves }] = await Promise.all([
         supabase.from('transactions').select('total, payment_method').eq('status', 'completed').gte('created_at', shift.opened_at),
         supabase.from('transactions').select('total').eq('status', 'cancelled').eq('refund_method', 'cash').gte('cancelled_at', shift.opened_at),
+        supabase.from('cash_movements').select('*, profiles(name)').eq('shift_id', shift.id).order('created_at'),
       ])
       if (cancelled) return
+      setMovements((moves as unknown as CashMovement[]) ?? [])
       const acc: Record<string, number> = {}
       for (const t of completed ?? []) acc[t.payment_method] = (acc[t.payment_method] ?? 0) + t.total
       setBreakdown(acc)
@@ -97,7 +112,10 @@ export default function ShiftClient({
   }, [openShift?.id])
 
   const cashSales = breakdown.cash ?? 0
-  const expectedCash = openShift ? openShift.opening_cash + cashSales - cashRefunds : 0
+  const cashIn = movements.filter((m) => m.direction === 'in').reduce((s, m) => s + Number(m.amount), 0)
+  const cashOut = movements.filter((m) => m.direction === 'out').reduce((s, m) => s + Number(m.amount), 0)
+  // เงินที่ควรมีในลิ้นชัก = ตั้งต้น + ขายเงินสด − คืนเงินสด + เติมเข้า − หยิบออก
+  const expectedCash = openShift ? openShift.opening_cash + cashSales - cashRefunds + cashIn - cashOut : 0
   const hasCount = DENOMS.some((d) => (counts[d.value] ?? '') !== '')
   const counted = DENOMS.reduce((s, d) => s + d.value * (parseInt(counts[d.value] || '0', 10) || 0), 0)
   const qtyOf = (c: Record<number, string>, v: number) => parseInt(c[v] || '0', 10) || 0
@@ -125,6 +143,80 @@ export default function ShiftClient({
       return
     }
     toast.success('เปิดกะแล้ว')
+    router.refresh()
+  }
+
+  async function addMovement() {
+    if (!openShift) return
+    const amount = parseFloat(moveAmount)
+    if (isNaN(amount) || amount <= 0) {
+      toast.error('ใส่จำนวนเงินมากกว่า 0')
+      return
+    }
+    setMoveBusy(true)
+    const supabase = createClient()
+    const { data, error } = await supabase
+      .from('cash_movements')
+      .insert({
+        shift_id: openShift.id,
+        direction: moveDir,
+        amount,
+        reason: moveReason.trim() || null,
+        created_by: currentUserId,
+      })
+      .select('*, profiles(name)')
+      .single()
+    setMoveBusy(false)
+    if (error) {
+      toast.error('บันทึกไม่สำเร็จ: ' + error.message)
+      return
+    }
+    setMovements((prev) => [...prev, data as unknown as CashMovement])
+    setMoveAmount('')
+    setMoveReason('')
+    toast.success(moveDir === 'in' ? 'บันทึกเงินเข้าเก๊ะแล้ว' : 'บันทึกเงินออกจากเก๊ะแล้ว')
+  }
+
+  async function removeMovement(m: CashMovement) {
+    if (!(await confirmDialog({
+      message: `ลบรายการ ${m.direction === 'in' ? 'เติมเข้า' : 'หยิบออก'} ฿${money(Number(m.amount))}?`,
+    })).confirmed) return
+    const supabase = createClient()
+    const { error } = await supabase.from('cash_movements').delete().eq('id', m.id)
+    if (error) {
+      toast.error('ลบไม่สำเร็จ: ' + error.message)
+      return
+    }
+    setMovements((prev) => prev.filter((x) => x.id !== m.id))
+  }
+
+  // แก้เงินตั้งต้นของกะที่เปิดอยู่ — เช้ามานับเงินในเก๊ะแล้วไม่ตรงกับที่ระบบยกมาให้
+  async function saveOpeningCash() {
+    if (!openShift) return
+    const cash = parseFloat(openingEdit)
+    if (isNaN(cash) || cash < 0) {
+      toast.error('เงินตั้งต้นต้องเป็นตัวเลขไม่ติดลบ')
+      return
+    }
+    setLoading(true)
+    const stamp = new Date().toLocaleString('th-TH', { timeZone: 'Asia/Bangkok', dateStyle: 'short', timeStyle: 'short' })
+    const auditLine = `[แก้เงินตั้งต้น ${stamp} โดย ${currentUserName || 'พนักงาน'}] ฿${money(openShift.opening_cash)} → ฿${money(cash)}${openingNote.trim() ? ` · ${openingNote.trim()}` : ''}`
+    const supabase = createClient()
+    const { error } = await supabase
+      .from('shifts')
+      .update({
+        opening_cash: cash,
+        notes: [openShift.notes?.trim(), auditLine].filter(Boolean).join('\n'),
+      })
+      .eq('id', openShift.id)
+    setLoading(false)
+    if (error) {
+      toast.error('แก้ไขไม่สำเร็จ: ' + error.message)
+      return
+    }
+    setEditOpening(false)
+    setOpeningNote('')
+    toast.success('แก้เงินตั้งต้นแล้ว')
     router.refresh()
   }
 
@@ -159,7 +251,13 @@ export default function ShiftClient({
         closing_denominations: denominations,
         cash_to_owner: cashToOwner,
         owner_denominations: ownerDenominations,
-        notes: notes.trim() || null,
+        // สรุปเงินเข้า-ออกลงหมายเหตุด้วย เปิดดูประวัติกะย้อนหลังจะได้รู้ว่าทำไมยอดที่ควรมีไม่เท่ากับขายเงินสด
+        notes: [
+          notes.trim(),
+          movements.length > 0
+            ? `เงินเข้าเก๊ะ ฿${money(cashIn)} · ออกจากเก๊ะ ฿${money(cashOut)} (${movements.length} รายการ)`
+            : '',
+        ].filter(Boolean).join('\n') || null,
       })
       .eq('id', openShift.id)
     if (error) {
@@ -294,7 +392,40 @@ export default function ShiftClient({
           </div>
           <p className="text-sm text-gray-500 mb-4">
             เปิดเมื่อ {fmtDate(openShift.opened_at)} โดย {openShift.opener?.name ?? '—'} · เงินสดตั้งต้น ฿{money(openShift.opening_cash)}
+            {canEditClosed && !editOpening && (
+              <button
+                onClick={() => { setEditOpening(true); setOpeningEdit(String(openShift.opening_cash)) }}
+                className="ml-1.5 align-middle text-gray-400 hover:text-blue-600"
+                title="แก้เงินตั้งต้น (เช่น เช้ามานับในเก๊ะแล้วไม่ตรง)"
+              >
+                <Pencil size={13} />
+              </button>
+            )}
           </p>
+
+          {editOpening && (
+            <div className="bg-blue-50 border border-blue-100 rounded-lg p-3 mb-4 space-y-2">
+              <p className="text-xs font-medium text-blue-900">แก้เงินสดตั้งต้นของกะนี้</p>
+              <div className="flex flex-wrap gap-2">
+                <input
+                  type="number" min="0" step="0.01" autoFocus
+                  value={openingEdit}
+                  onChange={(e) => setOpeningEdit(e.target.value)}
+                  className="w-32 border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <input
+                  type="text"
+                  value={openingNote}
+                  onChange={(e) => setOpeningNote(e.target.value)}
+                  placeholder="เหตุผล เช่น เช้ามานับได้ไม่ตรง"
+                  className="flex-1 min-w-40 border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <button onClick={saveOpeningCash} disabled={loading} className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-sm px-3 py-1.5 rounded-lg">บันทึก</button>
+                <button onClick={() => setEditOpening(false)} className="border border-gray-300 text-gray-600 text-sm px-3 py-1.5 rounded-lg">ยกเลิก</button>
+              </div>
+              <p className="text-xs text-blue-700">ระบบจะจดไว้ในหมายเหตุว่าใครแก้จากเท่าไหร่เป็นเท่าไหร่</p>
+            </div>
+          )}
 
           <div className="bg-gray-50 rounded-lg p-3 space-y-1.5 mb-4 text-sm">
             {loadingSummary ? (
@@ -313,11 +444,93 @@ export default function ShiftClient({
                     <span>คืนเงินสด (ใบเสร็จยกเลิก)</span><span>-฿{money(cashRefunds)}</span>
                   </div>
                 )}
+                {cashIn > 0 && (
+                  <div className="flex justify-between text-emerald-600">
+                    <span>เติมเงินเข้าเก๊ะ</span><span>+฿{money(cashIn)}</span>
+                  </div>
+                )}
+                {cashOut > 0 && (
+                  <div className="flex justify-between text-amber-600">
+                    <span>หยิบเงินออกจากเก๊ะ</span><span>-฿{money(cashOut)}</span>
+                  </div>
+                )}
                 <div className="flex justify-between font-bold text-gray-900 pt-1 border-t border-gray-200">
                   <span>เงินสดที่ควรมีในลิ้นชัก</span><span>฿{money(expectedCash)}</span>
                 </div>
               </>
             )}
+          </div>
+
+          {/* เงินเข้า-ออกเก๊ะระหว่างกะ — ไม่ใช่การขาย แต่มีผลกับเงินที่ควรมี */}
+          <div className="border border-gray-200 rounded-lg p-3 mb-4">
+            <p className="text-xs font-medium text-gray-600 mb-2">เงินเข้า-ออกเก๊ะระหว่างกะ</p>
+
+            {movements.length > 0 && (
+              <ul className="divide-y divide-gray-50 mb-2.5">
+                {movements.map((m) => (
+                  <li key={m.id} className="flex items-center gap-2 py-1.5 text-sm">
+                    <span className={`shrink-0 text-xs px-1.5 py-0.5 rounded font-medium ${
+                      m.direction === 'in' ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'
+                    }`}>
+                      {m.direction === 'in' ? 'เติมเข้า' : 'หยิบออก'}
+                    </span>
+                    <span className="font-medium text-gray-900 tabular-nums">
+                      {m.direction === 'in' ? '+' : '-'}฿{money(Number(m.amount))}
+                    </span>
+                    <span className="text-gray-500 truncate flex-1 min-w-0">{m.reason ?? '—'}</span>
+                    <span className="text-xs text-gray-400 shrink-0">{fmtTime(m.created_at)}</span>
+                    <button
+                      onClick={() => removeMovement(m)}
+                      className="shrink-0 text-gray-300 hover:text-red-500 text-xs"
+                      title="ลบรายการนี้"
+                    >
+                      ลบ
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="flex bg-gray-100 rounded-lg p-0.5 shrink-0">
+                {([['out', 'หยิบออก'], ['in', 'เติมเข้า']] as const).map(([dir, label]) => (
+                  <button
+                    key={dir}
+                    onClick={() => setMoveDir(dir)}
+                    className={`px-2.5 py-1 rounded-md text-xs font-medium ${
+                      moveDir === dir ? (dir === 'in' ? 'bg-emerald-600 text-white' : 'bg-amber-600 text-white') : 'text-gray-500'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <input
+                type="number" min="0" step="0.01"
+                value={moveAmount}
+                onChange={(e) => setMoveAmount(e.target.value)}
+                placeholder="จำนวนเงิน"
+                className="w-28 border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+              <input
+                type="text"
+                value={moveReason}
+                onChange={(e) => setMoveReason(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter' && !moveBusy) addMovement() }}
+                placeholder={moveDir === 'in' ? 'เช่น เอาเงินทอนมาเติม' : 'เช่น เจ้าของมารับ / จ่ายค่าส่งของ'}
+                className="flex-1 min-w-44 border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+              <button
+                onClick={addMovement}
+                disabled={moveBusy}
+                className="bg-gray-900 hover:bg-gray-800 disabled:opacity-50 text-white text-sm font-medium px-3 py-1.5 rounded-lg"
+              >
+                บันทึก
+              </button>
+            </div>
+            <p className="text-xs text-gray-400 mt-1.5">
+              บันทึกไว้แล้วยอด &ldquo;เงินสดที่ควรมีในลิ้นชัก&rdquo; จะขยับตาม ตอนปิดกะจะได้ไม่ขึ้นว่าขาด/เกินทั้งที่ไม่มีอะไรหาย
+            </p>
           </div>
 
           <label className="block text-xs font-medium text-gray-600 mb-2">นับเงินสดจริง (ใส่จำนวนใบ/เหรียญ)</label>
