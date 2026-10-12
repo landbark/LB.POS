@@ -72,6 +72,16 @@ export interface Product {
   booster_interval_days: number | null
   /** ค่าตรวจ/ค่าหัตถการ — ขายได้ตามปกติ แต่ไม่มีสต็อคให้ตัด */
   is_service: boolean
+  /** ชื่อที่พิมพ์บนฉลากยา (ไม่ใส่ = ใช้ชื่อสินค้า) */
+  label_name: string | null
+  /** ชื่อบนฉลากภาษาอังกฤษ (ไม่ใส่ = ใช้ชื่อไทย) */
+  label_name_en: string | null
+  /** สรรพคุณกำกับบนฉลากยา */
+  indication: string | null
+  /** สรรพคุณภาษาอังกฤษ (ไม่ใส่ = ใช้ข้อความไทย) */
+  indication_en: string | null
+  /** ยี่ห้อ — ขึ้นใต้ชื่อยาบนฉลาก */
+  brand: string | null
   /** น้ำหนักต่อหน่วย (กรัม) — ใช้คิดค่าส่งบนเว็บ */
   weight_grams: number | null
   /** ขึ้นขายบนหน้าเว็บร้านค้าออนไลน์ */

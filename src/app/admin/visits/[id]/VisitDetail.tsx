@@ -10,7 +10,7 @@ import { SPECIES_LABELS, VISIT_STATUS_LABELS, type PetVaccination, type Vaccine,
 import { petAge, petWarnings } from '@/lib/pets'
 import { isClinicOnly, isVaccine } from '@/lib/clinic'
 import { computeNextDue } from '@/lib/vaccines'
-import { FREQUENCY_OPTIONS, FOOD_OPTIONS, suggestedQuantity, sigText } from '@/lib/sig'
+import { FREQUENCY_OPTIONS, FOOD_OPTIONS, suggestedQuantity, sigText, labelName, labelIndication } from '@/lib/sig'
 import VaccineSection from '@/app/admin/pets/[id]/VaccineSection'
 import { confirmDialog } from '@/lib/confirm'
 
@@ -552,17 +552,25 @@ export default function VisitDetail({
 
                   {/* ข้อความที่จะไปขึ้นบนฉลากจริง — หมอเห็นเลยว่าเจ้าของจะอ่านว่าอะไร */}
                   {item.dose_amount != null && item.frequency && (
-                    <p className="mt-1 text-xs text-emerald-700">
-                      ฉลาก: {sigText({
-                        dose_amount: item.dose_amount,
-                        frequency: item.frequency,
-                        frequency_hours: item.frequency_hours,
-                        food_timing: item.food_timing,
-                        duration_days: item.duration_days,
-                        unit: item.products?.unit ?? '',
-                        note: item.dosage,
-                      })}
-                    </p>
+                    <div className="mt-1 text-xs text-emerald-700">
+                      <p>
+                        ฉลาก: <b>{item.products ? labelName(item.products) : ''}</b>
+                        {item.products?.brand ? ` (${item.products.brand})` : ''}
+                        {' — '}
+                        {sigText({
+                          dose_amount: item.dose_amount,
+                          frequency: item.frequency,
+                          frequency_hours: item.frequency_hours,
+                          food_timing: item.food_timing,
+                          duration_days: item.duration_days,
+                          unit: item.products?.unit ?? '',
+                          note: item.dosage,
+                        })}
+                      </p>
+                      {item.products && labelIndication(item.products) && (
+                        <p className="text-gray-400">สรรพคุณ: {labelIndication(item.products)}</p>
+                      )}
+                    </div>
                   )}
                 </td>
               )}

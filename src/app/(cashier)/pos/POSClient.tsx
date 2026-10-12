@@ -763,8 +763,8 @@ export default function POSClient({ products, promotions, pointsConfig, cashierI
           visitId={activeVisit?.id ?? null}
           onClose={() => setShowPayment(false)}
           onSuccess={(info) => {
-            // ตัดสต็อกออกไม่ได้เก็บเงิน เวชระเบียนยังค้างรอเก็บเงินเหมือนเดิม
-            if (activeVisit && !info?.writeoff) setPaidVisitIds((ids) => [...ids, activeVisit.id])
+            // ตัดสต็อกออกก็ปิดใบเหมือนกัน — ของออกจากสต็อกไปแล้ว ไม่ต้องค้างในคิวให้เก็บเงินอีก
+            if (activeVisit) setPaidVisitIds((ids) => [...ids, activeVisit.id])
             setCart([])
             setDiscountRow(null)
             setCustomer(null)

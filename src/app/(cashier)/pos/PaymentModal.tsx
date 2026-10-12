@@ -21,7 +21,7 @@ interface Props {
   cashierId: string
   promptpayId: string | null
   roundingMode: RoundingMode
-  /** เก็บเงินให้เวชระเบียนคลินิกใบไหน — จ่ายเสร็จจะ mark เป็น paid พร้อมผูกเลขที่บิล */
+  /** เก็บเงินให้เวชระเบียนคลินิกใบไหน — จ่ายเสร็จ (หรือตัดสต็อกออก) จะ mark เป็น paid */
   visitId: string | null
   onClose: () => void
   onSuccess: (info?: { writeoff?: boolean }) => void
@@ -116,7 +116,7 @@ export default function PaymentModal({
   }, [finalTotal, method, promptpayId, customer, earnedPoints, usePoints, completedTxId, mode])
 
   async function handleConfirm() {
-    // ตัดสต็อกออกเฉยๆ — ไม่สร้างใบเสร็จ ไม่แตะแต้ม/เครดิต/เวชระเบียน
+    // ตัดสต็อกออกเฉยๆ — ไม่สร้างใบเสร็จ ไม่แตะแต้ม/เครดิต (แต่ปิดเวชระเบียนที่ดึงมา)
     if (writeoff) {
       const reason = writeoffReason.trim()
       if (!reason) {
@@ -124,12 +124,24 @@ export default function PaymentModal({
         return
       }
       setLoading(true)
-      await deductStock(createClient(), cart, {
+      const writeoffDb = createClient()
+      await deductStock(writeoffDb, cart, {
         transactionId: null,
         type: 'adjust_out',
         reason: `ตัดสต็อกออก: ${reason}`,
         createdBy: cashierId,
       })
+      // ของในเวชระเบียนถูกตัดออกไปแล้ว ไม่มีอะไรให้เก็บเงินอีก — ปิดใบไม่ให้ค้างในคิวแคชเชียร์
+      // (status paid แต่ไม่มี transaction_id เหมือนปุ่ม "จบการรักษาไม่คิดเงิน" ฝั่งหมอ)
+      if (visitId) {
+        const { data: v } = await writeoffDb.from('visits').select('notes').eq('id', visitId).single()
+        const stamp = new Date().toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' })
+        const line = `[ตัดสต็อกออก ไม่คิดเงิน ${stamp}] ${reason}`
+        await writeoffDb
+          .from('visits')
+          .update({ status: 'paid', notes: [v?.notes?.trim(), line].filter(Boolean).join('\n') })
+          .eq('id', visitId)
+      }
       setLoading(false)
       setWrittenOff(true)
       return
@@ -375,6 +387,7 @@ export default function PaymentModal({
             <div className="space-y-2">
               <p className="text-xs text-red-700 bg-red-50 rounded-lg px-3 py-2">
                 ของจะถูกหักออกจากสต็อกตามตะกร้า แต่ <b>ไม่บันทึกเป็นการขาย</b> ไม่มีใบเสร็จ ไม่มียอดเงิน
+                {visitId && <> · ใบตรวจรักษาที่ดึงมาจะถูก<b>ปิดโดยไม่คิดเงิน</b></>}
               </p>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">เหตุผล</label>

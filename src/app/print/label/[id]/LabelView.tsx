@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { sigText } from '@/lib/sig'
+import { sigText, labelName, labelIndication } from '@/lib/sig'
 import type { Frequency, FoodTiming } from '@/lib/types'
 
 interface Item {
@@ -13,7 +13,16 @@ interface Item {
   frequency_hours: number | null
   food_timing: FoodTiming | null
   duration_days: number | null
-  products: { name: string; unit: string; is_service: boolean } | null
+  products: {
+    name: string
+    unit: string
+    is_service: boolean
+    label_name: string | null
+    label_name_en: string | null
+    indication: string | null
+    indication_en: string | null
+    brand: string | null
+  } | null
 }
 
 interface Visit {
@@ -52,8 +61,8 @@ export default function LabelView({ visit, store }: { visit: Visit; store: Store
   }
 
   const t = lang === 'th'
-    ? { pet: 'ชื่อสัตว์', owner: 'เจ้าของ', qty: 'จำนวนจ่าย', vet: 'สัตวแพทย์', date: 'วันที่' }
-    : { pet: 'Patient', owner: 'Owner', qty: 'Dispensed', vet: 'Vet', date: 'Date' }
+    ? { pet: 'ชื่อสัตว์', owner: 'เจ้าของ', qty: 'จำนวนจ่าย', vet: 'สัตวแพทย์', date: 'วันที่', indication: 'สรรพคุณ' }
+    : { pet: 'Patient', owner: 'Owner', qty: 'Dispensed', vet: 'Vet', date: 'Date', indication: 'Indication' }
 
   return (
     <>
@@ -64,6 +73,10 @@ export default function LabelView({ visit, store }: { visit: Visit; store: Store
           body { background: #fff; }
           .label { page-break-after: always; box-shadow: none !important; border: none !important; }
           .label:last-child { page-break-after: auto; }
+        }
+        .clamp2 {
+          display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
+          overflow: hidden;
         }
         .label {
           width: 80mm; height: 50mm;
@@ -100,7 +113,7 @@ export default function LabelView({ visit, store }: { visit: Visit; store: Store
           {drugs.map((d) => (
             <label key={d.id} className="flex items-center gap-1.5 text-xs text-gray-600 border border-gray-200 rounded-lg px-2 py-1">
               <input type="checkbox" checked={!skipped.has(d.id)} onChange={() => toggle(d.id)} />
-              {d.products?.name}
+              {d.products ? labelName(d.products, lang) : ''}
             </label>
           ))}
         </div>
@@ -117,6 +130,7 @@ export default function LabelView({ visit, store }: { visit: Visit; store: Store
             unit: item.products?.unit ?? '',
             note: item.dosage,
           }, lang)
+          const indication = item.products ? labelIndication(item.products, lang) : null
 
           return (
             <div key={item.id} className="label bg-white border border-gray-300 shadow-sm print:shadow-none">
@@ -130,13 +144,26 @@ export default function LabelView({ visit, store }: { visit: Visit; store: Store
                 <span className="truncate">{t.owner}: {visit.customers?.name ?? '-'}</span>
               </div>
 
-              <p className="font-bold leading-tight mt-1" style={{ fontSize: '10.5pt' }}>
-                {item.products?.name}
-              </p>
+              <div className="mt-1">
+                <p className="font-bold leading-tight clamp2" style={{ fontSize: '10.5pt' }}>
+                  {item.products ? labelName(item.products, lang) : ''}
+                </p>
+                {item.products?.brand && (
+                  <p className="text-gray-600 truncate" style={{ fontSize: '7.2pt' }}>
+                    {item.products.brand}
+                  </p>
+                )}
+              </div>
 
               <p className="mt-0.5 flex-1 leading-snug" style={{ fontSize: '9pt' }}>
                 {sig || (lang === 'th' ? '— ยังไม่ได้ระบุวิธีใช้ —' : '— no directions —')}
               </p>
+
+              {indication && (
+                <p className="text-gray-600 italic leading-snug clamp2 mb-0.5" style={{ fontSize: '7.2pt' }}>
+                  {t.indication}: {indication}
+                </p>
+              )}
 
               <div className="flex justify-between gap-2 text-gray-600 border-t border-gray-300 pt-0.5" style={{ fontSize: '7pt' }}>
                 <span>{t.qty}: {item.quantity} {item.products?.unit}</span>

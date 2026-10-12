@@ -146,3 +146,27 @@ export function sigText(sig: SigInput, lang: 'th' | 'en' = 'th'): string {
   const note = sig.note?.trim()
   return [base, note].filter(Boolean).join(lang === 'th' ? ' · ' : ' · ')
 }
+
+// ── ชื่อ/สรรพคุณ/ยี่ห้อ ที่จะขึ้นบนฉลาก ────────────────────────────────────
+/** ฟิลด์ฉลากของสินค้า (ส่ง products ที่ select มาเฉพาะคอลัมน์เหล่านี้ได้เลย) */
+export interface DrugLabelFields {
+  name: string
+  label_name?: string | null
+  label_name_en?: string | null
+  indication?: string | null
+  indication_en?: string | null
+  brand?: string | null
+}
+
+/** ชื่อที่พิมพ์บนฉลาก — ไม่ได้กำหนดไว้ก็ใช้ชื่อในสต็อก */
+export function labelName(p: DrugLabelFields, lang: 'th' | 'en' = 'th'): string {
+  if (lang === 'en') return p.label_name_en?.trim() || p.label_name?.trim() || p.name
+  return p.label_name?.trim() || p.name
+}
+
+/** สรรพคุณกำกับบนฉลาก — ฉลากอังกฤษที่ไม่ได้กรอกช่อง en ใช้ข้อความไทยไปก่อน ดีกว่าว่างเปล่า */
+export function labelIndication(p: DrugLabelFields, lang: 'th' | 'en' = 'th'): string | null {
+  const th = p.indication?.trim() || null
+  if (lang === 'en') return p.indication_en?.trim() || th
+  return th
+}

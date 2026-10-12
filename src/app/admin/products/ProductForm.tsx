@@ -39,6 +39,11 @@ export default function ProductForm({ categories, units, suppliers, product }: P
     online_available: product?.online_available ?? false,
     on_shopee: product?.on_shopee ?? false,
     online_description: product?.online_description ?? '',
+    label_name: product?.label_name ?? '',
+    label_name_en: product?.label_name_en ?? '',
+    indication: product?.indication ?? '',
+    indication_en: product?.indication_en ?? '',
+    brand: product?.brand ?? '',
   })
 
   // รูปใหม่ที่ crop/บีบอัดแล้วรออัปโหลด; preview = URL เดิมหรือ object URL ของรูปใหม่
@@ -155,6 +160,11 @@ export default function ProductForm({ categories, units, suppliers, product }: P
       online_available: form.online_available,
       on_shopee: form.on_shopee,
       online_description: form.online_description.trim() || null,
+      label_name: form.label_name.trim() || null,
+      label_name_en: form.label_name_en.trim() || null,
+      indication: form.indication.trim() || null,
+      indication_en: form.indication_en.trim() || null,
+      brand: form.brand.trim() || null,
     }
 
     const { error } = product
@@ -423,6 +433,76 @@ export default function ProductForm({ categories, units, suppliers, product }: P
             </div>
           )}
         </div>
+
+        {/* ฉลากยา — ชื่อ/สรรพคุณ/ยี่ห้อ ที่เจ้าของสัตว์อ่าน คนละอันกับชื่อในสต็อกที่มักมีขนาด/รหัสติดมา */}
+        {!form.is_service && (
+          <div className="border border-gray-200 rounded-lg p-4 space-y-3">
+            <div>
+              <p className="text-sm font-medium text-gray-700">ฉลากยา</p>
+              <p className="text-xs text-gray-400 mt-0.5">
+                ใช้ตอนหมอสั่งพิมพ์ฉลาก 80 × 50 มม. — ไม่กรอกก็ใช้ชื่อสินค้าตามสต็อก
+              </p>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">ชื่อบนฉลาก (ไทย)</label>
+                <input
+                  type="text"
+                  value={form.label_name}
+                  onChange={(e) => set('label_name', e.target.value)}
+                  className={inputClass}
+                  placeholder="เช่น ยาแก้อักเสบ"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">ชื่อบนฉลาก (English)</label>
+                <input
+                  type="text"
+                  value={form.label_name_en}
+                  onChange={(e) => set('label_name_en', e.target.value)}
+                  className={inputClass}
+                  placeholder="e.g. Amoxicillin 250 mg"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">ยี่ห้อ</label>
+              <input
+                type="text"
+                value={form.brand}
+                onChange={(e) => set('brand', e.target.value)}
+                className={inputClass}
+                placeholder="เช่น Bayer"
+              />
+              <p className="text-xs text-gray-400 mt-1">ขึ้นใต้ชื่อยาบนฉลาก ใช้ช่องเดียวทั้งฉลากไทยและอังกฤษ</p>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">สรรพคุณ (ไทย)</label>
+                <textarea
+                  rows={2}
+                  value={form.indication}
+                  onChange={(e) => set('indication', e.target.value)}
+                  className={inputClass}
+                  placeholder="เช่น ยาฆ่าเชื้อแบคทีเรีย"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">สรรพคุณ (English)</label>
+                <textarea
+                  rows={2}
+                  value={form.indication_en}
+                  onChange={(e) => set('indication_en', e.target.value)}
+                  className={inputClass}
+                  placeholder="e.g. Antibiotic"
+                />
+              </div>
+            </div>
+          </div>
+        )}
 
         <div>
           <label className="flex items-center gap-2 text-sm font-medium text-gray-700">
