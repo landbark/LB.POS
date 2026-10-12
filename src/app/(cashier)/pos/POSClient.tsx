@@ -145,11 +145,23 @@ export default function POSClient({ products, promotions, pointsConfig, cashierI
     return discount
   }
 
-  // ยอดของบรรทัดหนึ่งในตะกร้า — โปรโมชั่นบวกกับส่วนลดที่ลดเอง แต่รวมแล้วห้ามเกินราคาของบรรทัดนั้น
-  function lineTotals(product: Product, unitPrice: number, qty: number, manual: number) {
+  // ยอดของบรรทัดหนึ่งในตะกร้า — คิดส่วนลดที่ลดเองใหม่จาก mode/value ทุกครั้ง
+  // (ถ้าเก็บแต่ยอดบาทไว้ พอแก้จำนวนแล้ว % จะค้างอยู่ที่จำนวนเดิม)
+  function lineTotals(
+    product: Product,
+    unitPrice: number,
+    qty: number,
+    mode: 'amount' | 'percent',
+    value: number
+  ) {
     const gross = unitPrice * qty
+    const manual = !value || value <= 0
+      ? 0
+      : mode === 'percent'
+        ? (gross * Math.min(value, 100)) / 100
+        : Math.min(gross, value)
     const discount = Math.min(gross, applyPromotion(product, qty) + manual)
-    return { discount, subtotal: gross - discount }
+    return { manual_discount: manual, discount, subtotal: gross - discount }
   }
 
   function addToCart(product: Product) {
@@ -163,7 +175,7 @@ export default function POSClient({ products, promotions, pointsConfig, cashierI
       newCart[existing] = {
         ...item,
         quantity: newQty,
-        ...lineTotals(product, item.unit_price, newQty, item.manual_discount),
+        ...lineTotals(product, item.unit_price, newQty, item.discount_mode, item.discount_value),
       }
       setCart(newCart)
     } else {
@@ -174,8 +186,9 @@ export default function POSClient({ products, promotions, pointsConfig, cashierI
           product,
           quantity: 1,
           unit_price: product.price,
-          manual_discount: 0,
-          ...lineTotals(product, product.price, 1, 0),
+          discount_mode: 'amount',
+          discount_value: 0,
+          ...lineTotals(product, product.price, 1, 'amount', 0),
           lot_id,
         },
       ])
@@ -207,6 +220,8 @@ export default function POSClient({ products, promotions, pointsConfig, cashierI
       unit_price: i.unit_price,
       discount: 0,
       manual_discount: 0,
+      discount_mode: 'amount' as const,
+      discount_value: 0,
       subtotal: i.unit_price * i.quantity,
       lot_id: getBestLot(i.product),
     })))
@@ -232,7 +247,7 @@ export default function POSClient({ products, promotions, pointsConfig, cashierI
       newCart[index] = {
         ...item,
         quantity: newQty,
-        ...lineTotals(item.product, item.unit_price, newQty, item.manual_discount),
+        ...lineTotals(item.product, item.unit_price, newQty, item.discount_mode, item.discount_value),
       }
     }
     setCart(newCart)
@@ -251,7 +266,7 @@ export default function POSClient({ products, promotions, pointsConfig, cashierI
     newCart[index] = {
       ...item,
       quantity: n,
-      ...lineTotals(item.product, item.unit_price, n, item.manual_discount),
+      ...lineTotals(item.product, item.unit_price, n, item.discount_mode, item.discount_value),
     }
     setCart(newCart)
   }
@@ -315,20 +330,17 @@ export default function POSClient({ products, promotions, pointsConfig, cashierI
   }
 
   // ลดเองรายบรรทัด — โปรโมชั่นของบรรทัดนั้นยังอยู่ ลดเพิ่มทับลงไป
+  // เก็บ mode/value ไว้ด้วย เพื่อให้ % คิดใหม่เองเมื่อจำนวนเปลี่ยน
   function setLineDiscount(index: number, raw: string, mode: 'amount' | 'percent') {
     const item = cart[index]
-    const gross = item.unit_price * item.quantity
-    const value = parseFloat(raw || '0')
-    const manual = isNaN(value) || value <= 0
-      ? 0
-      : mode === 'percent'
-        ? Math.min(gross, (gross * Math.min(value, 100)) / 100)
-        : Math.min(gross, value)
+    const parsed = parseFloat(raw || '0')
+    const value = isNaN(parsed) || parsed <= 0 ? 0 : parsed
     const newCart = [...cart]
     newCart[index] = {
       ...item,
-      manual_discount: manual,
-      ...lineTotals(item.product, item.unit_price, item.quantity, manual),
+      discount_mode: mode,
+      discount_value: value,
+      ...lineTotals(item.product, item.unit_price, item.quantity, mode, value),
     }
     setCart(newCart)
   }
@@ -682,12 +694,16 @@ export default function POSClient({ products, promotions, pointsConfig, cashierI
                     <button
                       onClick={() => {
                         setDiscountRow(item.product.id)
-                        setDiscountMode('amount')
-                        setDiscountInput(item.manual_discount > 0 ? String(item.manual_discount) : '')
+                        setDiscountMode(item.discount_mode)
+                        setDiscountInput(item.discount_value > 0 ? String(item.discount_value) : '')
                       }}
                       className="mt-1 text-xs text-gray-400 hover:text-orange-600"
                     >
-                      {item.manual_discount > 0 ? `ลดเอง ฿${item.manual_discount.toFixed(2)} — แก้` : '+ ลดราคารายการนี้'}
+                      {item.manual_discount > 0
+                        ? item.discount_mode === 'percent'
+                          ? `ลดเอง ${item.discount_value}% (฿${item.manual_discount.toFixed(2)}) — แก้`
+                          : `ลดเอง ฿${item.manual_discount.toFixed(2)} — แก้`
+                        : '+ ลดราคารายการนี้'}
                     </button>
                   )}
                 </div>
