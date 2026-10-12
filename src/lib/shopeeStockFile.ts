@@ -3,6 +3,9 @@
 // วิธีใช้: ร้านโหลดเทมเพลตจาก Shopee Seller Centre (ไฟล์มีรหัสสินค้า/SKU/สต็อกปัจจุบันมาให้แล้ว)
 // → เราเขียนทับแค่คอลัมน์สต็อกของแถวที่ SKU ตรงกับสินค้าในระบบ → ร้านอัปโหลดไฟล์กลับเข้า Shopee
 //
+// จับคู่กับสินค้าทุกตัวที่มี SKU โดยไม่ดูธง "ลงขายบน Shopee" เพราะแถวในไฟล์มาจาก Shopee อยู่แล้ว
+// ตัวไฟล์จึงเป็นตัวบอกว่าจะอัปเดตอะไร ส่วนธงเหลือหน้าที่คัดรายการให้ไฟล์ CSV กับคอยเตือนว่าอะไรหายไปจากไฟล์
+//
 // แถวที่ SKU ไม่ตรงกับของเรา ตั้งใจไม่แตะเลย — ค่าเดิมจาก Shopee ยังอยู่ อัปโหลดกลับไปก็ไม่เปลี่ยนอะไร
 // (เหตุผลเดียวกันคือห้ามเอาไฟล์เก่ามาใช้ซ้ำ ต้องโหลดใหม่ทุกครั้ง ไม่งั้นสต็อกเก่าจะถูกยัดกลับไป)
 
@@ -22,6 +25,7 @@ export interface FillResult {
   filled: { sku: string; name: string; stock: number }[]
   duplicateSkus: string[]
   unmatchedRows: { sku: string; name: string }[]
+  unflagged: { sku: string; name: string }[]
   missingFromFile: { sku: string; name: string; stock: number }[]
   noSku: string[]
 }
@@ -96,12 +100,12 @@ export function fillShopeeStock(doc: XlsxDoc, products: StockProduct[]): FillRes
   const idCol = first(byKey(/et_title_(product|item)_id/), byText('รหัสสินค้า'))
   const nameCol = first(byKey(/et_title_(product|item)_name/), byText('ชื่อสินค้า'))
 
-  // บริการไม่มีสต็อก จึงไม่เอาเข้าตารางจับคู่ (ถ้าติดธงไว้จะไปโผล่ในรายการที่จับคู่ไม่ได้)
-  const flagged = products.filter((p) => p.on_shopee && !p.is_service)
+  // บริการไม่มีสต็อก จึงไม่เอาเข้าตารางจับคู่ (ถ้าอยู่ในไฟล์จะไปโผล่ในรายการที่จับคู่ไม่ได้)
   const bySku = new Map<string, StockProduct>()
-  for (const p of flagged) {
-    if (p.sku?.trim()) bySku.set(normalizeSku(p.sku), p)
+  for (const p of products) {
+    if (!p.is_service && p.sku?.trim()) bySku.set(normalizeSku(p.sku), p)
   }
+  const flagged = products.filter((p) => p.on_shopee && !p.is_service)
 
   const result: FillResult = {
     stockColumn: rows[keyRow + 2]?.[stockCol] || labels[stockCol] || '',
@@ -109,6 +113,7 @@ export function fillShopeeStock(doc: XlsxDoc, products: StockProduct[]): FillRes
     filled: [],
     duplicateSkus: [],
     unmatchedRows: [],
+    unflagged: [],
     missingFromFile: [],
     noSku: flagged.filter((p) => !p.sku?.trim()).map((p) => p.name),
   }
@@ -135,6 +140,9 @@ export function fillShopeeStock(doc: XlsxDoc, products: StockProduct[]): FillRes
     const stock = Math.max(0, Math.round(stockOf(product)))
     doc.setNumber(r, stockCol, stock)
     result.filled.push({ sku: product.sku!, name: name || product.name, stock })
+    if (!product.on_shopee && !hits.has(key)) {
+      result.unflagged.push({ sku: product.sku!, name: product.name })
+    }
     hits.set(key, (hits.get(key) ?? 0) + 1)
   }
 

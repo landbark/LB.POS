@@ -18,10 +18,11 @@ function today() {
 }
 
 /**
- * เครื่องมือ Shopee สำหรับสินค้าที่ติดธง "ลงขายบน Shopee แล้ว"
+ * เครื่องมือ Shopee ที่หน้าสินค้า
  *
  * - อัปเดตสต็อก: เติมสต็อกคงเหลือลงเทมเพลต Mass Update ที่ร้านโหลดมาจาก Shopee แล้วให้ร้านอัปโหลดกลับเอง
- * - ไฟล์รายการ: CSV ราคา/สต็อกฝั่งเรา ไว้เทียบตาหรือกรอกมือ
+ *   (จับคู่ด้วย SKU ทุกแถวในไฟล์ ไม่ดูธง — แถวที่อยู่ในไฟล์คือสิ่งที่ลงขายบน Shopee อยู่แล้ว)
+ * - ไฟล์รายการ: CSV ราคา/สต็อกฝั่งเรา ของสินค้าที่ติดธงไว้ ไว้เทียบตาหรือกรอกมือ
  *
  * ยังไม่ยิง Shopee API ให้ตรงๆ เพราะต้องมี Partner ID/Key และต้องให้ร้านกดอนุญาตก่อน (src/lib/shopee.ts รออยู่)
  */
@@ -96,12 +97,7 @@ export default function ShopeeButton({ products }: { products: Product[] }) {
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl w-full max-w-2xl shadow-2xl max-h-[85vh] flex flex-col">
             <div className="flex items-center justify-between p-4 border-b border-gray-100 shrink-0">
-              <h2 className="font-bold text-gray-900">
-                อัปเดตสต็อก Shopee
-                <span className="ml-2 text-sm font-normal text-gray-400">
-                  ติดธงไว้ {flagged.length} รายการ
-                </span>
-              </h2>
+              <h2 className="font-bold text-gray-900">อัปเดตสต็อก Shopee</h2>
               <button
                 onClick={() => {
                   setOpen(false)
@@ -122,7 +118,10 @@ export default function ShopeeButton({ products }: { products: Product[] }) {
                       <span className="font-medium">อัปเดตสินค้าจำนวนมาก</span> เลือกหัวข้อที่มี
                       <span className="font-medium"> สต็อก</span> แล้วโหลดไฟล์ออกมา
                     </li>
-                    <li>เอาไฟล์นั้นมาใส่ช่องข้างล่างนี้ — ระบบจะเติมสต็อกคงเหลือล่าสุดให้ แล้วดาวน์โหลดกลับ</li>
+                    <li>
+                      เอาไฟล์นั้นมาใส่ช่องข้างล่างนี้ — ระบบจะเติมสต็อกคงเหลือล่าสุดให้ทุกแถวที่
+                      <span className="font-medium"> SKU ตรงกับสินค้าในระบบ</span> (ไม่ต้องติ๊กธงก่อน) แล้วดาวน์โหลดกลับ
+                    </li>
                     <li>อัปโหลดไฟล์ที่ได้กลับขึ้น Shopee ที่หน้าเดิม</li>
                   </ol>
                   <p className="text-sm text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
@@ -185,6 +184,11 @@ export default function ShopeeButton({ products }: { products: Product[] }) {
                     title={`จับคู่ไม่ได้ ${result.unmatchedRows.length} แถวในไฟล์`}
                     hint="ไม่ได้แตะคอลัมน์สต็อกของแถวเหล่านี้ ค่าเดิมจาก Shopee ยังอยู่"
                     rows={result.unmatchedRows.map((r) => `${r.sku || '(ไม่มี SKU)'} — ${r.name}`)}
+                  />
+                  <ResultList
+                    title={`อัปเดตให้แล้วแต่ยังไม่ติดธง Shopee ${result.unflagged.length} รายการ`}
+                    hint='สต็อกอัปเดตเรียบร้อย — ติ๊ก "ลงขายบน Shopee แล้ว" ที่สินค้าด้วยถ้าอยากให้โผล่ในไฟล์รายการ CSV'
+                    rows={result.unflagged.map((r) => `${r.sku} — ${r.name}`)}
                   />
                   <ResultList
                     title={`ติดธง Shopee แต่ไม่มีในไฟล์ ${result.missingFromFile.length} รายการ`}
