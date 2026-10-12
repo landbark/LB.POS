@@ -2,9 +2,18 @@ import { createClient } from '@/lib/supabase/server'
 import { fetchAll } from '@/lib/supabase/fetch-all'
 import Link from 'next/link'
 import { Plus } from 'lucide-react'
-import ProductRow from './ProductRow'
+import ProductsTable from './ProductsTable'
 import BulkImportButton from './BulkImportButton'
 import ShopeeButton from './ShopeeButton'
+
+// เลือกเฉพาะคอลัมน์ที่ตารางกับปุ่ม Shopee ใช้จริง — `*` ลากคอลัมน์ยาวๆ (คำอธิบายเว็บ, ฉลากยา,
+// สรรพคุณ) มาด้วยทั้งที่หน้านี้ไม่ได้แสดง กลายเป็นหลายร้อย KB ที่ต้องส่งไป browser ทุกครั้ง
+const COLUMNS = `
+  id, name, sku, barcode, price, unit, min_stock, active,
+  is_service, on_shopee, online_available, image_url, weight_grams, clinic_only,
+  categories(name, clinic_only),
+  product_lots(id, lot_number, expiry_date, quantity)
+`
 
 export default async function ProductsPage() {
   const supabase = await createClient()
@@ -15,11 +24,7 @@ export default async function ProductsPage() {
     fetchAll((from, to) =>
       supabase
         .from('products')
-        .select(`
-          *,
-          categories(name, clinic_only),
-          product_lots(id, lot_number, expiry_date, quantity)
-        `)
+        .select(COLUMNS)
         .order('name')
         .order('id')   // ชื่อสินค้าซ้ำได้ ต้องมีคีย์ไม่ซ้ำปิดท้าย ไม่งั้นแถวซ้ำ/หายระหว่างหน้า
         .range(from, to)
@@ -51,35 +56,7 @@ export default async function ProductsPage() {
         </div>
       </div>
 
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-x-auto">
-        <table className="w-full">
-          <thead className="bg-gray-50 border-b border-gray-100">
-            <tr>
-              <th className="text-left text-xs font-medium text-gray-500 uppercase px-4 py-3">สินค้า</th>
-              <th className="text-left text-xs font-medium text-gray-500 uppercase px-4 py-3">SKU</th>
-              <th className="text-left text-xs font-medium text-gray-500 uppercase px-4 py-3">บาร์โค้ด</th>
-              <th className="text-left text-xs font-medium text-gray-500 uppercase px-4 py-3">หมวด</th>
-              <th className="text-right text-xs font-medium text-gray-500 uppercase px-4 py-3">ราคา</th>
-              <th className="text-right text-xs font-medium text-gray-500 uppercase px-4 py-3">คงเหลือ</th>
-              <th className="text-center text-xs font-medium text-gray-500 uppercase px-4 py-3">สถานะ</th>
-              <th className="text-center text-xs font-medium text-gray-500 uppercase px-4 py-3">ขายออนไลน์</th>
-              <th className="px-4 py-3"></th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-50">
-            {products?.map((product) => (
-              <ProductRow key={product.id} product={product as never} />
-            ))}
-            {(!products || products.length === 0) && (
-              <tr>
-                <td colSpan={9} className="px-4 py-10 text-center text-sm text-gray-400">
-                  ยังไม่มีสินค้า — กด &quot;เพิ่มสินค้า&quot; เพื่อเริ่มต้น
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
+      <ProductsTable products={(products ?? []) as never} />
     </div>
   )
 }
