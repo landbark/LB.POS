@@ -4,12 +4,13 @@ import { useState } from 'react'
 import Link from '@/components/ProgressLink'
 import { useProgress } from '@/lib/use-progress'
 import { createClient } from '@/lib/supabase/client'
-import { AlertTriangle, ArrowLeft, CalendarPlus, Check, Eye, Plus, Printer, Save, Send, Stethoscope, Trash2, X } from 'lucide-react'
+import { AlertTriangle, ArrowLeft, CalendarPlus, Check, Eye, Plus, Printer, Save, Send, Stethoscope, Trash2, X, Tag } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { SPECIES_LABELS, VISIT_STATUS_LABELS, type PetVaccination, type Vaccine, type Visit, type VisitItem } from '@/lib/types'
 import { petAge, petWarnings } from '@/lib/pets'
 import { isClinicOnly, isVaccine } from '@/lib/clinic'
 import { computeNextDue } from '@/lib/vaccines'
+import { FREQUENCY_OPTIONS, FOOD_OPTIONS, suggestedQuantity, sigText } from '@/lib/sig'
 import VaccineSection from '@/app/admin/pets/[id]/VaccineSection'
 import { confirmDialog } from '@/lib/confirm'
 
@@ -34,6 +35,11 @@ interface HistoryEntry {
   diagnosis: string | null
   treatment: string | null
   weight?: number | null
+}
+
+// ป้ายเศษเม็ดที่ใช้บ่อย — ให้หมอกดเลือกเร็วๆ ไม่ต้องพิมพ์ทศนิยม
+const DOSE_LABEL: Record<string, string> = {
+  '0.25': '¼', '0.333': '⅓', '0.5': '½', '0.75': '¾', '1.5': '1½',
 }
 
 const inputClass = 'w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500'
@@ -177,7 +183,10 @@ export default function VisitDetail({
     refresh()
   }
 
-  async function updateItem(item: VisitItem, patch: Partial<Pick<VisitItem, 'quantity' | 'unit_price' | 'dosage'>>) {
+  async function updateItem(
+    item: VisitItem,
+    patch: Partial<Pick<VisitItem, 'quantity' | 'unit_price' | 'dosage' | 'dose_amount' | 'frequency' | 'frequency_hours' | 'food_timing' | 'duration_days'>>
+  ) {
     const supabase = createClient()
     const { error } = await supabase.from('visit_items').update(patch).eq('id', item.id)
     if (error) {
@@ -185,6 +194,16 @@ export default function VisitDetail({
       return
     }
     refresh()
+  }
+
+  // แก้วิธีใช้แล้วคำนวณจำนวนยาให้ใหม่ในคำสั่งเดียว — หมอแก้จำนวนทับทีหลังได้ (เช่นอยากจ่ายเผื่อ)
+  async function updateSig(
+    item: VisitItem,
+    patch: Partial<Pick<VisitItem, 'dose_amount' | 'frequency' | 'frequency_hours' | 'food_timing' | 'duration_days'>>
+  ) {
+    const next = { ...item, ...patch }
+    const qty = suggestedQuantity(next.dose_amount, next.frequency, next.frequency_hours, next.duration_days)
+    await updateItem(item, qty && qty !== item.quantity ? { ...patch, quantity: qty } : patch)
   }
 
   async function removeItem(item: VisitItem) {
@@ -430,6 +449,8 @@ export default function VisitDetail({
     </div>
   )
 
+  const sigInput = 'border border-gray-200 rounded px-1.5 py-1 text-xs disabled:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500'
+
   // ตารางรายการ — showDosage=true สำหรับยา (มีช่องวิธีใช้), false สำหรับค่าบริการ
   const renderItemsTable = (list: VisitItem[], showDosage: boolean, emptyText: string) => {
     const colCount = showDosage ? 6 : 5
@@ -451,6 +472,72 @@ export default function VisitDetail({
               <td className="py-2 text-sm text-gray-900">{item.products?.name ?? 'สินค้าถูกลบแล้ว'}</td>
               {showDosage && (
                 <td className="py-2">
+                  <div className="flex flex-wrap items-center gap-1">
+                    {/* จำนวนต่อครั้ง — ปุ่มลัดเศษเม็ดที่ใช้บ่อย */}
+                    <select
+                      value={item.dose_amount != null ? String(item.dose_amount) : ''}
+                      disabled={itemsLocked}
+                      onChange={(e) => updateSig(item, { dose_amount: e.target.value ? Number(e.target.value) : null })}
+                      className={sigInput}
+                      title="จำนวนต่อครั้ง"
+                    >
+                      <option value="">ครั้งละ…</option>
+                      {['0.25', '0.333', '0.5', '0.75', '1', '1.5', '2', '3', '4'].map((v) => (
+                        <option key={v} value={v}>{DOSE_LABEL[v] ?? v}</option>
+                      ))}
+                    </select>
+
+                    <select
+                      value={item.frequency ?? ''}
+                      disabled={itemsLocked}
+                      onChange={(e) => updateSig(item, { frequency: (e.target.value || null) as VisitItem['frequency'] })}
+                      className={sigInput}
+                      title="ความถี่"
+                    >
+                      <option value="">ความถี่…</option>
+                      {FREQUENCY_OPTIONS.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}
+                    </select>
+
+                    {item.frequency === 'q_h' && (
+                      <input
+                        type="number" min={1} max={24}
+                        defaultValue={item.frequency_hours ?? ''}
+                        disabled={itemsLocked}
+                        onBlur={(e) => {
+                          const v = e.target.value ? parseInt(e.target.value, 10) : null
+                          if (v !== (item.frequency_hours ?? null)) updateSig(item, { frequency_hours: v })
+                        }}
+                        placeholder="ชม."
+                        className={`${sigInput} w-16`}
+                        title="ทุกๆ กี่ชั่วโมง"
+                      />
+                    )}
+
+                    <select
+                      value={item.food_timing ?? ''}
+                      disabled={itemsLocked}
+                      onChange={(e) => updateSig(item, { food_timing: (e.target.value || null) as VisitItem['food_timing'] })}
+                      className={sigInput}
+                      title="ก่อน/หลัง/พร้อมอาหาร"
+                    >
+                      <option value="">อาหาร…</option>
+                      {FOOD_OPTIONS.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}
+                    </select>
+
+                    <input
+                      type="number" min={1}
+                      defaultValue={item.duration_days ?? ''}
+                      disabled={itemsLocked}
+                      onBlur={(e) => {
+                        const v = e.target.value ? parseInt(e.target.value, 10) : null
+                        if (v !== (item.duration_days ?? null)) updateSig(item, { duration_days: v })
+                      }}
+                      placeholder="กี่วัน"
+                      className={`${sigInput} w-20`}
+                      title="จ่ายกี่วัน"
+                    />
+                  </div>
+
                   <input
                     type="text"
                     defaultValue={item.dosage ?? ''}
@@ -459,9 +546,24 @@ export default function VisitDetail({
                       const value = e.target.value.trim() || null
                       if (value !== (item.dosage ?? null)) updateItem(item, { dosage: value })
                     }}
-                    placeholder="เช่น 1 เม็ด เช้า-เย็น หลังอาหาร"
-                    className="w-full border border-gray-200 rounded px-2 py-1 text-sm disabled:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="หมายเหตุเพิ่มเติม (ถ้ามี) เช่น เขย่าขวดก่อนใช้"
+                    className="w-full mt-1 border border-gray-200 rounded px-2 py-1 text-xs disabled:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
+
+                  {/* ข้อความที่จะไปขึ้นบนฉลากจริง — หมอเห็นเลยว่าเจ้าของจะอ่านว่าอะไร */}
+                  {item.dose_amount != null && item.frequency && (
+                    <p className="mt-1 text-xs text-emerald-700">
+                      ฉลาก: {sigText({
+                        dose_amount: item.dose_amount,
+                        frequency: item.frequency,
+                        frequency_hours: item.frequency_hours,
+                        food_timing: item.food_timing,
+                        duration_days: item.duration_days,
+                        unit: item.products?.unit ?? '',
+                        note: item.dosage,
+                      })}
+                    </p>
+                  )}
                 </td>
               )}
               <td className="py-2">
@@ -537,6 +639,15 @@ export default function VisitDetail({
           >
             <Printer size={15} /> พิมพ์
           </a>
+          {items.some((i) => i.products && !i.products.is_service) && (
+            <a
+              href={`/print/label/${visit.id}`}
+              target="_blank"
+              className="flex items-center gap-1.5 border border-emerald-300 text-emerald-700 bg-emerald-50 text-sm px-3 py-2 rounded-lg hover:bg-emerald-100"
+            >
+              <Tag size={15} /> ฉลากยา
+            </a>
+          )}
           {canEdit && (
             <button
               onClick={() => saveVisit()}

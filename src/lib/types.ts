@@ -278,6 +278,11 @@ export interface Visit {
   visit_items?: VisitItem[]
 }
 
+/** ความถี่การให้ยา — sid/bid/tid/qid = วันละ 1/2/3/4 ครั้ง, q_h = ทุกๆ n ชม., prn = เมื่อมีอาการ */
+export type Frequency = 'sid' | 'bid' | 'tid' | 'qid' | 'q_h' | 'prn'
+/** ac = ก่อนอาหาร, pc = หลังอาหาร, wm = พร้อมอาหาร */
+export type FoodTiming = 'ac' | 'pc' | 'wm'
+
 export interface VisitItem {
   id: string
   visit_id: string
@@ -286,6 +291,13 @@ export interface VisitItem {
   unit_price: number
   /** วิธีใช้ยา — พิมพ์ลงใบสรุปการรักษา */
   dosage: string | null
+  /** จำนวนต่อครั้ง (รองรับเศษเม็ด เช่น 0.5) */
+  dose_amount: number | null
+  frequency: Frequency | null
+  /** ใช้เมื่อ frequency = 'q_h' */
+  frequency_hours: number | null
+  food_timing: FoodTiming | null
+  duration_days: number | null
   created_at: string
   products?: Product
 }
