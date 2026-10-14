@@ -1,4 +1,5 @@
 import { createAdminClient } from '@/lib/supabase/admin'
+import { sumByMethod, type PaidTransaction } from '@/lib/payments'
 import { dueVaccinations, groupDueByPet } from '@/lib/vaccines'
 import { fetchAll } from '@/lib/supabase/fetch-all'
 
@@ -570,7 +571,7 @@ export async function gatherDailySales(admin: ReturnType<typeof createAdminClien
   const [{ data: completed }, { data: cancelled }, { data: items }] = await Promise.all([
     admin
       .from('transactions')
-      .select('total, payment_method')
+      .select('total, payment_method, transaction_payments(method, amount)')
       .eq('status', 'completed')
       .gte('created_at', startISO)
       .lt('created_at', endISO),
@@ -591,8 +592,7 @@ export async function gatherDailySales(admin: ReturnType<typeof createAdminClien
   const tx = completed ?? []
   const total = tx.reduce((s, t) => s + t.total, 0)
 
-  const byMethodMap: Record<string, number> = {}
-  for (const t of tx) byMethodMap[t.payment_method] = (byMethodMap[t.payment_method] ?? 0) + t.total
+  const byMethodMap = sumByMethod(tx as PaidTransaction[])
 
   const sellerMap: Record<string, { qty: number; revenue: number }> = {}
   for (const it of (items ?? []) as unknown as {

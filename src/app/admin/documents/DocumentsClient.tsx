@@ -18,6 +18,7 @@ interface ReceiptRow {
   customer_id: string | null
   payment_method: PaymentMethod
   payment_method_original: PaymentMethod | null
+  transaction_payments?: { method: PaymentMethod; amount: number }[] | null
   sales_channel: SalesChannel
   external_order_no: string | null
   profiles: { name: string } | null
@@ -129,7 +130,13 @@ export default function DocumentsClient({
                     )}
                   </td>
                   <td className="px-4 py-3 text-sm text-gray-600">
-                    {PAYMENT_TH[r.payment_method] ?? r.payment_method}
+                    {(r.transaction_payments?.length ?? 0) > 1 ? (
+                      <span className="block">
+                        {r.transaction_payments!.map((l) => `${PAYMENT_TH[l.method] ?? l.method} ฿${Number(l.amount).toFixed(2)}`).join(' + ')}
+                      </span>
+                    ) : (
+                      PAYMENT_TH[r.payment_method] ?? r.payment_method
+                    )}
                     {r.payment_method_original && (
                       <span
                         className="ml-1 text-xs text-amber-600"

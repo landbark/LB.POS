@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import PrintToolbar from '@/components/PrintToolbar'
 import type { StoreSettings, PaymentMethod, SalesChannel } from '@/lib/types'
 import { CHANNEL_LABEL, isOnlineChannel } from '@/lib/salesChannel'
+import { paymentLines } from '@/lib/payments'
 
 interface ReceiptTx {
   id: string
@@ -18,6 +19,7 @@ interface ReceiptTx {
   sales_channel: SalesChannel | null
   external_order_no: string | null
   cash_received: number | null
+  transaction_payments?: { method: PaymentMethod; amount: number }[] | null
   change_given: number | null
   points_earned: number
   points_used: number
@@ -63,6 +65,8 @@ export default function ReceiptView({
 }) {
   const [size, setSize] = useState<PaperSize>('80mm')
   const cfg = PAPER_CONFIG[size]
+  // บิลที่จ่ายทางเดียวได้มาแถวเดียว — ใบเสร็จจะพิมพ์บรรทัด "ชำระโดย" แบบเดิม
+  const splitLines = paymentLines(tx)
 
   // ลูกค้า (จากหน้าเช็คแต้ม LINE) ไม่ต้องเลือกขนาด — บังคับ 80mm แล้วเด้งไดอะล็อกบันทึกเป็น PDF ให้เลย
   // อยากได้แบบเต็ม (A4/A5) ให้ไปขอพนักงานพิมพ์จาก /pos หรือ /admin/documents แทน
@@ -164,7 +168,19 @@ export default function ReceiptView({
             <div className="flex justify-between font-bold border-t border-gray-300 pt-1 mt-1" style={{ fontSize: '1.05em' }}>
               <span>ยอดสุทธิ</span><span>{money(tx.total)}</span>
             </div>
-            <div className="flex justify-between pt-1"><span>ชำระโดย</span><span>{PAYMENT_LABELS[tx.payment_method]}</span></div>
+            {splitLines.length > 1 ? (
+              <>
+                <div className="pt-1">ชำระโดย</div>
+                {splitLines.map((l) => (
+                  <div key={l.method} className="flex justify-between">
+                    <span className="pl-2">· {PAYMENT_LABELS[l.method]}</span>
+                    <span>{money(l.amount)}</span>
+                  </div>
+                ))}
+              </>
+            ) : (
+              <div className="flex justify-between pt-1"><span>ชำระโดย</span><span>{PAYMENT_LABELS[tx.payment_method]}</span></div>
+            )}
             {tx.sales_channel && isOnlineChannel(tx.sales_channel) && (
               <>
                 <div className="flex justify-between"><span>ช่องทาง</span><span>{CHANNEL_LABEL[tx.sales_channel]}</span></div>
@@ -173,7 +189,7 @@ export default function ReceiptView({
                 )}
               </>
             )}
-            {tx.payment_method === 'cash' && tx.cash_received != null && (
+            {(tx.payment_method === 'cash' || splitLines.some((l) => l.method === 'cash')) && tx.cash_received != null && (
               <>
                 <div className="flex justify-between"><span>รับเงิน</span><span>{money(tx.cash_received)}</span></div>
                 <div className="flex justify-between"><span>เงินทอน</span><span>{money(tx.change_given ?? 0)}</span></div>

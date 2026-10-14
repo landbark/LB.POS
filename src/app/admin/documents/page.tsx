@@ -8,7 +8,7 @@ export default async function DocumentsPage() {
   const [{ data: receipts }, { data: purchaseOrders }] = await Promise.all([
     supabase
       .from('transactions')
-      .select('id, transaction_number, created_at, total, status, customer_id, payment_method, payment_method_original, sales_channel, external_order_no, profiles!transactions_cashier_id_fkey(name)')
+      .select('id, transaction_number, created_at, total, status, customer_id, payment_method, payment_method_original, sales_channel, external_order_no, profiles!transactions_cashier_id_fkey(name), transaction_payments(method, amount)')
       .order('created_at', { ascending: false })
       .limit(100),
     supabase

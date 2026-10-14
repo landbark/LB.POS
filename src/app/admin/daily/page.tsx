@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { paymentLines, type PaidTransaction } from '@/lib/payments'
 import DailySummaryClient, { type ShiftSummary } from './DailySummaryClient'
 
 // วันของร้านอิงเวลาไทย (UTC+7) — server บน Vercel เป็น UTC ใช้วันจาก toISOString ตรงๆ ไม่ได้
@@ -19,7 +20,7 @@ export default async function DailySummaryPage({
   const [{ data: completedTx }, { data: cancelledTx }, { data: items }, { data: shifts }] = await Promise.all([
     supabase
       .from('transactions')
-      .select('total, discount, payment_method, sales_channel')
+      .select('total, discount, payment_method, sales_channel, transaction_payments(method, amount)')
       .eq('status', 'completed')
       .gte('created_at', startISO)
       .lt('created_at', endISO),
@@ -52,11 +53,14 @@ export default async function DailySummaryPage({
   const netTotal = completedTx?.reduce((s, t) => s + t.total, 0) ?? 0
   const discountTotal = completedTx?.reduce((s, t) => s + (t.discount ?? 0), 0) ?? 0
 
+  // บิลที่แยกจ่ายนับยอดเข้าทุกช่องทางที่รับมา ส่วน count นับใบ (ใบเดียวโผล่ได้หลายช่องทาง)
   const byMethodMap: Record<string, { amount: number; count: number }> = {}
   for (const t of completedTx ?? []) {
-    const m = (byMethodMap[t.payment_method] ??= { amount: 0, count: 0 })
-    m.amount += t.total
-    m.count += 1
+    for (const line of paymentLines(t as PaidTransaction)) {
+      const m = (byMethodMap[line.method] ??= { amount: 0, count: 0 })
+      m.amount += line.amount
+      m.count += 1
+    }
   }
   const byMethod = Object.entries(byMethodMap)
     .map(([method, v]) => ({ method, ...v }))

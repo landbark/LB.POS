@@ -474,6 +474,17 @@ export interface Transaction {
   profiles?: Profile
   customers?: Customer
   transaction_items?: TransactionItem[]
+  /** มีเฉพาะบิลที่เก็บเงินแยกหลายทาง — บิลจ่ายทางเดียวไม่มีแถวเลย (ดู src/lib/payments.ts) */
+  transaction_payments?: TransactionPayment[]
+}
+
+/** เงินที่รับมาหนึ่งช่องทางของบิลที่แยกจ่าย — ผลรวมของบิลเท่ากับ transactions.total พอดี */
+export interface TransactionPayment {
+  id: string
+  transaction_id: string
+  method: PaymentMethod
+  amount: number
+  created_at: string
 }
 
 export interface TransactionItem {

@@ -21,12 +21,16 @@ export async function updatePaymentMethod({
 
   const { data: tx, error: fetchError } = await supabase
     .from('transactions')
-    .select('id, total, status, payment_method, payment_method_original')
+    .select('id, total, status, payment_method, payment_method_original, transaction_payments(method)')
     .eq('id', transactionId)
     .single()
 
   if (fetchError || !tx) return { error: 'ไม่พบใบเสร็จ' }
   if (tx.status === 'cancelled') return { error: 'ใบเสร็จนี้ถูกยกเลิกแล้ว แก้วิธีรับเงินไม่ได้' }
+  // บิลแยกจ่ายมียอดรายช่องทางเก็บไว้ ถ้าปล่อยให้แก้คอลัมน์เดียวตัวเลขสองฝั่งจะขัดกันเงียบๆ
+  if ((tx.transaction_payments?.length ?? 0) > 1) {
+    return { error: 'ใบเสร็จนี้เก็บเงินแยกหลายทาง แก้วิธีรับเงินทีหลังไม่ได้ — ถ้าบันทึกผิดให้ยกเลิกบิลแล้วออกใหม่' }
+  }
   if (tx.payment_method === method) return { error: 'วิธีรับเงินเดิมอยู่แล้ว' }
 
   const received = method === 'cash' ? (cashReceived ?? tx.total) : null

@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
 import { fetchAll } from '@/lib/supabase/fetch-all'
+import { sumByMethod, type PaidTransaction } from '@/lib/payments'
 
 export default async function ReportsPage() {
   const supabase = await createClient()
@@ -10,7 +11,7 @@ export default async function ReportsPage() {
   // ยอดทั้งเดือนอาจเกิน 1000 แถว — ต้องไล่ดึงทีละหน้า ไม่งั้นตัวเลขจะขาดแบบไม่มี error
   const [todayTx, monthTx, { data: recentTx }, monthItems, { data: store }] = await Promise.all([
     fetchAll((from, to) =>
-      supabase.from('transactions').select('total, payment_method')
+      supabase.from('transactions').select('total, payment_method, transaction_payments(method, amount)')
         .gte('created_at', today).order('id').range(from, to)
     ),
     fetchAll((from, to) =>
@@ -47,10 +48,7 @@ export default async function ReportsPage() {
   const todayTotal = todayTx?.reduce((s, t) => s + t.total, 0) ?? 0
   const monthTotal = monthTx?.reduce((s, t) => s + t.total, 0) ?? 0
 
-  const paymentBreakdown = todayTx?.reduce<Record<string, number>>((acc, t) => {
-    acc[t.payment_method] = (acc[t.payment_method] ?? 0) + t.total
-    return acc
-  }, {}) ?? {}
+  const paymentBreakdown = sumByMethod((todayTx ?? []) as PaidTransaction[])
 
   const PAYMENT_TH: Record<string, string> = {
     cash: 'เงินสด',

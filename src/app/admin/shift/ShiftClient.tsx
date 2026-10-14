@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import { sumByMethod, type PaidTransaction } from '@/lib/payments'
 import { Wallet, Lock, Unlock, Pencil } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { confirmDialog } from '@/lib/confirm'
@@ -93,15 +94,13 @@ export default function ShiftClient({
     async function loadSummary(shift: Shift) {
       const supabase = createClient()
       const [{ data: completed }, { data: refunds }, { data: moves }] = await Promise.all([
-        supabase.from('transactions').select('total, payment_method').eq('status', 'completed').gte('created_at', shift.opened_at),
+        supabase.from('transactions').select('total, payment_method, transaction_payments(method, amount)').eq('status', 'completed').gte('created_at', shift.opened_at),
         supabase.from('transactions').select('total').eq('status', 'cancelled').eq('refund_method', 'cash').gte('cancelled_at', shift.opened_at),
         supabase.from('cash_movements').select('*, profiles(name)').eq('shift_id', shift.id).order('created_at'),
       ])
       if (cancelled) return
       setMovements((moves as unknown as CashMovement[]) ?? [])
-      const acc: Record<string, number> = {}
-      for (const t of completed ?? []) acc[t.payment_method] = (acc[t.payment_method] ?? 0) + t.total
-      setBreakdown(acc)
+      setBreakdown(sumByMethod((completed ?? []) as PaidTransaction[]))
       setCashRefunds((refunds ?? []).reduce((s, t) => s + t.total, 0))
       setLoadingSummary(false)
     }

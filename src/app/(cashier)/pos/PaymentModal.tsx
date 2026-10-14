@@ -28,11 +28,15 @@ interface Props {
 }
 
 // qr ตัดออกจากตัวเลือก — ถือเป็นการโอนเงินแบบเดียวกับ transfer (ยังรองรับอ่านรายการเก่าที่บันทึกเป็น qr ไว้ที่อื่น)
-const PAYMENT_LABELS: Record<Exclude<PaymentMethod, 'qr'>, string> = {
+type SplitMethod = Exclude<PaymentMethod, 'qr'>
+
+const PAYMENT_LABELS: Record<SplitMethod, string> = {
   cash: '💵 เงินสด',
   transfer: '📲 โอนเงิน',
   card: '💳 บัตรเครดิต',
 }
+
+const SPLIT_METHODS = Object.keys(PAYMENT_LABELS) as SplitMethod[]
 
 export default function PaymentModal({
   cart, subtotal, totalDiscount, total, customer, pointsConfig, cashierId, promptpayId, roundingMode, visitId, onClose, onSuccess,
@@ -45,6 +49,9 @@ export default function PaymentModal({
   const [orderNo, setOrderNo] = useState('')
   const [method, setMethod] = useState<PaymentMethod>('cash')
   const [cashReceived, setCashReceived] = useState('')
+  // แยกจ่าย: ลูกค้าจ่ายบิลเดียวหลายทาง เช่น โอน ฿57 + เงินสด ฿2 — ช่องทางละแถวเดียว
+  const [splitMode, setSplitMode] = useState(false)
+  const [splitLines, setSplitLines] = useState<{ method: SplitMethod; amount: string }[]>([])
   const [usePoints, setUsePoints] = useState(0)
   const [useCredit, setUseCredit] = useState(0)
   const [manualDiscountMode, setManualDiscountMode] = useState<'percent' | 'amount'>('percent')
@@ -86,6 +93,46 @@ export default function PaymentModal({
   const change = method === 'cash' && cashReceived
     ? parseFloat(cashReceived) - finalTotal
     : 0
+
+  const amountOf = (l: { amount: string }) => parseFloat(l.amount || '0') || 0
+  const splitPaid = splitLines.reduce((sum, l) => sum + amountOf(l), 0)
+  const splitCash = splitLines.filter((l) => l.method === 'cash').reduce((sum, l) => sum + amountOf(l), 0)
+  // เงินทอนออกได้จากฝั่งเงินสดเท่านั้น โอน/บัตรรับเกินยอดบิลไม่ได้
+  const splitChange = Math.max(0, splitPaid - finalTotal)
+  const splitRemaining = Math.max(0, finalTotal - splitPaid)
+  const splitError = !splitMode
+    ? null
+    : splitLines.some((l) => amountOf(l) <= 0)
+      ? 'ใส่จำนวนเงินให้ครบทุกช่องทาง'
+      : splitPaid - splitCash > finalTotal + 0.001
+        ? 'ยอดโอน/บัตรเกินยอดบิล — ทอนเงินทางนั้นไม่ได้'
+        : splitPaid < finalTotal - 0.001
+          ? `ยังขาดอีก ฿${splitRemaining.toFixed(2)}`
+          : null
+  const unusedMethods = SPLIT_METHODS.filter((m) => !splitLines.some((l) => l.method === m))
+
+  // ยอดที่ลงบิลจริงของแต่ละช่องทาง — หักเงินทอนออกจากฝั่งเงินสด ผลรวมจึงเท่ากับยอดบิลพอดี
+  const splitAllocation = splitLines
+    .map((l) => ({ method: l.method, amount: l.method === 'cash' ? amountOf(l) - splitChange : amountOf(l) }))
+    .filter((l) => l.amount > 0)
+
+  function toggleSplit() {
+    if (splitMode) {
+      setSplitMode(false)
+      setSplitLines([])
+      return
+    }
+    setSplitMode(true)
+    setCashReceived('')
+    setSplitLines([
+      { method: method === 'qr' ? 'transfer' : method, amount: '' },
+      { method: method === 'cash' ? 'transfer' : 'cash', amount: '' },
+    ])
+  }
+
+  function setLine(index: number, patch: Partial<{ method: SplitMethod; amount: string }>) {
+    setSplitLines(splitLines.map((l, i) => (i === index ? { ...l, ...patch } : l)))
+  }
 
   const writeoff = mode === 'writeoff'
   const online = !writeoff && isOnlineChannel(channel)
@@ -147,13 +194,26 @@ export default function PaymentModal({
       return
     }
 
-    if (method === 'cash' && parseFloat(cashReceived || '0') < finalTotal) {
+    if (splitMode && !online) {
+      if (splitError) {
+        toast.error(splitError)
+        return
+      }
+    } else if (method === 'cash' && parseFloat(cashReceived || '0') < finalTotal) {
       toast.error('รับเงินไม่พอ')
       return
     }
 
     setLoading(true)
     const supabase = createClient()
+
+    const splitting = splitMode && !online && !writeoff && splitAllocation.length > 0
+    // payment_method เก็บช่องทางที่ยอดเยอะสุดไว้ ให้หน้าที่ยังอ่านคอลัมน์เดิมไม่พัง (แค่เห็นไม่ละเอียด)
+    const primaryMethod: PaymentMethod = splitting
+      ? splitAllocation.reduce((best, l) => (l.amount > best.amount ? l : best)).method
+      : method
+    const cashIn = splitting ? splitCash : method === 'cash' ? parseFloat(cashReceived || '0') : null
+    const changeOut = splitting ? splitChange : method === 'cash' ? Math.max(0, change) : null
 
     // เลขที่ RCxxyyzzzzbbbb จาก DB function — ถ้าชนกัน (ขายพร้อมกัน 2 เครื่อง) ลองใหม่อีกรอบ
     let tx: { id: string; transaction_number: string } | null = null
@@ -176,11 +236,11 @@ export default function PaymentModal({
           discount: totalDiscount + manualDiscountAmount + pointsDiscount,
           total: finalTotal,
           rounding,
-          payment_method: method,
+          payment_method: primaryMethod,
           sales_channel: channel,
           external_order_no: isOnlineChannel(channel) ? (orderNo.trim() || null) : null,
-          cash_received: method === 'cash' ? parseFloat(cashReceived) : null,
-          change_given: method === 'cash' ? Math.max(0, change) : null,
+          cash_received: cashIn && cashIn > 0 ? cashIn : null,
+          change_given: cashIn && cashIn > 0 ? (changeOut ?? 0) : null,
           points_earned: earnedPoints,
           points_used: usePoints,
           credit_used: useCredit,
@@ -203,6 +263,17 @@ export default function PaymentModal({
       toast.error('เกิดข้อผิดพลาด: ' + lastError)
       setLoading(false)
       return
+    }
+
+    // บันทึกว่าเงินเข้าช่องทางไหนบ้าง — เฉพาะบิลที่แยกจ่าย บิลจ่ายทางเดียวไม่ต้องมีแถวเลย
+    if (splitting) {
+      const { error: payError } = await supabase.from('transaction_payments').insert(
+        splitAllocation.map((l) => ({ transaction_id: tx.id, method: l.method, amount: l.amount })),
+      )
+      // บิลบันทึกไปแล้ว ยอดรวมถูกต้อง — ไม่ย้อนกลับ แต่ต้องบอกให้รู้ว่ารายงานจะเห็นเป็นช่องทางเดียว
+      if (payError) {
+        toast.error(`บิล ${tx.transaction_number} บันทึกแล้ว แต่เก็บรายละเอียดการแยกจ่ายไม่สำเร็จ — รายงานจะนับเป็น${PAYMENT_LABELS[primaryMethod as SplitMethod] ?? primaryMethod}ทั้งบิล`, { duration: 8000 })
+      }
     }
 
     // Insert transaction items + deduct stock (FEFO)
@@ -347,6 +418,8 @@ export default function PaymentModal({
                     setChannel(c.value)
                     // ขายออนไลน์เงินเข้าบัญชีร้านผ่านแพลตฟอร์ม ตั้งเป็นโอนให้เลย
                     if (isOnlineChannel(c.value) && method === 'cash') setMethod('transfer')
+                    // ออนไลน์ไม่ได้รับเงินที่ร้าน ไม่มีอะไรให้แยก
+                    if (isOnlineChannel(c.value) && splitMode) toggleSplit()
                   }}
                   className={`py-2 rounded-lg text-xs font-medium border-2 transition-colors ${
                     !writeoff && channel === c.value
@@ -423,22 +496,98 @@ export default function PaymentModal({
 
           {/* Payment Method */}
           <div className={online || writeoff ? 'hidden' : ''}>
-            <p className="text-sm font-medium text-gray-700 mb-2">วิธีชำระเงิน</p>
-            <div className="grid grid-cols-2 gap-2">
-              {(Object.keys(PAYMENT_LABELS) as Exclude<PaymentMethod, 'qr'>[]).map((m) => (
-                <button
-                  key={m}
-                  onClick={() => setMethod(m)}
-                  className={`py-2.5 rounded-lg text-sm font-medium border-2 transition-colors ${
-                    method === m
-                      ? 'border-blue-500 bg-blue-50 text-blue-700'
-                      : 'border-gray-200 text-gray-600 hover:border-gray-300'
-                  }`}
-                >
-                  {PAYMENT_LABELS[m]}
-                </button>
-              ))}
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-sm font-medium text-gray-700">วิธีชำระเงิน</p>
+              <button
+                onClick={toggleSplit}
+                className="text-xs font-medium text-blue-600 hover:text-blue-700"
+              >
+                {splitMode ? 'กลับไปจ่ายทางเดียว' : 'แยกจ่ายหลายทาง'}
+              </button>
             </div>
+
+            {!splitMode ? (
+              <div className="grid grid-cols-2 gap-2">
+                {SPLIT_METHODS.map((m) => (
+                  <button
+                    key={m}
+                    onClick={() => setMethod(m)}
+                    className={`py-2.5 rounded-lg text-sm font-medium border-2 transition-colors ${
+                      method === m
+                        ? 'border-blue-500 bg-blue-50 text-blue-700'
+                        : 'border-gray-200 text-gray-600 hover:border-gray-300'
+                    }`}
+                  >
+                    {PAYMENT_LABELS[m]}
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {splitLines.map((line, i) => (
+                  <div key={i} className="flex items-center gap-2">
+                    <select
+                      value={line.method}
+                      onChange={(e) => setLine(i, { method: e.target.value as SplitMethod })}
+                      className="border border-gray-200 rounded-lg px-2 py-2 text-sm bg-white w-32 shrink-0"
+                    >
+                      {SPLIT_METHODS.filter(
+                        (m) => m === line.method || !splitLines.some((l) => l.method === m),
+                      ).map((m) => (
+                        <option key={m} value={m}>{PAYMENT_LABELS[m]}</option>
+                      ))}
+                    </select>
+                    <input
+                      type="number"
+                      inputMode="decimal"
+                      min={0}
+                      step="0.01"
+                      placeholder="0"
+                      value={line.amount}
+                      onChange={(e) => setLine(i, { amount: e.target.value })}
+                      className="flex-1 min-w-0 border border-gray-300 rounded-lg px-3 py-2 text-base font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                    <button
+                      onClick={() => setLine(i, { amount: (amountOf(line) + splitRemaining).toFixed(2) })}
+                      disabled={splitRemaining <= 0}
+                      className="text-xs text-blue-600 hover:text-blue-700 font-medium px-1 shrink-0 disabled:opacity-30 disabled:cursor-not-allowed"
+                      title="ใส่ยอดที่ยังขาดทั้งหมดลงช่องนี้"
+                    >
+                      ที่เหลือ
+                    </button>
+                    {splitLines.length > 2 && (
+                      <button
+                        onClick={() => setSplitLines(splitLines.filter((_, j) => j !== i))}
+                        className="text-gray-400 hover:text-red-500 shrink-0"
+                        title="เอาช่องทางนี้ออก"
+                      >
+                        <X size={15} />
+                      </button>
+                    )}
+                  </div>
+                ))}
+
+                {unusedMethods.length > 0 && (
+                  <button
+                    onClick={() => setSplitLines([...splitLines, { method: unusedMethods[0], amount: '' }])}
+                    className="text-xs text-blue-600 hover:text-blue-700 font-medium"
+                  >
+                    + เพิ่มช่องทาง
+                  </button>
+                )}
+
+                <div className="flex items-center justify-between text-xs bg-gray-50 rounded-lg px-3 py-2">
+                  <span className="text-gray-500">รับมาแล้ว ฿{splitPaid.toFixed(2)} จาก ฿{finalTotal.toFixed(2)}</span>
+                  {splitError ? (
+                    <span className="font-medium text-amber-600">{splitError}</span>
+                  ) : splitChange > 0 ? (
+                    <span className="font-medium text-blue-600">เงินทอน ฿{splitChange.toFixed(2)}</span>
+                  ) : (
+                    <span className="font-medium text-green-600">ครบพอดี</span>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Manual discount */}
@@ -481,7 +630,7 @@ export default function PaymentModal({
           </div>
 
           {/* Cash input */}
-          {method === 'cash' && !online && !writeoff && (
+          {method === 'cash' && !online && !writeoff && !splitMode && (
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">รับเงิน</label>
               <input
@@ -627,12 +776,27 @@ export default function PaymentModal({
               <span>ยอดที่ต้องชำระ</span>
               <span>฿{finalTotal.toFixed(2)}</span>
             </div>
-            {method === 'cash' && cashReceived && change >= 0 && (
+            {splitMode && !online && !writeoff ? (
+              <>
+                {splitAllocation.map((l) => (
+                  <div key={l.method} className="flex justify-between text-sm text-gray-600">
+                    <span>{PAYMENT_LABELS[l.method]}</span>
+                    <span>฿{l.amount.toFixed(2)}</span>
+                  </div>
+                ))}
+                {splitChange > 0 && (
+                  <div className="flex justify-between text-sm text-blue-600 font-medium">
+                    <span>เงินทอน</span>
+                    <span>฿{splitChange.toFixed(2)}</span>
+                  </div>
+                )}
+              </>
+            ) : method === 'cash' && cashReceived && change >= 0 ? (
               <div className="flex justify-between text-sm text-blue-600 font-medium">
                 <span>เงินทอน</span>
                 <span>฿{change.toFixed(2)}</span>
               </div>
-            )}
+            ) : null}
             {earnedPoints > 0 && (
               <div className="text-xs text-purple-600 pt-1">
                 ได้รับ {earnedPoints} แต้ม
@@ -647,7 +811,8 @@ export default function PaymentModal({
             disabled={
               loading ||
               (writeoff && !writeoffReason.trim()) ||
-              (!writeoff && !online && method === 'cash' && (!cashReceived || parseFloat(cashReceived) < finalTotal))
+              (!writeoff && !online && splitMode && splitError !== null) ||
+              (!writeoff && !online && !splitMode && method === 'cash' && (!cashReceived || parseFloat(cashReceived) < finalTotal))
             }
             className={`w-full disabled:opacity-40 disabled:cursor-not-allowed text-white font-bold py-3 rounded-xl text-base transition-colors ${
               writeoff ? 'bg-red-600 hover:bg-red-700' : 'bg-green-600 hover:bg-green-700'
