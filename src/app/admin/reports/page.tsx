@@ -1,18 +1,19 @@
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
 import { fetchAll } from '@/lib/supabase/fetch-all'
+import { thaiDayRange, thaiMonthStart } from '@/lib/thaiDate'
 import { sumByMethod, type PaidTransaction } from '@/lib/payments'
 
 export default async function ReportsPage() {
   const supabase = await createClient()
-  const today = new Date().toISOString().split('T')[0]
-  const startOfMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0]
+  const { startISO: today, endISO: tomorrow } = thaiDayRange()
+  const startOfMonth = thaiDayRange(thaiMonthStart()).startISO
 
   // ยอดทั้งเดือนอาจเกิน 1000 แถว — ต้องไล่ดึงทีละหน้า ไม่งั้นตัวเลขจะขาดแบบไม่มี error
   const [todayTx, monthTx, { data: recentTx }, monthItems, { data: store }] = await Promise.all([
     fetchAll((from, to) =>
       supabase.from('transactions').select('total, payment_method, transaction_payments(method, amount)')
-        .gte('created_at', today).order('id').range(from, to)
+        .gte('created_at', today).lt('created_at', tomorrow).order('id').range(from, to)
     ),
     fetchAll((from, to) =>
       supabase.from('transactions').select('total')

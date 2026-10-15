@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { thaiToday, thaiDateIn } from '@/lib/thaiDate'
 import { AlertTriangle } from 'lucide-react'
 import SearchBox from '@/components/SearchBox'
 
@@ -13,8 +14,8 @@ export default async function InventoryPage({
   const { q } = await searchParams
   const supabase = await createClient()
   const term = (q ?? '').trim()
-  const today = new Date().toISOString().split('T')[0]
-  const in30Days = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+  const today = thaiToday()
+  const in30Days = thaiDateIn(30)
 
   const columns = '*, products!inner(name, sku, unit, min_stock, active)'
   const baseQuery = () => supabase

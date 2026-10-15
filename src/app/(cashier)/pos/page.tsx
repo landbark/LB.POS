@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { thaiToday } from '@/lib/thaiDate'
 import { fetchAll } from '@/lib/supabase/fetch-all'
 import { isClinicOnly } from '@/lib/clinic'
 import type { ClinicQueueItem, Customer } from '@/lib/types'
@@ -27,8 +28,8 @@ export default async function POSPage() {
       .from('promotions')
       .select('*')
       .eq('active', true)
-      .lte('start_date', new Date().toISOString().split('T')[0])
-      .gte('end_date', new Date().toISOString().split('T')[0]),
+      .lte('start_date', thaiToday())
+      .gte('end_date', thaiToday()),
     supabase.from('points_config').select('*').limit(1).single(),
     supabase.from('store_settings').select('promptpay_id, rounding_mode').limit(1).single(),
     // คิวเก็บเงินจากคลินิก — หมอกด "ส่งไปเก็บเงิน" ที่หน้าตรวจรักษาแล้วมาโผล่ตรงนี้

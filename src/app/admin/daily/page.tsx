@@ -1,9 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { paymentLines, type PaidTransaction } from '@/lib/payments'
+import { thaiToday, thaiDayRange } from '@/lib/thaiDate'
 import DailySummaryClient, { type ShiftSummary } from './DailySummaryClient'
-
-// วันของร้านอิงเวลาไทย (UTC+7) — server บน Vercel เป็น UTC ใช้วันจาก toISOString ตรงๆ ไม่ได้
-const thaiToday = () => new Date(Date.now() + 7 * 3600 * 1000).toISOString().slice(0, 10)
 
 export default async function DailySummaryPage({
   searchParams,
@@ -13,8 +11,7 @@ export default async function DailySummaryPage({
   const { date: dateParam } = await searchParams
   const date = dateParam && /^\d{4}-\d{2}-\d{2}$/.test(dateParam) ? dateParam : thaiToday()
 
-  const startISO = new Date(`${date}T00:00:00+07:00`).toISOString()
-  const endISO = new Date(new Date(startISO).getTime() + 24 * 3600 * 1000).toISOString()
+  const { startISO, endISO } = thaiDayRange(date)
 
   const supabase = await createClient()
   const [{ data: completedTx }, { data: cancelledTx }, { data: items }, { data: shifts }] = await Promise.all([

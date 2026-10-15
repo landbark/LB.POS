@@ -1,5 +1,6 @@
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
+import { thaiToday, thaiDateIn, thaiDayRange } from '@/lib/thaiDate'
 import { Package, ShoppingBag, AlertTriangle, TrendingUp, Clock, CalendarClock, Syringe } from 'lucide-react'
 import { dueVaccinations } from '@/lib/vaccines'
 import { fetchAll } from '@/lib/supabase/fetch-all'
@@ -27,13 +28,10 @@ export default async function DashboardPage() {
         .is('rejected_at', null)
         .order('created_at', { ascending: false })
     : { data: [] }
-  const today = new Date().toISOString().split('T')[0]
-
-  // ช่วง "วันนี้" ตามเวลาไทย → UTC ไว้ query scheduled_at (timestamptz)
-  const todayThai = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Bangkok' })
-  const dayStartUtc = new Date(`${todayThai}T00:00:00+07:00`).toISOString()
-  const dayEndUtc = new Date(`${todayThai}T00:00:00+07:00`)
-  dayEndUtc.setUTCDate(dayEndUtc.getUTCDate() + 1)
+  const todayThai = thaiToday()
+  const today = todayThai
+  // ช่วง "วันนี้" ตามเวลาไทย → UTC ไว้ query คอลัมน์ timestamptz (created_at, scheduled_at)
+  const { startISO: dayStartUtc, endISO: dayEndUtcISO } = thaiDayRange(todayThai)
 
   const [
     { count: productCount },
@@ -46,7 +44,7 @@ export default async function DashboardPage() {
     { data: openOrders },
   ] = await Promise.all([
     supabase.from('products').select('*', { count: 'exact', head: true }).eq('active', true),
-    supabase.from('transactions').select('total').gte('created_at', today),
+    supabase.from('transactions').select('total').gte('created_at', dayStartUtc).lt('created_at', dayEndUtcISO),
     supabase.from('product_lots')
       .select('quantity, products(name)')
       .eq('products.active', true)
@@ -55,7 +53,7 @@ export default async function DashboardPage() {
     supabase.from('product_lots')
       .select('expiry_date, quantity, products(name, unit)')
       .gte('expiry_date', today)
-      .lte('expiry_date', new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0])
+      .lte('expiry_date', thaiDateIn(30))
       .gt('quantity', 0),
     // คลินิก
     supabase.from('visits').select('*', { count: 'exact', head: true }).eq('status', 'waiting'),
@@ -64,7 +62,7 @@ export default async function DashboardPage() {
       .select('id, scheduled_at, type, status, pets(name), customers(name)')
       .eq('status', 'scheduled')
       .gte('scheduled_at', dayStartUtc)
-      .lt('scheduled_at', dayEndUtc.toISOString())
+      .lt('scheduled_at', dayEndUtcISO)
       .order('scheduled_at'),
     // วัคซีนสะสมโตขึ้นเรื่อย ๆ — .limit() ไม่ช่วย เพราะเซิร์ฟเวอร์ตัดที่ 1000 แถวอยู่ดี
     fetchAll<VaxRow>((from, to) =>
