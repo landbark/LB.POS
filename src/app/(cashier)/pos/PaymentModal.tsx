@@ -136,6 +136,16 @@ export default function PaymentModal({
 
   const writeoff = mode === 'writeoff'
   const online = !writeoff && isOnlineChannel(channel)
+
+  // เงินทอนของบิลนี้ — null = ไม่ได้รับเงินสด หรือรับมายังไม่พอ ยังไม่ต้องโชว์
+  const changeDue = writeoff || online
+    ? null
+    : splitMode
+      ? (splitError === null && splitLines.some((l) => l.method === 'cash') ? splitChange : null)
+      : method === 'cash' && cashReceived && change >= 0
+        ? change
+        : null
+
   const earnedPoints = !online && pointsConfig && finalTotal > 0
     ? Math.floor(finalTotal / pointsConfig.spend_amount) * pointsConfig.earn_points
     : 0
@@ -776,27 +786,12 @@ export default function PaymentModal({
               <span>ยอดที่ต้องชำระ</span>
               <span>฿{finalTotal.toFixed(2)}</span>
             </div>
-            {splitMode && !online && !writeoff ? (
-              <>
-                {splitAllocation.map((l) => (
-                  <div key={l.method} className="flex justify-between text-sm text-gray-600">
-                    <span>{PAYMENT_LABELS[l.method]}</span>
-                    <span>฿{l.amount.toFixed(2)}</span>
-                  </div>
-                ))}
-                {splitChange > 0 && (
-                  <div className="flex justify-between text-sm text-blue-600 font-medium">
-                    <span>เงินทอน</span>
-                    <span>฿{splitChange.toFixed(2)}</span>
-                  </div>
-                )}
-              </>
-            ) : method === 'cash' && cashReceived && change >= 0 ? (
-              <div className="flex justify-between text-sm text-blue-600 font-medium">
-                <span>เงินทอน</span>
-                <span>฿{change.toFixed(2)}</span>
+            {splitMode && !online && !writeoff && splitAllocation.map((l) => (
+              <div key={l.method} className="flex justify-between text-sm text-gray-600">
+                <span>{PAYMENT_LABELS[l.method]}</span>
+                <span>฿{l.amount.toFixed(2)}</span>
               </div>
-            ) : null}
+            ))}
             {earnedPoints > 0 && (
               <div className="text-xs text-purple-600 pt-1">
                 ได้รับ {earnedPoints} แต้ม
@@ -806,6 +801,18 @@ export default function PaymentModal({
         </div>
 
         <div className="p-4 border-t border-gray-100">
+          {changeDue !== null && (
+            <div className={`flex items-center justify-between rounded-xl px-4 py-2.5 mb-3 ${
+              changeDue > 0 ? 'bg-blue-50 border-2 border-blue-200' : 'bg-gray-50 border-2 border-gray-100'
+            }`}>
+              <span className={`text-base font-semibold ${changeDue > 0 ? 'text-blue-900' : 'text-gray-500'}`}>
+                เงินทอน
+              </span>
+              <span className={`text-3xl font-extrabold tabular-nums ${changeDue > 0 ? 'text-blue-600' : 'text-gray-400'}`}>
+                ฿{changeDue.toFixed(2)}
+              </span>
+            </div>
+          )}
           <button
             onClick={handleConfirm}
             disabled={
