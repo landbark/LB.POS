@@ -20,6 +20,11 @@ interface Props {
   clinicQueue: ClinicQueueVisit[]
 }
 
+// ช่องว่างระหว่างปุ่มที่ยังนับว่าเป็นชุดเดียวกัน — เครื่องยิงอยู่ราว 5-20ms คนพิมพ์เร็วสุดก็ยังเกิน 60ms
+const SCAN_GAP_MS = 60
+// สั้นกว่านี้เสี่ยงไปตรงกับคำที่คนพิมพ์เร็วๆ (บาร์โค้ดที่สั้นที่สุดในร้านคือ 5 ตัว)
+const SCAN_MIN_LEN = 4
+
 export default function POSClient({ products, promotions, pointsConfig, cashierId, promptpayId, roundingMode, clinicQueue }: Props) {
   const router = useRouter()
   // เวชระเบียนที่กำลังเก็บเงินอยู่ — จ่ายเสร็จแล้วจะถูก mark เป็น paid พร้อมผูกเลขที่บิล
@@ -43,6 +48,27 @@ export default function POSClient({ products, promotions, pointsConfig, cashierI
   const [showPayment, setShowPayment] = useState(false)
   const [categoryFilter, setCategoryFilter] = useState('')
   const searchRef = useRef<HTMLInputElement>(null)
+
+  // เครื่องยิงบาร์โค้ดพิมพ์รัวมาก (หลักสิบมิลลิวินาทีต่อตัว) แล้วปิดท้ายด้วย Enter ส่วนคนพิมพ์ช้ากว่านั้นมาก
+  // จับจังหวะไว้เพื่อแยกว่าตัวอักษรชุดท้ายมาจากเครื่องยิง จะได้ยิงทับตอนพนักงานพิมพ์ค้นหาค้างอยู่ได้
+  const scanRef = useRef({ buffer: '', last: 0, baseline: '' })
+
+  const registerKey = useCallback((key: string) => {
+    const now = Date.now()
+    const scan = scanRef.current
+    if (key.length !== 1) {
+      // ลูกศร/Backspace/ฯลฯ = มือคนแน่นอน ตัดชุดทิ้ง (ยกเว้น Enter ที่เป็นตัวปิดชุด)
+      if (key !== 'Enter') scan.buffer = ''
+      return
+    }
+    if (now - scan.last > SCAN_GAP_MS) {
+      scan.buffer = ''
+      // ค่าใน DOM ตอนนี้คือข้อความก่อนตัวอักษรนี้จะถูกใส่ — คือสิ่งที่พนักงานพิมพ์ค้างไว้
+      scan.baseline = searchRef.current?.value ?? ''
+    }
+    scan.last = now
+    scan.buffer += key
+  }, [])
 
   // เครื่องยิงบาร์โค้ดทำงานเหมือนคีย์บอร์ด ต้องมี focus อยู่ที่ช่องค้นหาตลอดถึงจะยิงได้เลยโดยไม่ต้องคลิกก่อน
   // เฉพาะเครื่องที่ใช้เมาส์ — มือถือ/แท็บเล็ตจะเด้งคีย์บอร์ดขึ้นมาบังจอ
@@ -72,12 +98,13 @@ export default function POSClient({ products, promotions, pointsConfig, cashierI
       if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
         e.preventDefault()
         searchRef.current?.focus()
+        registerKey(e.key)
         setSearch((prev) => prev + e.key)
       }
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [showPayment])
+  }, [showPayment, registerKey])
 
   // Get unique categories from products
   const categories = Array.from(
@@ -313,19 +340,44 @@ export default function POSClient({ products, promotions, pointsConfig, cashierI
     toast.success('เพิ่มลูกค้าใหม่แล้ว')
   }
 
-  // Enter ในช่องค้นหา: บาร์โค้ดตรงเป๊ะ หรือผลค้นหาเหลือตัวเดียว → เข้าตะกร้าทันที (รองรับเครื่องยิงบาร์โค้ด)
+  function findExact(code: string) {
+    const c = code.trim()
+    if (!c) return null
+    return (
+      products.find((p) => p.barcode === c) ??
+      products.find((p) => p.sku?.toLowerCase() === c.toLowerCase()) ??
+      null
+    )
+  }
+
+  // Enter ในช่องค้นหา: บาร์โค้ดตรงเป๊ะ หรือผลค้นหาเหลือตัวเดียว → เข้าตะกร้าทันที
   function handleSearchEnter() {
+    const scan = scanRef.current
+    // ตัวอักษรชุดท้ายรัวพอและปิดท้ายด้วย Enter ทันที = มาจากเครื่องยิง
+    const burst = Date.now() - scan.last <= SCAN_GAP_MS && scan.buffer.length >= SCAN_MIN_LEN ? scan.buffer : ''
+    const baseline = scan.baseline
+    scan.buffer = ''
+
+    if (burst) {
+      const scanned = findExact(burst)
+      if (scanned) {
+        addToCart(scanned)
+        // คืนคำค้นที่พนักงานพิมพ์ค้างไว้ก่อนโดนยิงทับ — พิมพ์ต่อได้เลยไม่ต้องลบเอง
+        setSearch(baseline)
+        searchRef.current?.focus()
+        return
+      }
+      // เดาผิด (คนพิมพ์เร็วมาก) หรือบาร์โค้ดไม่มีในระบบ → ตกไปใช้ทางค้นหาปกติข้างล่าง
+    }
+
     const q = search.trim()
     if (!q) return
-    const exact =
-      products.find((p) => p.barcode === q) ??
-      products.find((p) => p.sku?.toLowerCase() === q.toLowerCase())
-    const target = exact ?? (filtered.length === 1 ? filtered[0] : null)
+    const target = findExact(q) ?? (filtered.length === 1 ? filtered[0] : null)
     if (target) {
       addToCart(target)
       setSearch('')
     } else if (filtered.length === 0) {
-      toast.error('ไม่พบสินค้า')
+      toast.error(burst ? `ไม่พบสินค้าบาร์โค้ด ${burst}` : 'ไม่พบสินค้า')
     }
   }
 
@@ -398,7 +450,10 @@ export default function POSClient({ products, promotions, pointsConfig, cashierI
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleSearchEnter() } }}
+              onKeyDown={(e) => {
+                registerKey(e.key)
+                if (e.key === 'Enter') { e.preventDefault(); handleSearchEnter() }
+              }}
               placeholder="ค้นหาชื่อ / รหัสสินค้า / บาร์โค้ด หรือสแกน..."
               className="w-full pl-9 pr-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
