@@ -20,10 +20,12 @@ interface Props {
   clinicQueue: ClinicQueueVisit[]
 }
 
-// ช่องว่างระหว่างปุ่มที่ยังนับว่าเป็นชุดเดียวกัน — เครื่องยิงอยู่ราว 5-20ms คนพิมพ์เร็วสุดก็ยังเกิน 60ms
-const SCAN_GAP_MS = 60
-// สั้นกว่านี้เสี่ยงไปตรงกับคำที่คนพิมพ์เร็วๆ (บาร์โค้ดที่สั้นที่สุดในร้านคือ 5 ตัว)
+// ความยาวต่ำสุดของหางข้อความที่จะยอมมองว่าเป็นบาร์โค้ดที่ยิงทับเข้ามา
+// (บาร์โค้ดที่สั้นที่สุดในร้านคือ 5 ตัว เผื่อไว้ที่ 4)
 const SCAN_MIN_LEN = 4
+
+// จำนวนสินค้าที่วาดบนกริด — วาดครบสองพันตัวทำให้ทุกตัวอักษรที่พิมพ์หน่วงเป็นสิบ ms
+const GRID_LIMIT = 60
 
 export default function POSClient({ products, promotions, pointsConfig, cashierId, promptpayId, roundingMode, clinicQueue }: Props) {
   const router = useRouter()
@@ -48,27 +50,6 @@ export default function POSClient({ products, promotions, pointsConfig, cashierI
   const [showPayment, setShowPayment] = useState(false)
   const [categoryFilter, setCategoryFilter] = useState('')
   const searchRef = useRef<HTMLInputElement>(null)
-
-  // เครื่องยิงบาร์โค้ดพิมพ์รัวมาก (หลักสิบมิลลิวินาทีต่อตัว) แล้วปิดท้ายด้วย Enter ส่วนคนพิมพ์ช้ากว่านั้นมาก
-  // จับจังหวะไว้เพื่อแยกว่าตัวอักษรชุดท้ายมาจากเครื่องยิง จะได้ยิงทับตอนพนักงานพิมพ์ค้นหาค้างอยู่ได้
-  const scanRef = useRef({ buffer: '', last: 0, baseline: '' })
-
-  const registerKey = useCallback((key: string) => {
-    const now = Date.now()
-    const scan = scanRef.current
-    if (key.length !== 1) {
-      // ลูกศร/Backspace/ฯลฯ = มือคนแน่นอน ตัดชุดทิ้ง (ยกเว้น Enter ที่เป็นตัวปิดชุด)
-      if (key !== 'Enter') scan.buffer = ''
-      return
-    }
-    if (now - scan.last > SCAN_GAP_MS) {
-      scan.buffer = ''
-      // ค่าใน DOM ตอนนี้คือข้อความก่อนตัวอักษรนี้จะถูกใส่ — คือสิ่งที่พนักงานพิมพ์ค้างไว้
-      scan.baseline = searchRef.current?.value ?? ''
-    }
-    scan.last = now
-    scan.buffer += key
-  }, [])
 
   // เครื่องยิงบาร์โค้ดทำงานเหมือนคีย์บอร์ด ต้องมี focus อยู่ที่ช่องค้นหาตลอดถึงจะยิงได้เลยโดยไม่ต้องคลิกก่อน
   // เฉพาะเครื่องที่ใช้เมาส์ — มือถือ/แท็บเล็ตจะเด้งคีย์บอร์ดขึ้นมาบังจอ
@@ -98,13 +79,12 @@ export default function POSClient({ products, promotions, pointsConfig, cashierI
       if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
         e.preventDefault()
         searchRef.current?.focus()
-        registerKey(e.key)
         setSearch((prev) => prev + e.key)
       }
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [showPayment, registerKey])
+  }, [showPayment])
 
   // Get unique categories from products
   const categories = Array.from(
@@ -281,6 +261,21 @@ export default function POSClient({ products, promotions, pointsConfig, cashierI
   }
 
   // พิมพ์จำนวนตรงๆ ในตะกร้า — เกินสต็อคได้ แค่เตือน ห้ามต่ำกว่า 1
+  // ค่าบริการบางอย่างราคาไม่คงที่ (ค่าส่งพัสดุคิดตามน้ำหนัก/ปลายทาง) — ให้พิมพ์ราคาได้ตอนขาย
+  // เฉพาะ is_service เท่านั้น สินค้าจริงยังใช้ราคาที่ตั้งไว้ จะได้ไม่มีใครเผลอขายผิดราคา
+  function setUnitPrice(index: number, raw: string) {
+    const item = cart[index]
+    const parsed = parseFloat(raw)
+    const price = isNaN(parsed) || parsed < 0 ? 0 : parsed
+    const newCart = [...cart]
+    newCart[index] = {
+      ...item,
+      unit_price: price,
+      ...lineTotals(item.product, price, item.quantity, item.discount_mode, item.discount_value),
+    }
+    setCart(newCart)
+  }
+
   function setQty(index: number, raw: string) {
     if (raw === '') return
     let n = parseInt(raw)
@@ -350,34 +345,47 @@ export default function POSClient({ products, promotions, pointsConfig, cashierI
     )
   }
 
-  // Enter ในช่องค้นหา: บาร์โค้ดตรงเป๊ะ หรือผลค้นหาเหลือตัวเดียว → เข้าตะกร้าทันที
-  function handleSearchEnter() {
-    const scan = scanRef.current
-    // ตัวอักษรชุดท้ายรัวพอและปิดท้ายด้วย Enter ทันที = มาจากเครื่องยิง
-    const burst = Date.now() - scan.last <= SCAN_GAP_MS && scan.buffer.length >= SCAN_MIN_LEN ? scan.buffer : ''
-    const baseline = scan.baseline
-    scan.buffer = ''
+  // เครื่องยิงบาร์โค้ดพิมพ์ต่อท้ายข้อความที่ค้างอยู่ในช่อง ("catty" + "8858788700054")
+  // จับด้วยการเทียบตัวอักษร ไม่ใช่จับจังหวะการพิมพ์ — เวลาระหว่างปุ่มเชื่อถือไม่ได้ เพราะตอนกรอง
+  // สินค้าหน้าจะหนืดจนช่องว่างระหว่างตัวอักษรยืดออกจนดูเหมือนคนพิมพ์ (เคยจับได้แค่ 4 ตัวท้าย)
+  // ไล่จากหางยาวสุดก่อน เพื่อให้ "ทั้งก้อนตรง" ชนะ "หางตรง" เสมอ
+  //
+  // หางที่มีเว้นวรรคนำหน้าไม่นับ เพราะชื่อสินค้าบางตัวลงท้ายด้วยรหัสของตัวเอง
+  // ("ชามอาหารน้องหมีชมพู BL095") ส่วนเครื่องยิงต่อท้ายติดกันเลยไม่มีเว้นวรรค
+  // ยกเว้นบาร์โค้ดตัวเลขล้วนยาวๆ ซึ่งยังไงก็ไม่ใช่คำที่คนพิมพ์ จะมีเว้นวรรคนำหน้าก็ยอมรับ
+  function findScannedCode(text: string) {
+    for (let start = 0; start <= text.length - SCAN_MIN_LEN; start++) {
+      const code = text.slice(start)
+      // ขึ้นต้นด้วยเว้นวรรค = ตำแหน่งนี้ข้ามไป เดี๋ยววนไปเจอที่ตัวอักษรถัดไปเอง
+      // (ถ้าไม่ข้าม findExact จะ trim ให้แล้วตรงทันที กฎเว้นวรรคข้างล่างก็ไม่มีผล)
+      if (/^\s/.test(code)) continue
+      const spaced = start > 0 && /\s/.test(text[start - 1])
+      if (spaced && !/^\d{8,}$/.test(code)) continue
+      const product = findExact(code)
+      if (product) return { product, before: text.slice(0, start) }
+    }
+    return null
+  }
 
-    if (burst) {
-      const scanned = findExact(burst)
-      if (scanned) {
-        addToCart(scanned)
-        // คืนคำค้นที่พนักงานพิมพ์ค้างไว้ก่อนโดนยิงทับ — พิมพ์ต่อได้เลยไม่ต้องลบเอง
-        setSearch(baseline)
-        searchRef.current?.focus()
-        return
-      }
-      // เดาผิด (คนพิมพ์เร็วมาก) หรือบาร์โค้ดไม่มีในระบบ → ตกไปใช้ทางค้นหาปกติข้างล่าง
+  // Enter ในช่องค้นหา: บาร์โค้ด/รหัสสินค้าตรง หรือผลค้นหาเหลือตัวเดียว → เข้าตะกร้าทันที
+  function handleSearchEnter() {
+    const text = search.trim()
+    if (!text) return
+
+    const scan = findScannedCode(text)
+    if (scan) {
+      addToCart(scan.product)
+      // คืนคำค้นที่พิมพ์ค้างไว้ก่อนโดนยิงทับ — พิมพ์ต่อได้เลยไม่ต้องลบเอง
+      setSearch(scan.before)
+      searchRef.current?.focus()
+      return
     }
 
-    const q = search.trim()
-    if (!q) return
-    const target = findExact(q) ?? (filtered.length === 1 ? filtered[0] : null)
-    if (target) {
-      addToCart(target)
+    if (filtered.length === 1) {
+      addToCart(filtered[0])
       setSearch('')
     } else if (filtered.length === 0) {
-      toast.error(burst ? `ไม่พบสินค้าบาร์โค้ด ${burst}` : 'ไม่พบสินค้า')
+      toast.error('ไม่พบสินค้า')
     }
   }
 
@@ -450,10 +458,7 @@ export default function POSClient({ products, promotions, pointsConfig, cashierI
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              onKeyDown={(e) => {
-                registerKey(e.key)
-                if (e.key === 'Enter') { e.preventDefault(); handleSearchEnter() }
-              }}
+              onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleSearchEnter() } }}
               placeholder="ค้นหาชื่อ / รหัสสินค้า / บาร์โค้ด หรือสแกน..."
               className="w-full pl-9 pr-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
@@ -484,7 +489,7 @@ export default function POSClient({ products, promotions, pointsConfig, cashierI
         {/* Product Grid */}
         <div className="flex-1 overflow-y-auto p-4">
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
-            {filtered.map((product) => {
+            {filtered.slice(0, GRID_LIMIT).map((product) => {
               const stock = getProductStock(product)
               const inCart = cart.find((c) => c.product.id === product.id)
               return (
@@ -711,6 +716,22 @@ export default function POSClient({ products, promotions, pointsConfig, cashierI
                       </p>
                     </div>
                   </div>
+
+                  {item.product.is_service && (
+                    <div className="flex items-center gap-1.5 mt-1.5">
+                      <span className="text-xs text-gray-500 shrink-0">ราคา</span>
+                      <input
+                        type="number"
+                        min={0}
+                        step="0.01"
+                        value={item.unit_price}
+                        onChange={(e) => setUnitPrice(i, e.target.value)}
+                        onFocus={(e) => e.target.select()}
+                        className="w-24 text-sm font-medium border border-gray-200 rounded px-2 py-0.5 focus:outline-none focus:ring-1 focus:ring-blue-400"
+                      />
+                      <span className="text-xs text-gray-400">บาท/{item.product.unit}</span>
+                    </div>
+                  )}
 
                   {discountRow === item.product.id ? (
                     <div className="mt-2 flex items-center gap-1.5">
