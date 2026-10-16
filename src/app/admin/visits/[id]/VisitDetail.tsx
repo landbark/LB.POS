@@ -66,6 +66,9 @@ export default function VisitDetail({
 }) {
   const { refresh, push } = useProgress()
   const [saving, setSaving] = useState(false)
+  // เพิ่มรายการแล้วต้องรอ refresh ซึ่งกินเวลาเป็นวินาที ระหว่างนั้นหน้ายังไม่ขยับ
+  // หมอกดซ้ำเพราะนึกว่าไม่ติด → ได้รายการเบิ้ล ระหว่างนี้จึงปิดปุ่มกับช่องค้นหาไว้
+  const [adding, setAdding] = useState(false)
   const [makingAppt, setMakingAppt] = useState(false)
   const [form, setForm] = useState({
     weight: visit.weight?.toString() ?? '',
@@ -141,6 +144,19 @@ export default function VisitDetail({
   }
 
   async function addItem(product: DispensableProduct) {
+    if (adding) return
+    setAdding(true)
+    // ปิดรายการที่เลือกทิ้งทันที ไม่ต้องรอ insert เสร็จ — หมอจะได้เห็นว่ากดติดแล้ว
+    setServiceQuery('')
+    setRxQuery('')
+    try {
+      await insertItem(product)
+    } finally {
+      setAdding(false)
+    }
+  }
+
+  async function insertItem(product: DispensableProduct) {
     const supabase = createClient()
     const { error } = await supabase.from('visit_items').insert({
       visit_id: visit.id,
@@ -178,8 +194,6 @@ export default function VisitDetail({
       }
     }
 
-    setServiceQuery('')
-    setRxQuery('')
     refresh()
   }
 
@@ -417,7 +431,8 @@ export default function VisitDetail({
           type="text"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder={placeholder}
+          placeholder={adding ? 'กำลังเพิ่มรายการ...' : placeholder}
+          disabled={adding}
           className={inputClass}
         />
       </div>
@@ -429,7 +444,8 @@ export default function VisitDetail({
               <button
                 key={p.id}
                 onClick={() => addItem(p)}
-                className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50 flex items-center justify-between gap-2"
+                disabled={adding}
+                className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50 flex items-center justify-between gap-2 disabled:opacity-40"
               >
                 <span>
                   {p.name}
@@ -470,7 +486,10 @@ export default function VisitDetail({
           {list.map((item) => (
             <tr key={item.id}>
               <td className="py-2 text-sm text-gray-900">{item.products?.name ?? 'สินค้าถูกลบแล้ว'}</td>
-              {showDosage && (
+              {/* วัคซีนฉีดครั้งเดียวจบ ไม่มีขนาด/ความถี่/ก่อน-หลังอาหาร ไม่ต้องมีช่องให้กรอก */}
+              {showDosage && item.products && isVaccine(item.products as never) ? (
+                <td className="py-2 text-xs text-gray-400">วัคซีน — ไม่ต้องระบุวิธีใช้</td>
+              ) : showDosage ? (
                 <td className="py-2">
                   <div className="flex flex-wrap items-center gap-1">
                     {/* จำนวนต่อครั้ง — ปุ่มลัดเศษเม็ดที่ใช้บ่อย */}
@@ -573,7 +592,7 @@ export default function VisitDetail({
                     </div>
                   )}
                 </td>
-              )}
+              ) : null}
               <td className="py-2">
                 <input
                   type="number"
