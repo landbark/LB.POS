@@ -583,7 +583,7 @@ export async function gatherDailySales(admin: ReturnType<typeof createAdminClien
       .lt('cancelled_at', endISO),
     admin
       .from('transaction_items')
-      .select('quantity, subtotal, products(name), transactions!inner(status, created_at)')
+      .select('quantity, subtotal, product_id, products(name), transactions!inner(status, created_at)')
       .eq('transactions.status', 'completed')
       .gte('transactions.created_at', startISO)
       .lt('transactions.created_at', endISO),
@@ -594,22 +594,26 @@ export async function gatherDailySales(admin: ReturnType<typeof createAdminClien
 
   const byMethodMap = sumByMethod(tx as PaidTransaction[])
 
-  const sellerMap: Record<string, { qty: number; revenue: number }> = {}
+  // รวมตาม product_id ไม่ใช่ชื่อ — สินค้าคนละตัวที่ชื่อซ้ำกันต้องแยกแถว (ให้ตรงกับหน้า /admin/daily)
+  const sellerMap: Record<string, { name: string; qty: number; revenue: number }> = {}
   for (const it of (items ?? []) as unknown as {
     quantity: number
     subtotal: number
+    product_id: string
     products: { name: string } | null
   }[]) {
-    const name = it.products?.name
-    if (!name) continue
-    const s = (sellerMap[name] ??= { qty: 0, revenue: 0 })
+    const s = (sellerMap[it.product_id] ??= {
+      name: it.products?.name ?? 'สินค้าที่ถูกลบ',
+      qty: 0,
+      revenue: 0,
+    })
     s.qty += it.quantity
     s.revenue += it.subtotal
   }
 
-  const bestSellers = Object.entries(sellerMap)
-    .map(([name, v]) => ({ name, ...v }))
-    .sort((a, b) => b.revenue - a.revenue)
+  // เรียงตามจำนวนชิ้นเหมือนหน้า /admin/daily — คนละเกณฑ์แล้วอันดับไม่ตรงกัน คนอ่านงง
+  const bestSellers = Object.values(sellerMap)
+    .sort((a, b) => b.qty - a.qty || b.revenue - a.revenue)
     .slice(0, 5)
 
   return {
