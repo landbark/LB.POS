@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { X, Flashlight, FlashlightOff, Loader2 } from 'lucide-react'
+import { X, Flashlight, FlashlightOff, Loader2, SwitchCamera, Check } from 'lucide-react'
 
 export type ScanFeedback = { ok: boolean; message: string }
 
@@ -16,6 +16,13 @@ const REPEAT_MS = 1500
 
 // บาร์โค้ดที่เจอบนกล่องสินค้าในร้าน (EAN/UPC) + CODE_128/39 ของฉลากที่พิมพ์เอง
 const NATIVE_FORMATS = ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128', 'code_39', 'itf', 'codabar']
+
+// กล้องที่ผู้ใช้เลือกเอง — จำไว้ให้เครื่องนั้นไม่ต้องเลือกใหม่ทุกครั้ง
+const DEVICE_KEY = 'pos.scanner.deviceId'
+
+// เลนส์ที่โฟกัสระยะใกล้ไม่ได้ (tele/periscope) หรือไม่ได้ไว้ถ่ายภาพจริง — อย่าเลือกมาสแกน
+const BAD_LENS = /tele|periscope|ultra.?wide|macro|depth|mono(chrome)?|infrared|\bir\b/i
+const BACK_LENS = /back|rear|environment|หลัง/i
 
 function beep() {
   try {
@@ -36,6 +43,27 @@ function beep() {
   }
 }
 
+function savedDeviceId(): string | null {
+  try {
+    return localStorage.getItem(DEVICE_KEY)
+  } catch {
+    return null
+  }
+}
+
+/**
+ * มือถือที่มีกล้องหลังหลายตัว (OPPO/vivo/Samsung รุ่นใหม่) จะโผล่ทุกเลนส์แยกกัน
+ * แล้ว facingMode: 'environment' ได้ตัวไหนก็ได้ตามที่ระบบ list มา — ถ้าโดน periscope
+ * เข้าไปจะโฟกัสบาร์โค้ดระยะมือไม่ติดเลย เลยต้องคัดเลนส์เองเท่าที่ชื่อบอกได้
+ * (Android หลายรุ่นชื่อเป็น "camera2 0, facing back" ไม่บอกอะไร — จึงมีปุ่มสลับกล้องไว้ให้เลือกเอง)
+ */
+function pickBackCamera(cams: MediaDeviceInfo[]): string | null {
+  const back = cams.filter((d) => BACK_LENS.test(d.label))
+  const pool = back.length ? back : cams
+  const good = pool.filter((d) => !BAD_LENS.test(d.label))
+  return (good[0] ?? pool[0])?.deviceId ?? null
+}
+
 export default function BarcodeScanner({ onDetect, onClose }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null)
   const [starting, setStarting] = useState(true)
@@ -43,6 +71,13 @@ export default function BarcodeScanner({ onDetect, onClose }: Props) {
   const [feedback, setFeedback] = useState<ScanFeedback | null>(null)
   const [torchOn, setTorchOn] = useState(false)
   const [torchable, setTorchable] = useState(false)
+  // null = ให้เบราว์เซอร์เลือกกล้องหลังเอง (รอบแรกที่ยังไม่รู้ว่าเครื่องนี้มีเลนส์อะไรบ้าง)
+  const [deviceId, setDeviceId] = useState<string | null>(() =>
+    typeof window === 'undefined' ? null : savedDeviceId(),
+  )
+  const [cameras, setCameras] = useState<MediaDeviceInfo[]>([])
+  const [activeId, setActiveId] = useState<string | null>(null)
+  const [showPicker, setShowPicker] = useState(false)
 
   const trackRef = useRef<MediaStreamTrack | null>(null)
   // เก็บรหัสล่าสุดไว้ใน ref — ลูปอ่านกล้องวิ่งอยู่นอก render จะเห็น state ไม่ทัน
@@ -62,11 +97,36 @@ export default function BarcodeScanner({ onDetect, onClose }: Props) {
     setFeedback(onDetectRef.current(code) ?? { ok: true, message: code })
   }, [])
 
+  function chooseCamera(id: string) {
+    try {
+      localStorage.setItem(DEVICE_KEY, id)
+    } catch {
+      /* โหมดส่วนตัวเขียนไม่ได้ก็ใช้ได้แค่รอบนี้ */
+    }
+    setShowPicker(false)
+    if (id !== deviceId) {
+      setStarting(true)
+      setDeviceId(id)
+    }
+  }
+
   useEffect(() => {
     let stopped = false
     let stream: MediaStream | null = null
     let controls: { stop: () => void } | null = null
     let raf = 0
+
+    async function openCamera(id: string | null) {
+      const video: MediaTrackConstraints = {
+        width: { ideal: 1280 },
+        height: { ideal: 720 },
+        // เลนส์หลักมักโฟกัสใกล้ได้ดีที่สุดตอนไม่ซูม — เครื่องที่ default มาที่ 2x/3x จะถูกดึงกลับ
+        advanced: [{ focusMode: 'continuous' }] as any,
+      }
+      if (id) video.deviceId = { exact: id }
+      else video.facingMode = { ideal: 'environment' }
+      return navigator.mediaDevices.getUserMedia({ video, audio: false })
+    }
 
     async function start() {
       if (!navigator.mediaDevices?.getUserMedia) {
@@ -76,15 +136,16 @@ export default function BarcodeScanner({ onDetect, onClose }: Props) {
       }
 
       try {
-        stream = await navigator.mediaDevices.getUserMedia({
-          video: {
-            facingMode: { ideal: 'environment' },
-            width: { ideal: 1280 },
-            height: { ideal: 720 },
-          },
-          audio: false,
-        })
+        stream = await openCamera(deviceId)
       } catch (e: any) {
+        // กล้องที่จำไว้หายไป (เปลี่ยนเครื่อง/ถอนสิทธิ์) — ถอยไปใช้กล้องหลังตัวไหนก็ได้
+        if (deviceId && (e?.name === 'OverconstrainedError' || e?.name === 'NotFoundError')) {
+          try {
+            localStorage.removeItem(DEVICE_KEY)
+          } catch { /* ไม่เป็นไร */ }
+          if (!stopped) setDeviceId(null)
+          return
+        }
         setError(
           e?.name === 'NotAllowedError'
             ? 'ไม่ได้รับอนุญาตให้ใช้กล้อง — กดไอคอนกล้อง/แม่กุญแจบนแถบที่อยู่เว็บเพื่ออนุญาต'
@@ -104,7 +165,35 @@ export default function BarcodeScanner({ onDetect, onClose }: Props) {
 
       const track = stream.getVideoTracks()[0]
       trackRef.current = track ?? null
-      setTorchable(Boolean((track?.getCapabilities?.() as any)?.torch))
+      const caps: any = track?.getCapabilities?.() ?? {}
+      setTorchable(Boolean(caps.torch))
+      setTorchOn(false)
+      setActiveId(track?.getSettings?.().deviceId ?? null)
+
+      // บางเครื่องเปิดกล้องมาที่ซูม 2x-3x ค้างไว้ ทำให้ส่องบาร์โค้ดระยะมือแล้วเบลอ — ดึงกลับสุด
+      if (caps.zoom && typeof caps.zoom.min === 'number') {
+        await track.applyConstraints({ advanced: [{ zoom: caps.zoom.min }] } as any).catch(() => {})
+      }
+
+      // ชื่อกล้องจะอ่านได้ก็ต่อเมื่อได้สิทธิ์ใช้กล้องแล้ว — เลยมาถามรายชื่อตอนนี้
+      const cams = (await navigator.mediaDevices.enumerateDevices().catch(() => []))
+        .filter((d) => d.kind === 'videoinput')
+      if (stopped) return
+      setCameras(cams)
+
+      // รอบแรกของเครื่องนี้: ถ้าเบราว์เซอร์หยิบเลนส์ tele/periscope มาให้ ย้ายไปเลนส์ปกติเอง
+      if (!deviceId && cams.length > 1) {
+        const current = cams.find((d) => d.deviceId === track?.getSettings?.().deviceId)
+        const better = pickBackCamera(cams)
+        if (current && BAD_LENS.test(current.label) && better && better !== current.deviceId) {
+          // จำไว้เลย ครั้งหน้าจะได้ไม่ต้องเปิดกล้องผิดตัวก่อนแล้วค่อยสลับ
+          try {
+            localStorage.setItem(DEVICE_KEY, better)
+          } catch { /* ไม่เป็นไร */ }
+          setDeviceId(better)
+          return
+        }
+      }
 
       video.srcObject = stream
       await video.play().catch(() => {})
@@ -172,7 +261,7 @@ export default function BarcodeScanner({ onDetect, onClose }: Props) {
       const video = videoRef.current
       if (video) video.srcObject = null
     }
-  }, [handleCode])
+  }, [handleCode, deviceId])
 
   async function toggleTorch() {
     const track = trackRef.current
@@ -191,6 +280,15 @@ export default function BarcodeScanner({ onDetect, onClose }: Props) {
       <div className="flex items-center justify-between px-4 py-3 text-white">
         <span className="text-sm font-medium">สแกนบาร์โค้ด</span>
         <div className="flex items-center gap-1">
+          {cameras.length > 1 && (
+            <button
+              onClick={() => setShowPicker((v) => !v)}
+              aria-label="สลับกล้อง"
+              className="p-2 rounded-lg hover:bg-white/10"
+            >
+              <SwitchCamera size={20} />
+            </button>
+          )}
           {torchable && (
             <button
               onClick={toggleTorch}
@@ -230,6 +328,29 @@ export default function BarcodeScanner({ onDetect, onClose }: Props) {
         {error && (
           <div className="absolute inset-0 flex items-center justify-center bg-black/80 p-6">
             <p className="text-center text-sm leading-relaxed text-white">{error}</p>
+          </div>
+        )}
+
+        {showPicker && (
+          <div className="absolute inset-x-0 bottom-0 bg-black/85 p-3 backdrop-blur-sm">
+            <p className="px-2 pb-2 text-xs text-white/60">
+              ภาพเบลอ/สแกนไม่ติด = ติดเลนส์ซูม ลองสลับเป็นตัวอื่นดู
+            </p>
+            <div className="max-h-56 space-y-1 overflow-y-auto">
+              {cameras.map((cam, i) => (
+                <button
+                  key={cam.deviceId || i}
+                  onClick={() => chooseCamera(cam.deviceId)}
+                  className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm text-white hover:bg-white/10"
+                >
+                  <Check
+                    size={16}
+                    className={cam.deviceId === activeId ? 'text-green-400' : 'text-transparent'}
+                  />
+                  <span className="truncate">{cam.label || `กล้อง ${i + 1}`}</span>
+                </button>
+              ))}
+            </div>
           </div>
         )}
       </div>
