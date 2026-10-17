@@ -24,6 +24,9 @@ export default function LotManager({ productId, lots, unit, userId }: Props) {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editQty, setEditQty] = useState('')
   const [editReason, setEditReason] = useState('')
+  // ของที่ย้ายมาจากระบบเดิมเข้ามาเป็น lot ก้อนเดียวไม่มีวันหมดอายุ — ต้องแก้ย้อนหลังได้
+  const [editLotNumber, setEditLotNumber] = useState('')
+  const [editExpiry, setEditExpiry] = useState('')
   // แก้ไขยอดรวมทั้งหมด (ส่วนต่างจะลง/ตัดที่ lot ใกล้หมดอายุที่สุด)
   const [editingTotal, setEditingTotal] = useState(false)
   const [totalQty, setTotalQty] = useState('')
@@ -94,6 +97,8 @@ export default function LotManager({ productId, lots, unit, userId }: Props) {
     setEditingId(lot.id)
     setEditQty(lot.quantity.toString())
     setEditReason('')
+    setEditLotNumber(lot.lot_number ?? '')
+    setEditExpiry(lot.expiry_date ?? '')
   }
 
   async function adjustLotQuantity(lot: ProductLot, newQty: number, reason: string) {
@@ -129,9 +134,30 @@ export default function LotManager({ productId, lots, unit, userId }: Props) {
       toast.error('จำนวนไม่ถูกต้อง')
       return
     }
+
+    const lotNumber = editLotNumber.trim() || null
+    const expiry = editExpiry || null
+    const detailsChanged = lotNumber !== (lot.lot_number ?? null) || expiry !== (lot.expiry_date ?? null)
+
+    // แก้ LOT/วันหมดอายุไม่ใช่การเคลื่อนไหวของสต็อค ของเท่าเดิม แค่เพิ่งรู้ว่าหมดอายุเมื่อไหร่
+    // จึงไม่ลง stock_movements ให้รก — ส่วนจำนวนที่เปลี่ยนยังลงประวัติเหมือนเดิม
+    if (detailsChanged) {
+      setLoading(true)
+      const supabase = createClient()
+      const { error } = await supabase
+        .from('product_lots')
+        .update({ lot_number: lotNumber, expiry_date: expiry })
+        .eq('id', lot.id)
+      setLoading(false)
+      if (error) {
+        toast.error('แก้ LOT/วันหมดอายุไม่สำเร็จ: ' + error.message)
+        return
+      }
+    }
+
     const ok = await adjustLotQuantity(lot, newQty, editReason)
     if (!ok) return
-    toast.success('ปรับสต็อคแล้ว')
+    toast.success(detailsChanged && newQty === lot.quantity ? 'แก้ lot แล้ว' : 'ปรับสต็อคแล้ว')
     setEditingId(null)
     router.refresh()
   }
@@ -343,7 +369,7 @@ export default function LotManager({ productId, lots, unit, userId }: Props) {
                   <button
                     onClick={() => (isEditing ? setEditingId(null) : startEdit(lot))}
                     className="text-gray-300 hover:text-blue-500 transition-colors"
-                    title="แก้ไขจำนวน"
+                    title="แก้ไข LOT / วันหมดอายุ / จำนวน"
                   >
                     <Pencil size={14} />
                   </button>
@@ -360,14 +386,41 @@ export default function LotManager({ productId, lots, unit, userId }: Props) {
               {isEditing && (
                 <div className="bg-gray-50 rounded-lg p-3 mt-2 space-y-2">
                   <div className="flex items-center gap-2">
-                    <label className="text-xs text-gray-500 shrink-0">จำนวนใหม่</label>
+                    <label className="text-xs text-gray-500 shrink-0 w-20">LOT</label>
+                    <input
+                      type="text"
+                      value={editLotNumber}
+                      onChange={(e) => setEditLotNumber(e.target.value)}
+                      className={inputClass}
+                      placeholder="ไม่ระบุ"
+                      autoFocus
+                    />
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <label className="text-xs text-gray-500 shrink-0 w-20">วันหมดอายุ</label>
+                    <input
+                      type="date"
+                      value={editExpiry}
+                      onChange={(e) => setEditExpiry(e.target.value)}
+                      className={inputClass}
+                    />
+                    {editExpiry && (
+                      <button
+                        onClick={() => setEditExpiry('')}
+                        className="text-xs text-gray-400 hover:text-gray-600 shrink-0"
+                      >
+                        ล้าง
+                      </button>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <label className="text-xs text-gray-500 shrink-0 w-20">จำนวน</label>
                     <input
                       type="number"
                       min="0"
                       value={editQty}
                       onChange={(e) => setEditQty(e.target.value)}
                       className={inputClass}
-                      autoFocus
                     />
                   </div>
                   <input
@@ -375,7 +428,7 @@ export default function LotManager({ productId, lots, unit, userId }: Props) {
                     value={editReason}
                     onChange={(e) => setEditReason(e.target.value)}
                     className={inputClass}
-                    placeholder="เหตุผล เช่น นับสต็อคใหม่ / สินค้าเสียหาย (ไม่บังคับ)"
+                    placeholder="เหตุผล (ใส่เมื่อแก้จำนวน) เช่น นับสต็อคใหม่ / สินค้าเสียหาย"
                   />
                   <div className="flex gap-2">
                     <button

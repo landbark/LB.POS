@@ -107,6 +107,9 @@ export default function POSClient({ products, promotions, pointsConfig, cashierI
     return matchSearch && matchCategory
   })
 
+  // สแกนบาร์โค้ดเป็นหลัก — ของที่ไม่มีบาร์โค้ดคือของที่ต้องกดเลือกเอง เลยดันขึ้นมาก่อน
+  const ordered = [...filtered].sort((a, b) => Number(!!a.barcode) - Number(!!b.barcode))
+
   function getProductStock(product: Product): number {
     // บริการ (ค่าตรวจ/ค่าหัตถการ) ไม่มีล็อตให้ตัด — ไม่จำกัดจำนวนที่ขายได้
     if (product.is_service) return Infinity
@@ -488,8 +491,8 @@ export default function POSClient({ products, promotions, pointsConfig, cashierI
 
         {/* Product Grid */}
         <div className="flex-1 overflow-y-auto p-4">
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
-            {filtered.slice(0, GRID_LIMIT).map((product) => {
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+            {ordered.slice(0, GRID_LIMIT).map((product) => {
               const stock = getProductStock(product)
               const inCart = cart.find((c) => c.product.id === product.id)
               return (
@@ -554,7 +557,7 @@ export default function POSClient({ products, promotions, pointsConfig, cashierI
 
       {/* Right: Cart — มือถือเปิดทับเต็มจอ */}
       <div
-        className={`${cartOpen ? 'flex' : 'hidden'} lg:flex fixed lg:static inset-x-0 bottom-0 top-14 z-40 w-full lg:w-80 lg:z-auto bg-white border-l border-gray-200 flex-col`}
+        className={`${cartOpen ? 'flex' : 'hidden'} lg:flex fixed lg:static inset-x-0 bottom-0 top-14 z-40 w-full lg:w-96 xl:w-[26rem] lg:z-auto bg-white border-l border-gray-200 flex-col`}
       >
         {/* หัวแผงตะกร้า (เฉพาะมือถือ) */}
         <div className="lg:hidden flex items-center justify-between px-3 py-2 border-b border-gray-100">
@@ -675,7 +678,7 @@ export default function POSClient({ products, promotions, pointsConfig, cashierI
               {cart.map((item, i) => (
                 <div key={item.product.id} className="px-3 py-2.5">
                   <div className="flex justify-between items-start gap-2">
-                    <p className="text-sm font-medium text-gray-900 flex-1 leading-tight">
+                    <p className="text-base font-medium text-gray-900 flex-1 leading-snug">
                       {item.product.name}
                     </p>
                     <button
@@ -698,7 +701,7 @@ export default function POSClient({ products, promotions, pointsConfig, cashierI
                         min={1}
                         value={item.quantity}
                         onChange={(e) => setQty(i, e.target.value)}
-                        className="w-12 text-center text-sm font-medium border border-gray-200 rounded py-0.5 focus:outline-none focus:ring-1 focus:ring-blue-400 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                        className="w-14 text-center text-base font-semibold border border-gray-200 rounded py-0.5 focus:outline-none focus:ring-1 focus:ring-blue-400 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                       />
                       <button
                         onClick={() => changeQty(i, 1)}
@@ -711,7 +714,7 @@ export default function POSClient({ products, promotions, pointsConfig, cashierI
                       {item.discount > 0 && (
                         <p className="text-xs text-green-600">-฿{item.discount.toFixed(2)}</p>
                       )}
-                      <p className="text-sm font-semibold text-gray-900">
+                      <p className="text-lg font-bold text-gray-900 tabular-nums">
                         ฿{item.subtotal.toFixed(2)}
                       </p>
                     </div>
