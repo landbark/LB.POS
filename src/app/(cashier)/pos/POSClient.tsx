@@ -24,6 +24,8 @@ interface Props {
 // (บาร์โค้ดที่สั้นที่สุดในร้านคือ 5 ตัว เผื่อไว้ที่ 4)
 const SCAN_MIN_LEN = 4
 
+const isScannable = (code: string | null | undefined) => /^\d{8,14}$/.test((code ?? '').trim())
+
 // จำนวนสินค้าที่วาดบนกริด — วาดครบสองพันตัวทำให้ทุกตัวอักษรที่พิมพ์หน่วงเป็นสิบ ms
 const GRID_LIMIT = 60
 
@@ -107,8 +109,14 @@ export default function POSClient({ products, promotions, pointsConfig, cashierI
     return matchSearch && matchCategory
   })
 
-  // สแกนบาร์โค้ดเป็นหลัก — ของที่ไม่มีบาร์โค้ดคือของที่ต้องกดเลือกเอง เลยดันขึ้นมาก่อน
-  const ordered = [...filtered].sort((a, b) => Number(!!a.barcode) - Number(!!b.barcode))
+  // สแกนบาร์โค้ดเป็นหลัก — ของที่ยิงไม่ได้คือของที่ต้องกดเลือกเอง เลยดันขึ้นมาก่อน
+  //
+  // ดู "ยิงได้จริงไหม" ไม่ใช่ "ช่องบาร์โค้ดว่างไหม" เพราะตอนย้ายระบบมีการเติม SKU ตัวเอง
+  // (EXT002) และรหัสภายใน (DUCKMUZZLE-L) ลงช่องบาร์โค้ดไว้ด้วย ซึ่งไม่มีอยู่บนกล่องสินค้าจริง
+  // ของจริงเป็น EAN/UPC = ตัวเลขล้วน 8-14 หลักเสมอ
+  const ordered = [...filtered].sort(
+    (a, b) => Number(isScannable(a.barcode)) - Number(isScannable(b.barcode)),
+  )
 
   function getProductStock(product: Product): number {
     // บริการ (ค่าตรวจ/ค่าหัตถการ) ไม่มีล็อตให้ตัด — ไม่จำกัดจำนวนที่ขายได้
