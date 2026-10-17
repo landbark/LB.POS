@@ -3,12 +3,13 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { Search, X, Plus, Minus, ShoppingCart, User, MonitorPlay, Stethoscope } from 'lucide-react'
+import { Search, X, Plus, Minus, ShoppingCart, User, MonitorPlay, Stethoscope, ScanBarcode } from 'lucide-react'
 import toast from 'react-hot-toast'
 import type { Product, CartItem, Promotion, PointsConfig, Customer, PaymentMethod, ClinicQueueVisit, RoundingMode } from '@/lib/types'
 import { POS_DISPLAY_CHANNEL, type PosDisplayMessage } from '@/lib/posDisplay'
 import PaymentModal from './PaymentModal'
 import { confirmDialog } from '@/lib/confirm'
+import BarcodeScanner, { type ScanFeedback } from '@/components/BarcodeScanner'
 
 interface Props {
   products: Product[]
@@ -52,6 +53,16 @@ export default function POSClient({ products, promotions, pointsConfig, cashierI
   const [showPayment, setShowPayment] = useState(false)
   const [categoryFilter, setCategoryFilter] = useState('')
   const searchRef = useRef<HTMLInputElement>(null)
+  const [showScanner, setShowScanner] = useState(false)
+  // ปุ่มกล้องโชว์เฉพาะมือถือ/แท็บเล็ตที่เปิดกล้องได้ — เครื่องที่ใช้เมาส์ยิงด้วยเครื่องยิงอยู่แล้ว
+  // เช็คหลัง mount ไม่ให้ html ฝั่ง server ไม่ตรงกับฝั่ง client
+  const [canScan, setCanScan] = useState(false)
+  useEffect(() => {
+    setCanScan(
+      Boolean(navigator.mediaDevices?.getUserMedia) &&
+        window.matchMedia('(pointer: coarse)').matches,
+    )
+  }, [])
 
   // เครื่องยิงบาร์โค้ดทำงานเหมือนคีย์บอร์ด ต้องมี focus อยู่ที่ช่องค้นหาตลอดถึงจะยิงได้เลยโดยไม่ต้องคลิกก่อน
   // เฉพาะเครื่องที่ใช้เมาส์ — มือถือ/แท็บเล็ตจะเด้งคีย์บอร์ดขึ้นมาบังจอ
@@ -63,14 +74,14 @@ export default function POSClient({ products, promotions, pointsConfig, cashierI
 
   // โฟกัสตั้งแต่เปิดหน้า และดึงกลับทุกครั้งที่ modal ปิด (ตอน modal เปิดอย่าไปแย่ง)
   useEffect(() => {
-    if (showPayment || showQueue) return
+    if (showPayment || showQueue || showScanner) return
     focusSearch()
-  }, [showPayment, showQueue, focusSearch])
+  }, [showPayment, showQueue, showScanner, focusSearch])
 
   // สำรองไว้เผื่อ focus หลุดไปอยู่ที่ปุ่มอื่น — ตัวอักษรแรกที่ยิงมาจะไม่หาย
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
-      if (showPayment) return // อย่าแย่ง focus ตอน modal ชำระเงินเปิดอยู่
+      if (showPayment || showScanner) return // อย่าแย่ง focus ตอน modal ชำระเงิน/กล้องเปิดอยู่
       const t = e.target as HTMLElement
       if (
         t.tagName === 'INPUT' ||
@@ -86,7 +97,7 @@ export default function POSClient({ products, promotions, pointsConfig, cashierI
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [showPayment])
+  }, [showPayment, showScanner])
 
   // Get unique categories from products
   const categories = Array.from(
@@ -378,6 +389,14 @@ export default function POSClient({ products, promotions, pointsConfig, cashierI
     return null
   }
 
+  // ยิงจากกล้อง: รหัสที่ได้คือบาร์โค้ดเต็มๆ ตัวเดียว ไม่ต้องเดาหางข้อความเหมือนเครื่องยิงที่พิมพ์ทับช่องค้นหา
+  function handleScannedCode(code: string): ScanFeedback {
+    const product = findExact(code)
+    if (!product) return { ok: false, message: `ไม่พบสินค้าที่ใช้บาร์โค้ด ${code}` }
+    addToCart(product)
+    return { ok: true, message: `+ ${product.name}` }
+  }
+
   // Enter ในช่องค้นหา: บาร์โค้ด/รหัสสินค้าตรง หรือผลค้นหาเหลือตัวเดียว → เข้าตะกร้าทันที
   function handleSearchEnter() {
     const text = search.trim()
@@ -471,8 +490,17 @@ export default function POSClient({ products, promotions, pointsConfig, cashierI
               onChange={(e) => setSearch(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleSearchEnter() } }}
               placeholder="ค้นหาชื่อ / รหัสสินค้า / บาร์โค้ด หรือสแกน..."
-              className="w-full pl-9 pr-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className={`w-full pl-9 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${canScan ? 'pr-12' : 'pr-4'}`}
             />
+            {canScan && (
+              <button
+                onClick={() => setShowScanner(true)}
+                aria-label="สแกนบาร์โค้ดด้วยกล้อง"
+                className="absolute right-1.5 top-1/2 -translate-y-1/2 p-2 rounded-lg text-blue-600 hover:bg-blue-50 active:bg-blue-100"
+              >
+                <ScanBarcode size={20} />
+              </button>
+            )}
           </div>
           <div className="flex gap-2 overflow-x-auto pb-0.5">
             <button
@@ -909,6 +937,10 @@ export default function POSClient({ products, promotions, pointsConfig, cashierI
             </div>
           </div>
         </div>
+      )}
+
+      {showScanner && (
+        <BarcodeScanner onDetect={handleScannedCode} onClose={() => setShowScanner(false)} />
       )}
     </div>
   )
