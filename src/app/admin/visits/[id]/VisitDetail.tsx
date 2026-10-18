@@ -839,7 +839,7 @@ export default function VisitDetail({
                 onChange={(e) => setForm((prev) => ({ ...prev, healthy: e.target.checked }))}
                 className="w-4 h-4 accent-emerald-600"
               />
-              Healthy — ไม่ได้ป่วย
+              Healthy — สุขภาพปกติ
             </label>
           </div>
           <textarea

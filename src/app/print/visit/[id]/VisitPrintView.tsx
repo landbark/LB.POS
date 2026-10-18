@@ -117,7 +117,7 @@ export default function VisitPrintView({ visit, store }: { visit: Visit; store: 
           {section(
             'Assessment / Diagnosis',
             visit.healthy
-              ? ['Healthy — ไม่พบความผิดปกติ', visit.diagnosis].filter(Boolean).join('\n')
+              ? ['Healthy — สุขภาพปกติ', visit.diagnosis].filter(Boolean).join('\n')
               : visit.diagnosis,
           )}
           {section('Treatment', visit.treatment)}
