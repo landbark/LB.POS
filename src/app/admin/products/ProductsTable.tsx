@@ -16,6 +16,7 @@ const PAGE = 50
  */
 export default function ProductsTable({ products }: { products: Product[] }) {
   const [query, setQuery] = useState('')
+  const [hideStopped, setHideStopped] = useState(false)
   const [shown, setShown] = useState(PAGE)
 
   const haystacks = useMemo(
@@ -32,14 +33,17 @@ export default function ProductsTable({ products }: { products: Product[] }) {
     [products],
   )
 
+  const stoppedCount = useMemo(() => products.filter((p) => !p.active).length, [products])
+
   const found = useMemo(() => {
     const terms = query.trim().toLowerCase().split(/\s+/).filter(Boolean)
-    if (terms.length === 0) return products
-    return products.filter((p) => {
+    const pool = hideStopped ? products.filter((p) => p.active) : products
+    if (terms.length === 0) return pool
+    return pool.filter((p) => {
       const haystack = haystacks.get(p.id) ?? ''
       return terms.every((t) => haystack.includes(t))
     })
-  }, [products, haystacks, query])
+  }, [products, haystacks, query, hideStopped])
 
   function search(value: string) {
     setQuery(value)
@@ -70,6 +74,17 @@ export default function ProductsTable({ products }: { products: Product[] }) {
             </button>
           )}
         </div>
+        {stoppedCount > 0 && (
+          <label className="flex items-center gap-2 text-sm text-gray-600 shrink-0">
+            <input
+              type="checkbox"
+              checked={hideStopped}
+              onChange={(e) => { setHideStopped(e.target.checked); setShown(PAGE) }}
+              className="w-4 h-4 accent-blue-600"
+            />
+            ซ่อนที่งดจำหน่าย ({count(stoppedCount)})
+          </label>
+        )}
         <p className="text-sm text-gray-500 shrink-0">
           {query ? (
             <>
@@ -92,7 +107,7 @@ export default function ProductsTable({ products }: { products: Product[] }) {
               <th className="text-left text-xs font-medium text-gray-500 uppercase px-4 py-3">หมวด</th>
               <th className="text-right text-xs font-medium text-gray-500 uppercase px-4 py-3">ราคา</th>
               <th className="text-right text-xs font-medium text-gray-500 uppercase px-4 py-3">คงเหลือ</th>
-              <th className="text-center text-xs font-medium text-gray-500 uppercase px-4 py-3">สถานะ</th>
+              <th className="text-center text-xs font-medium text-gray-500 uppercase px-4 py-3">งดจำหน่าย</th>
               <th className="text-center text-xs font-medium text-gray-500 uppercase px-4 py-3">ขายออนไลน์</th>
               <th className="px-4 py-3"></th>
             </tr>

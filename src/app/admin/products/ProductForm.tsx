@@ -38,6 +38,7 @@ export default function ProductForm({ categories, units, suppliers, product }: P
     weight_grams: product?.weight_grams?.toString() ?? '',
     online_available: product?.online_available ?? false,
     on_shopee: product?.on_shopee ?? false,
+    discontinued: product ? !product.active : false,
     online_description: product?.online_description ?? '',
     label_name: product?.label_name ?? '',
     label_name_en: product?.label_name_en ?? '',
@@ -159,6 +160,8 @@ export default function ProductForm({ categories, units, suppliers, product }: P
       weight_grams: form.weight_grams.trim() ? parseInt(form.weight_grams) : null,
       online_available: form.online_available,
       on_shopee: form.on_shopee,
+      // งดจำหน่าย = ปิด active ซึ่งเป็นสวิตช์ที่ทุกช่องทางขายกรองออกให้อยู่แล้ว
+      active: !form.discontinued,
       online_description: form.online_description.trim() || null,
       label_name: form.label_name.trim() || null,
       label_name_en: form.label_name_en.trim() || null,
@@ -535,6 +538,22 @@ export default function ProductForm({ categories, units, suppliers, product }: P
             </p>
           </div>
         )}
+
+        <div className="rounded-lg border border-gray-200 p-4">
+          <label className="flex items-center gap-2 text-sm font-medium text-gray-700">
+            <input
+              type="checkbox"
+              checked={form.discontinued}
+              onChange={(e) => setForm((prev) => ({ ...prev, discontinued: e.target.checked }))}
+              className="w-4 h-4 accent-red-600"
+            />
+            งดจำหน่าย
+          </label>
+          <p className="text-xs text-gray-400 mt-1">
+            เอาออกจากทุกช่องทางขาย (หน้าขาย เว็บร้านค้า หน้าคลินิก โปรโมชั่น นำเข้าสินค้า)
+            — บิลเดิมและรายงานย้อนหลังยังอยู่ครบ
+          </p>
+        </div>
 
         <label className="flex items-center gap-2 text-sm font-medium text-gray-700 rounded-lg border border-gray-200 p-4">
           <input

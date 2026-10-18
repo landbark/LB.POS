@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { ChevronDown, ChevronRight, Edit } from 'lucide-react'
 import DeleteProductButton from './DeleteProductButton'
 import OnlineToggle from './OnlineToggle'
+import StopSellingToggle from './StopSellingToggle'
 import { isClinicOnly } from '@/lib/clinic'
 import { formatWeight } from '@/lib/shop'
 import type { Product } from '@/lib/types'
@@ -19,7 +20,7 @@ export default function ProductRow({ product }: { product: Product }) {
 
   return (
     <>
-      <tr className="hover:bg-gray-50">
+      <tr className={`hover:bg-gray-50 ${product.active ? '' : 'opacity-60'}`}>
         <td className="px-4 py-3">
           <button
             type="button"
@@ -48,6 +49,7 @@ export default function ProductRow({ product }: { product: Product }) {
               <p className="text-sm font-medium text-gray-900 hover:text-blue-600">{product.name}</p>
               <p className="text-xs text-gray-500">
                 {product.unit}
+                {!product.active && <span className="ml-1.5 font-medium text-red-600">· งดจำหน่าย</span>}
                 {clinicOnly && <span className="ml-1.5 text-amber-600">· ของคลินิก</span>}
                 {product.is_service && <span className="ml-1.5 text-gray-400">· บริการ</span>}
                 {product.on_shopee && <span className="ml-1.5 text-orange-600">· Shopee</span>}
@@ -78,13 +80,7 @@ export default function ProductRow({ product }: { product: Product }) {
           </span>
         </td>
         <td className="px-4 py-3 text-center">
-          <span className={`inline-flex text-xs px-2 py-0.5 rounded-full font-medium ${
-            product.active
-              ? 'bg-green-100 text-green-700'
-              : 'bg-gray-100 text-gray-500'
-          }`}>
-            {product.active ? 'ใช้งาน' : 'ปิด'}
-          </span>
+          <StopSellingToggle product={product} />
         </td>
         <td className="px-4 py-3 text-center">
           <OnlineToggle product={product} clinicOnly={clinicOnly} />
