@@ -21,6 +21,19 @@ interface VaccineProduct {
   categories?: { is_vaccine?: boolean | null } | null
 }
 
+/**
+ * ยาฉีดที่คิดราคาตามปริมาตรไหม — ดูที่หน่วยขาย (ml. / cc. / มล.)
+ * หมอฉีดเป็นเศษ ml ได้ แต่บิลคิดเป็น ml เต็ม ปัดขึ้น ขั้นต่ำ 1 ml
+ */
+export function isVolumeDosed(product: { unit?: string | null }): boolean {
+  return /^(ml|cc|มล)\.?$/i.test((product.unit ?? '').trim())
+}
+
+/** ml ที่คิดเงินจากที่ฉีดจริง — ต่ำกว่า 1 ml คิด 1 ml, เกินกว่านั้นปัดขึ้นเป็นเลขเต็ม */
+export function billedMl(doseMl: number): number {
+  return Math.max(1, Math.ceil(doseMl))
+}
+
 /** สินค้าตัวนี้เป็นวัคซีนไหม — ค่ารายสินค้าชนะค่าของหมวด (จ่ายแล้วลงประวัติวัคซีนอัตโนมัติ) */
 export function isVaccine(product: VaccineProduct): boolean {
   if (product.is_vaccine !== null && product.is_vaccine !== undefined) {

@@ -114,7 +114,12 @@ export default function VisitPrintView({ visit, store }: { visit: Visit; store: 
           {section('Chief Complaint', visit.symptoms)}
           {section('History Taking', visit.history_taking)}
           {section('Physical Examination', visit.physical_exam)}
-          {section('Assessment / Diagnosis', visit.diagnosis)}
+          {section(
+            'Assessment / Diagnosis',
+            visit.healthy
+              ? ['Healthy — ไม่พบความผิดปกติ', visit.diagnosis].filter(Boolean).join('\n')
+              : visit.diagnosis,
+          )}
           {section('Treatment', visit.treatment)}
 
           {serviceItems.length > 0 && (
@@ -157,7 +162,10 @@ export default function VisitPrintView({ visit, store }: { visit: Visit; store: 
                   {rxItems.map((it, i) => (
                     <tr key={i} className="border-b border-gray-100">
                       <td className="py-1">{it.products?.name ?? '—'}</td>
-                      <td className="py-1 text-gray-600">{it.dosage ?? ''}</td>
+                      <td className="py-1 text-gray-600">
+                        {it.dose_ml != null && <span>ฉีด {it.dose_ml} ml{it.dosage ? ' · ' : ''}</span>}
+                        {it.dosage ?? ''}
+                      </td>
                       <td className="py-1 text-center">{it.quantity} {it.products?.unit}</td>
                       <td className="py-1 text-right">{money(it.quantity * it.unit_price)}</td>
                     </tr>

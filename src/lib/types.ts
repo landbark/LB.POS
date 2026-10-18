@@ -278,6 +278,8 @@ export interface Visit {
   history_taking: string | null
   physical_exam: string | null
   diagnosis: string | null
+  /** สัตว์ปกติดี ไม่ได้ป่วย (วัคซีน/ตรวจสุขภาพ/หายแล้ว) */
+  healthy: boolean
   treatment: string | null
   client_education: string | null
   notes: string | null
@@ -307,6 +309,8 @@ export interface VisitItem {
   dosage: string | null
   /** จำนวนต่อครั้ง (รองรับเศษเม็ด เช่น 0.5) */
   dose_amount: number | null
+  /** ยาฉีด: ปริมาณที่ฉีดจริงเป็น ml — คิดเงินปัดขึ้นเป็น ml เต็มที่ quantity */
+  dose_ml: number | null
   frequency: Frequency | null
   /** ใช้เมื่อ frequency = 'q_h' */
   frequency_hours: number | null

@@ -14,7 +14,7 @@ export default async function VisitPrintPage({ params }: { params: Promise<{ id:
         pets(*),
         customers(name, phone),
         vet:profiles!visits_vet_id_fkey(name),
-        visit_items(quantity, unit_price, dosage, products(name, unit, is_service))
+        visit_items(quantity, unit_price, dosage, dose_ml, products(name, unit, is_service))
       `)
       .eq('id', id)
       .single(),

@@ -8,7 +8,7 @@ import { AlertTriangle, ArrowLeft, CalendarPlus, Check, Eye, Plus, Printer, Save
 import toast from 'react-hot-toast'
 import { SPECIES_LABELS, VISIT_STATUS_LABELS, type PetVaccination, type Vaccine, type Visit, type VisitItem } from '@/lib/types'
 import { petAge, petWarnings } from '@/lib/pets'
-import { isClinicOnly, isVaccine } from '@/lib/clinic'
+import { isClinicOnly, isVaccine, isVolumeDosed, billedMl } from '@/lib/clinic'
 import { computeNextDue } from '@/lib/vaccines'
 import { FREQUENCY_OPTIONS, FOOD_OPTIONS, suggestedQuantity, sigText, labelName, labelIndication } from '@/lib/sig'
 import VaccineSection from '@/app/admin/pets/[id]/VaccineSection'
@@ -79,6 +79,7 @@ export default function VisitDetail({
     history_taking: visit.history_taking ?? '',
     physical_exam: visit.physical_exam ?? '',
     diagnosis: visit.diagnosis ?? '',
+    healthy: visit.healthy ?? false,
     treatment: visit.treatment ?? '',
     client_education: visit.client_education ?? '',
     notes: visit.notes ?? '',
@@ -124,6 +125,7 @@ export default function VisitDetail({
         history_taking: form.history_taking.trim() || null,
         physical_exam: form.physical_exam.trim() || null,
         diagnosis: form.diagnosis.trim() || null,
+        healthy: form.healthy,
         treatment: form.treatment.trim() || null,
         client_education: form.client_education.trim() || null,
         notes: form.notes.trim() || null,
@@ -199,7 +201,7 @@ export default function VisitDetail({
 
   async function updateItem(
     item: VisitItem,
-    patch: Partial<Pick<VisitItem, 'quantity' | 'unit_price' | 'dosage' | 'dose_amount' | 'frequency' | 'frequency_hours' | 'food_timing' | 'duration_days'>>
+    patch: Partial<Pick<VisitItem, 'quantity' | 'unit_price' | 'dosage' | 'dose_amount' | 'dose_ml' | 'frequency' | 'frequency_hours' | 'food_timing' | 'duration_days'>>
   ) {
     const supabase = createClient()
     const { error } = await supabase.from('visit_items').update(patch).eq('id', item.id)
@@ -489,6 +491,46 @@ export default function VisitDetail({
               {/* วัคซีนฉีดครั้งเดียวจบ ไม่มีขนาด/ความถี่/ก่อน-หลังอาหาร ไม่ต้องมีช่องให้กรอก */}
               {showDosage && item.products && isVaccine(item.products as never) ? (
                 <td className="py-2 text-xs text-gray-400">วัคซีน — ไม่ต้องระบุวิธีใช้</td>
+              ) : showDosage && item.products && isVolumeDosed(item.products) ? (
+                /* ยาฉีด: ฉีดเป็นเศษ ml ได้ แต่บิลคิดเป็น ml เต็ม ปัดขึ้น ขั้นต่ำ 1 ml */
+                <td className="py-2">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span className="text-xs text-gray-500">ฉีดจริง</span>
+                    <input
+                      type="number" step="0.01" min="0.01"
+                      defaultValue={item.dose_ml ?? ''}
+                      disabled={itemsLocked}
+                      onBlur={(e) => {
+                        const v = e.target.value ? parseFloat(e.target.value) : null
+                        if (v === (item.dose_ml ?? null)) return
+                        if (v === null) { updateItem(item, { dose_ml: null }); return }
+                        if (!(v > 0)) return
+                        updateItem(item, { dose_ml: v, quantity: billedMl(v) })
+                      }}
+                      placeholder="0.00"
+                      className={`${sigInput} w-20 text-right`}
+                      title="ปริมาณที่ฉีดจริง"
+                    />
+                    <span className="text-xs text-gray-400">ml</span>
+                    {item.dose_ml != null && (
+                      <span className="text-xs text-emerald-700">
+                        → คิดเงิน {billedMl(item.dose_ml)} ml
+                        {billedMl(item.dose_ml) !== item.dose_ml && ' (ปัดขึ้น)'}
+                      </span>
+                    )}
+                  </div>
+                  <input
+                    type="text"
+                    defaultValue={item.dosage ?? ''}
+                    disabled={itemsLocked}
+                    onBlur={(e) => {
+                      const value = e.target.value.trim() || null
+                      if (value !== (item.dosage ?? null)) updateItem(item, { dosage: value })
+                    }}
+                    placeholder="หมายเหตุ เช่น ฉีดเข้ากล้าม"
+                    className="w-full mt-1 border border-gray-200 rounded px-2 py-1 text-xs disabled:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </td>
               ) : showDosage ? (
                 <td className="py-2">
                   <div className="flex flex-wrap items-center gap-1">
@@ -787,8 +829,26 @@ export default function VisitDetail({
           <textarea rows={2} value={form.physical_exam} onChange={(e) => set('physical_exam', e.target.value)} className={inputClass} />
         </div>
         <div>
-          <label className={labelClass}>Assessment / Diagnosis</label>
-          <textarea rows={2} value={form.diagnosis} onChange={(e) => set('diagnosis', e.target.value)} className={inputClass} />
+          <div className="flex items-center justify-between gap-3">
+            <label className={labelClass}>Assessment / Diagnosis</label>
+            {/* ไม่ได้ป่วย — มาฉีดวัคซีน ตรวจสุขภาพ หรือหายจากโรคที่รักษาแล้ว */}
+            <label className="flex items-center gap-1.5 text-xs font-medium text-emerald-700 mb-1">
+              <input
+                type="checkbox"
+                checked={form.healthy}
+                onChange={(e) => setForm((prev) => ({ ...prev, healthy: e.target.checked }))}
+                className="w-4 h-4 accent-emerald-600"
+              />
+              Healthy — ไม่ได้ป่วย
+            </label>
+          </div>
+          <textarea
+            rows={2}
+            value={form.diagnosis}
+            onChange={(e) => set('diagnosis', e.target.value)}
+            placeholder={form.healthy ? 'สุขภาพปกติ — เขียนเพิ่มได้ถ้ามี' : ''}
+            className={inputClass}
+          />
         </div>
         <div>
           <label className={labelClass}>Treatment</label>
