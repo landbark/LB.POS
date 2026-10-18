@@ -9,10 +9,14 @@ import toast from 'react-hot-toast'
 import { SPECIES_LABELS, VISIT_STATUS_LABELS, type Breed, type Pet, type PetSpecies, type Visit, type VisitStatus } from '@/lib/types'
 import { ageAt, petAge } from '@/lib/pets'
 import { useLookup } from '@/lib/use-lookup'
+import { thaiToday, thaiDateIn } from '@/lib/thaiDate'
 import BreedSelect from '@/components/BreedSelect'
 
 type OwnerOption = { id: string; name: string; phone: string; hn?: string | null }
 type LastWeight = { weight: number; date: string }
+
+// วันของเวชระเบียนตามเวลาไทย — server บน Vercel รันเป็น UTC ถ้าปล่อยตามเครื่องจะข้ามวันตอนตีห้า
+const dayKey = (iso: string) => new Date(iso).toLocaleDateString('en-CA', { timeZone: 'Asia/Bangkok' })
 
 const STATUS_STYLE: Record<VisitStatus, string> = {
   waiting: 'bg-purple-50 text-purple-700',
@@ -237,10 +241,32 @@ export default function VisitsClient({
     })
     .slice()
     .sort((a, b) => {
+      // แยกวันก่อน — ของวันนี้ต้องอยู่ด้วยกันทั้งก้อน ไม่ให้เคสที่เก็บเงินแล้วตกไปปนกับวันก่อนๆ
+      const byDay = dayKey(b.visit_date).localeCompare(dayKey(a.visit_date))
+      if (byDay !== 0) return byDay
       const d = (STATUS_ORDER[a.status] ?? 99) - (STATUS_ORDER[b.status] ?? 99)
       if (d !== 0) return d
       return b.visit_date.localeCompare(a.visit_date) // สถานะเดียวกัน: ใหม่ก่อน
     })
+
+  // ตัดเป็นก้อนต่อวัน แล้วคั่นด้วยหัวข้อวันที่ — เดิมเรียงยาวติดกันหมดจนหาของวันนี้ไม่เจอ
+  const today = thaiToday()
+  const yesterday = thaiDateIn(-1)
+  function dayLabel(key: string) {
+    const text = new Date(`${key}T00:00:00+07:00`).toLocaleDateString('th-TH', {
+      timeZone: 'Asia/Bangkok', weekday: 'short', day: 'numeric', month: 'short', year: '2-digit',
+    })
+    if (key === today) return `วันนี้ · ${text}`
+    if (key === yesterday) return `เมื่อวาน · ${text}`
+    return text
+  }
+  const dayGroups: { key: string; rows: typeof filtered }[] = []
+  for (const v of filtered) {
+    const key = dayKey(v.visit_date)
+    const last = dayGroups[dayGroups.length - 1]
+    if (last && last.key === key) last.rows.push(v)
+    else dayGroups.push({ key, rows: [v] })
+  }
 
   const searchingPets = petQuery.trim().length > 0
   const { results: petHits, loading: petLoading } = useLookup<Pet>('pets', petQuery)
@@ -333,7 +359,7 @@ export default function VisitsClient({
           <thead className="bg-gray-50 border-b border-gray-100">
             <tr>
               <th className="text-left text-xs font-medium text-gray-500 uppercase px-4 py-3">เลขที่</th>
-              <th className="text-left text-xs font-medium text-gray-500 uppercase px-4 py-3">วันที่</th>
+              <th className="text-left text-xs font-medium text-gray-500 uppercase px-4 py-3">เวลา</th>
               <th className="text-left text-xs font-medium text-gray-500 uppercase px-4 py-3">สัตว์</th>
               <th className="text-left text-xs font-medium text-gray-500 uppercase px-4 py-3">เจ้าของ</th>
               <th className="text-left text-xs font-medium text-gray-500 uppercase px-4 py-3">การวินิจฉัย</th>
@@ -342,16 +368,23 @@ export default function VisitsClient({
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-50">
-            {filtered.map((v) => (
+            {dayGroups.map((g) => [
+              <tr key={`day-${g.key}`} className={g.key === today ? 'bg-blue-50' : 'bg-gray-50'}>
+                <td
+                  colSpan={7}
+                  className={`px-4 py-2 text-xs font-semibold ${g.key === today ? 'text-blue-700' : 'text-gray-500'}`}
+                >
+                  {dayLabel(g.key)}
+                  <span className="ml-2 font-normal text-gray-400">{g.rows.length} รายการ</span>
+                </td>
+              </tr>,
+              ...g.rows.map((v) => (
               <tr key={v.id} className="hover:bg-gray-50 cursor-pointer" onClick={() => push(`/admin/visits/${v.id}`)}>
                 <td className="px-4 py-3 text-sm font-mono text-blue-600">
                   <Link href={`/admin/visits/${v.id}`}>{v.visit_number}</Link>
                 </td>
                 <td className="px-4 py-3 text-sm text-gray-600">
-                  {new Date(v.visit_date).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' })}
-                  <span className="block text-xs text-gray-400">
-                    {new Date(v.visit_date).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })} น.
-                  </span>
+                  {new Date(v.visit_date).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })} น.
                 </td>
                 <td className="px-4 py-3 text-sm font-medium text-gray-900">
                   {v.pets?.name ?? '—'}
@@ -367,7 +400,8 @@ export default function VisitsClient({
                   </span>
                 </td>
               </tr>
-            ))}
+              )),
+            ])}
             {filtered.length === 0 && (
               <tr>
                 <td colSpan={7} className="px-4 py-10 text-center text-sm text-gray-400">
