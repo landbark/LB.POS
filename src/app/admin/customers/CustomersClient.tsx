@@ -126,7 +126,7 @@ export default function CustomersClient({
 
       {showAdd && formCard}
 
-      <SearchBox placeholder="ค้นหาชื่อ / เบอร์โทร..." className="mb-4 max-w-xs" />
+      <SearchBox placeholder="ค้นหา HN / ชื่อ / เบอร์โทร..." className="mb-4 max-w-xs" />
 
       {atLimit && (
         <p className="text-xs text-gray-500 mb-3">
@@ -138,6 +138,7 @@ export default function CustomersClient({
         <table className="w-full">
           <thead className="bg-gray-50 border-b border-gray-100">
             <tr>
+              <th className="text-left text-xs font-medium text-gray-500 uppercase px-4 py-3">HN</th>
               <th className="text-left text-xs font-medium text-gray-500 uppercase px-4 py-3">ชื่อ</th>
               <th className="text-left text-xs font-medium text-gray-500 uppercase px-4 py-3">เบอร์โทร</th>
               <th className="text-left text-xs font-medium text-gray-500 uppercase px-4 py-3">สัตว์เลี้ยง</th>
@@ -152,10 +153,11 @@ export default function CustomersClient({
             {customers.map((c) => (
               editingId === c.id ? (
                 <tr key={c.id}>
-                  <td colSpan={8} className="px-4 py-3">{formCard}</td>
+                  <td colSpan={9} className="px-4 py-3">{formCard}</td>
                 </tr>
               ) : (
                 <tr key={c.id} className="hover:bg-gray-50">
+                  <td className="px-4 py-3 text-sm font-mono text-gray-500 whitespace-nowrap">{c.hn ?? '—'}</td>
                   <td className="px-4 py-3 text-sm font-medium">
                     <Link href={`/admin/customers/${c.id}`} className="text-gray-900 hover:text-blue-600" onClick={(e) => e.stopPropagation()}>
                       {c.name}
@@ -192,7 +194,7 @@ export default function CustomersClient({
             ))}
             {customers.length === 0 && (
               <tr>
-                <td colSpan={8} className="px-4 py-10 text-center text-sm text-gray-400">
+                <td colSpan={9} className="px-4 py-10 text-center text-sm text-gray-400">
                   {searching
                     ? 'ไม่พบลูกค้าที่ค้นหา'
                     : 'ยังไม่มีลูกค้า — เพิ่มได้ที่นี่ หรือพิมพ์เบอร์ลูกค้าที่หน้าขายเพื่อเพิ่มระหว่างขาย'}

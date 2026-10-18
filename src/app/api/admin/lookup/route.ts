@@ -30,8 +30,8 @@ export async function GET(request: NextRequest) {
   if (type === 'customers') {
     const { data, error } = await supabase
       .from('customers')
-      .select('id, name, phone')
-      .or(`name.ilike.${q},phone.ilike.${q}`)
+      .select('id, name, phone, hn')
+      .or(`name.ilike.${q},phone.ilike.${q},hn.ilike.${q}`)
       .order('name')
       .limit(LIMIT)
 
@@ -42,12 +42,12 @@ export async function GET(request: NextRequest) {
   if (type === 'pets') {
     // ค้นชื่อสัตว์กับค้นทางเจ้าของต้องแยกกัน — .or() ของ PostgREST
     // ข้ามไปเงื่อนไขบนตารางที่ join มาไม่ได้
-    const columns = '*, customers(id, name, phone)'
+    const columns = '*, customers(id, name, phone, hn)'
     const [byPet, byOwner] = await Promise.all([
       supabase.from('pets').select(columns)
-        .eq('active', true).ilike('name', q).order('name').limit(LIMIT),
-      supabase.from('pets').select(`*, customers!inner(id, name, phone)`)
-        .eq('active', true).or(`name.ilike.${q},phone.ilike.${q}`, { referencedTable: 'customers' })
+        .eq('active', true).or(`name.ilike.${q},hn.ilike.${q}`).order('name').limit(LIMIT),
+      supabase.from('pets').select(`*, customers!inner(id, name, phone, hn)`)
+        .eq('active', true).or(`name.ilike.${q},phone.ilike.${q},hn.ilike.${q}`, { referencedTable: 'customers' })
         .order('name').limit(LIMIT),
     ])
 

@@ -101,6 +101,59 @@ BEGIN
 END;
 $$;
 
+-- เลข HN คลินิก — ดู supabase-migration-clinic-hn.sql
+CREATE OR REPLACE FUNCTION public.hn_year_prefix()
+RETURNS text
+SECURITY DEFINER SET search_path = public
+LANGUAGE sql STABLE AS $$
+  SELECT to_char((EXTRACT(YEAR FROM (now() AT TIME ZONE 'Asia/Bangkok'))::int + 543) % 100, 'FM00');
+$$;
+
+-- HN ฐานของเจ้าของคนถัดไป — ลำดับรีเซ็ตทุกปี พ.ศ.
+CREATE OR REPLACE FUNCTION public.next_customer_hn()
+RETURNS text
+SECURITY DEFINER SET search_path = public
+LANGUAGE plpgsql AS $$
+DECLARE
+  yy text := hn_year_prefix();
+  seq int;
+BEGIN
+  PERFORM pg_advisory_xact_lock(hashtext('customer_hn'));
+  SELECT COALESCE(MAX(SUBSTRING(hn FROM 3)::int), 0) + 1
+  INTO seq
+  FROM customers
+  WHERE hn ~ ('^' || yy || '\d{4}$');
+  RETURN yy || LPAD(seq::text, 4, '0');
+END;
+$$;
+
+-- HN ของสัตว์ตัวถัดไปของเจ้าของคนนั้น — ต่อจากลำดับที่ใช้ไปแล้วใต้ฐานเดียวกัน
+-- (เจ้าของที่ระบบเดิมลงทะเบียนซ้ำหลายปีจะมีสัตว์ข้ามฐาน เช่น 660006-1 กับ 660045-1
+--  ตัวใหม่นับต่อจากฐานปัจจุบันของเจ้าของ ไม่ไปแตะเลขเดิมที่อยู่ในเวชระเบียนกระดาษ)
+CREATE OR REPLACE FUNCTION public.next_pet_hn(p_customer_id uuid)
+RETURNS text
+SECURITY DEFINER SET search_path = public
+LANGUAGE plpgsql AS $$
+DECLARE
+  base text;
+  seq int;
+BEGIN
+  SELECT hn INTO base FROM customers WHERE id = p_customer_id;
+  IF base IS NULL THEN
+    -- เจ้าของยังไม่มี HN (ข้อมูลเก่าที่ตกหล่น) — ออกให้ก่อนแล้วค่อยต่อลำดับสัตว์
+    base := next_customer_hn();
+    UPDATE customers SET hn = base WHERE id = p_customer_id;
+  END IF;
+
+  PERFORM pg_advisory_xact_lock(hashtext('pet_hn:' || base));
+  SELECT COALESCE(MAX(SUBSTRING(hn FROM length(base) + 2)::int), 0) + 1
+  INTO seq
+  FROM pets
+  WHERE hn ~ ('^' || base || '-\d+$');
+  RETURN base || '-' || seq::text;
+END;
+$$;
+
 -- Categories
 CREATE TABLE categories (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -174,6 +227,8 @@ CREATE TABLE product_lots (
 CREATE TABLE customers (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   name TEXT NOT NULL,
+  -- เลข HN เจ้าของ "YY####" (ปี พ.ศ. 2 หลัก + ลำดับในปีนั้น) — trigger ออกให้ตอน insert
+  hn TEXT,
   phone TEXT NOT NULL UNIQUE,
   points INT NOT NULL DEFAULT 0 CHECK (points >= 0),
   total_spent NUMERIC(12,2) NOT NULL DEFAULT 0,
@@ -196,6 +251,8 @@ CREATE TABLE breeds (
 CREATE TABLE pets (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   customer_id UUID NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
+  -- เลข HN สัตว์ "YY####-N" = HN เจ้าของ + ลำดับสัตว์ของเจ้าของคนนั้น
+  hn TEXT,
   name TEXT NOT NULL,
   species TEXT NOT NULL DEFAULT 'dog' CHECK (species IN ('dog', 'cat', 'bird', 'rabbit', 'rodent', 'reptile', 'other')),
   breed TEXT,
@@ -212,6 +269,60 @@ CREATE TABLE pets (
   active BOOLEAN NOT NULL DEFAULT true,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+CREATE OR REPLACE FUNCTION public.set_customer_hn()
+RETURNS trigger
+SECURITY DEFINER SET search_path = public
+LANGUAGE plpgsql AS $$
+BEGIN
+  IF NEW.hn IS NULL THEN NEW.hn := next_customer_hn(); END IF;
+  RETURN NEW;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.set_pet_hn()
+RETURNS trigger
+SECURITY DEFINER SET search_path = public
+LANGUAGE plpgsql AS $$
+BEGIN
+  IF NEW.hn IS NULL THEN NEW.hn := next_pet_hn(NEW.customer_id); END IF;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_customers_hn ON customers;
+CREATE TRIGGER trg_customers_hn BEFORE INSERT ON customers
+  FOR EACH ROW EXECUTE FUNCTION set_customer_hn();
+
+DROP TRIGGER IF EXISTS trg_pets_hn ON pets;
+CREATE TRIGGER trg_pets_hn BEFORE INSERT ON pets
+  FOR EACH ROW EXECUTE FUNCTION set_pet_hn();
+
+-- ออก HN ให้แถวเก่าที่ยังว่าง เรียงตามวันลงทะเบียน
+-- ใช้หลัง backfill เลขจากระบบเดิม เพื่อให้ลูกค้า/สัตว์ที่เพิ่งสร้างในระบบใหม่
+-- ได้เลขต่อท้ายของจริง ไม่ใช่ไปทับเลขที่ระบบเดิมใช้อยู่
+CREATE OR REPLACE FUNCTION public.assign_missing_hn()
+RETURNS TABLE (customers_filled int, pets_filled int)
+SECURITY DEFINER SET search_path = public
+LANGUAGE plpgsql AS $$
+DECLARE
+  r record;
+  c_count int := 0;
+  p_count int := 0;
+BEGIN
+  FOR r IN SELECT id FROM customers WHERE hn IS NULL ORDER BY created_at, id LOOP
+    UPDATE customers SET hn = next_customer_hn() WHERE id = r.id;
+    c_count := c_count + 1;
+  END LOOP;
+
+  FOR r IN SELECT id, customer_id FROM pets WHERE hn IS NULL ORDER BY created_at, id LOOP
+    UPDATE pets SET hn = next_pet_hn(r.customer_id) WHERE id = r.id;
+    p_count := p_count + 1;
+  END LOOP;
+
+  RETURN QUERY SELECT c_count, p_count;
+END;
+$$;
 
 -- เวชระเบียน OPD — ยาที่จ่ายจะถูกส่งไปเก็บเงินที่หน้าขาย (สต็อคตัดตอนจ่ายเงิน)
 CREATE TABLE visits (
@@ -524,6 +635,8 @@ CREATE INDEX idx_product_lots_expiry ON product_lots(expiry_date) WHERE expiry_d
 CREATE INDEX idx_transactions_created_at ON transactions(created_at);
 CREATE INDEX idx_transactions_customer_id ON transactions(customer_id);
 CREATE INDEX idx_customers_phone ON customers(phone);
+CREATE UNIQUE INDEX idx_customers_hn ON customers(hn) WHERE hn IS NOT NULL;
+CREATE UNIQUE INDEX idx_pets_hn ON pets(hn) WHERE hn IS NOT NULL;
 CREATE INDEX idx_stock_movements_product_id ON stock_movements(product_id, created_at DESC);
 CREATE INDEX idx_pets_customer_id ON pets(customer_id);
 CREATE INDEX idx_pets_name ON pets(name);

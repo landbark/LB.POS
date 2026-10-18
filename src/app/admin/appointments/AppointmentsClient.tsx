@@ -318,6 +318,7 @@ export default function AppointmentsClient({
                   <button onClick={() => openEdit(a)} className="text-left min-w-0 flex-1">
                     <p className="text-sm font-semibold text-gray-900">
                       {fmtTime(a.scheduled_at)} · {a.pets?.name ?? '—'}
+                      {a.pets?.hn && <span className="ml-1.5 text-xs font-mono text-gray-400">{a.pets.hn}</span>}
                     </p>
                     <p className="text-xs text-gray-500">
                       {a.customers?.name ?? 'ไม่ระบุเจ้าของ'}
@@ -375,7 +376,7 @@ export default function AppointmentsClient({
                   </div>
                 ) : (
                   <div className="relative">
-                    <input type="text" autoFocus value={petQuery} onChange={(e) => setPetQuery(e.target.value)} placeholder="พิมพ์ชื่อสัตว์ / เจ้าของ / เบอร์..." className={inputClass} />
+                    <input type="text" autoFocus value={petQuery} onChange={(e) => setPetQuery(e.target.value)} placeholder="พิมพ์ HN / ชื่อสัตว์ / เจ้าของ / เบอร์..." className={inputClass} />
                     {!searchingPets && (
                       <p className="text-xs text-gray-400 mt-1">แสดงสัตว์ที่ลงทะเบียนล่าสุด — พิมพ์เพื่อค้นทั้งหมด</p>
                     )}
@@ -389,6 +390,7 @@ export default function AppointmentsClient({
                       <div className="absolute z-10 left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg overflow-hidden max-h-60 overflow-y-auto">
                         {petMatches.map((p) => (
                           <button key={p.id} onClick={() => { setForm({ ...form, pet_id: p.id }); setSelectedPet(p); setPetQuery('') }} className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50">
+                            {p.hn && <span className="text-gray-400 font-mono mr-2">{p.hn}</span>}
                             {p.name} <span className="text-gray-400">· {p.customers?.name ?? 'ไม่ระบุ'}</span>
                           </button>
                         ))}

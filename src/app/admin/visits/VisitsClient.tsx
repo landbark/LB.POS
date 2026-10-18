@@ -11,7 +11,7 @@ import { ageAt, petAge } from '@/lib/pets'
 import { useLookup } from '@/lib/use-lookup'
 import BreedSelect from '@/components/BreedSelect'
 
-type OwnerOption = { id: string; name: string; phone: string }
+type OwnerOption = { id: string; name: string; phone: string; hn?: string | null }
 type LastWeight = { weight: number; date: string }
 
 const STATUS_STYLE: Record<VisitStatus, string> = {
@@ -138,7 +138,7 @@ export default function VisitsClient({
         sterilized_date: petForm.sterilized ? (petForm.sterilized_date || null) : null,
         allergies: petForm.allergies.trim() || null,
       })
-      .select('*, customers(id, name, phone)')
+      .select('*, customers(id, name, phone, hn)')
       .single()
 
     setBusy(false)
@@ -228,6 +228,8 @@ export default function VisitsClient({
       const matchQuery = !q
         || v.visit_number.toLowerCase().includes(q)
         || (v.pets?.name ?? '').toLowerCase().includes(q)
+        || (v.pets?.hn ?? '').includes(q)
+        || (v.customers?.hn ?? '').includes(q)
         || (v.customers?.name ?? '').toLowerCase().includes(q)
         || (v.customers?.phone ?? '').includes(q)
         || (v.diagnosis ?? '').toLowerCase().includes(q)
@@ -278,6 +280,7 @@ export default function VisitsClient({
                       {v.pets?.name ?? '—'}
                       {v.pets && <span className="ml-1.5 text-xs font-normal text-gray-400">{SPECIES_LABELS[v.pets.species]}</span>}
                     </p>
+                    {v.pets?.hn && <p className="text-xs font-mono text-gray-400">HN {v.pets.hn}</p>}
                     <p className="text-xs text-gray-500">{v.customers?.name ?? 'ไม่ระบุเจ้าของ'}</p>
                     <p className="text-xs text-gray-400 mt-1">
                       {v.weight != null && <span className="text-gray-600">{v.weight} กก. · </span>}
@@ -309,7 +312,7 @@ export default function VisitsClient({
             type="text"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="ค้นหาเลขที่ / สัตว์ / เจ้าของ / การวินิจฉัย..."
+            placeholder="ค้นหาเลขที่ / HN / สัตว์ / เจ้าของ / การวินิจฉัย..."
             className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
         </div>
@@ -352,6 +355,7 @@ export default function VisitsClient({
                 </td>
                 <td className="px-4 py-3 text-sm font-medium text-gray-900">
                   {v.pets?.name ?? '—'}
+                  {v.pets?.hn && <span className="block text-xs font-mono text-gray-400">{v.pets.hn}</span>}
                   {v.pets && <span className="block text-xs text-gray-400">{SPECIES_LABELS[v.pets.species]}</span>}
                 </td>
                 <td className="px-4 py-3 text-sm text-gray-600">{v.customers?.name ?? '—'}</td>
@@ -404,7 +408,7 @@ export default function VisitsClient({
                   value={petQuery}
                   autoFocus
                   onChange={(e) => setPetQuery(e.target.value)}
-                  placeholder="พิมพ์ชื่อสัตว์ / เจ้าของ / เบอร์โทร..."
+                  placeholder="พิมพ์ HN / ชื่อสัตว์ / เจ้าของ / เบอร์โทร..."
                   className={`${inputClass} mb-1`}
                 />
                 <p className="text-xs text-gray-400 mb-3">
@@ -426,6 +430,7 @@ export default function VisitsClient({
                       className="w-full text-left px-2 py-2.5 hover:bg-gray-50"
                     >
                       <p className="text-sm font-medium text-gray-900">
+                        {p.hn && <span className="mr-2 text-xs font-mono text-gray-400">{p.hn}</span>}
                         {p.name}
                         <span className="ml-2 text-xs text-gray-400">
                           {SPECIES_LABELS[p.species]}{p.breed ? ` · ${p.breed}` : ''}{petAge(p.birth_date) ? ` · ${petAge(p.birth_date)}` : ''}
@@ -522,6 +527,7 @@ export default function VisitsClient({
                   ) : selectedOwner ? (
                     <div className="flex items-center gap-2">
                       <div className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm">
+                        {selectedOwner.hn && <span className="text-gray-400 font-mono mr-2">{selectedOwner.hn}</span>}
                         {selectedOwner.name} <span className="text-gray-400 font-mono">{selectedOwner.phone}</span>
                       </div>
                       <button onClick={() => { setOwnerId(''); setSelectedOwner(null); setOwnerQuery('') }} className="p-2 text-gray-400 hover:text-red-600">
@@ -534,13 +540,14 @@ export default function VisitsClient({
                         type="text"
                         value={ownerQuery}
                         onChange={(e) => setOwnerQuery(e.target.value)}
-                        placeholder="พิมพ์ชื่อ / เบอร์โทรลูกค้า..."
+                        placeholder="พิมพ์ HN / ชื่อ / เบอร์โทรลูกค้า..."
                         className={inputClass}
                       />
                       {ownerMatches.length > 0 && (
                         <div className="absolute z-10 left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg overflow-hidden">
                           {ownerMatches.map((c) => (
                             <button key={c.id} onClick={() => { setOwnerId(c.id); setSelectedOwner(c); setOwnerQuery('') }} className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50">
+                              {c.hn && <span className="text-gray-400 font-mono mr-2">{c.hn}</span>}
                               {c.name} <span className="text-gray-400 font-mono">{c.phone}</span>
                             </button>
                           ))}

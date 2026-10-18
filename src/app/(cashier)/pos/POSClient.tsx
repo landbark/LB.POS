@@ -667,7 +667,10 @@ export default function POSClient({ products, promotions, pointsConfig, cashierI
           {customer && (
             <div className="mt-2 flex items-center justify-between bg-blue-50 rounded-lg px-3 py-2">
               <div>
-                <p className="text-sm font-medium text-gray-900">{customer.name}</p>
+                <p className="text-sm font-medium text-gray-900">
+                  {customer.name}
+                  {customer.hn && <span className="ml-2 text-xs font-mono text-gray-500">HN {customer.hn}</span>}
+                </p>
                 {pointsConfig && <p className="text-xs text-blue-600">{customer.points} แต้ม</p>}
               </div>
               <button

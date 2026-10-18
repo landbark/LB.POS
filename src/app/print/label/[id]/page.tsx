@@ -12,8 +12,8 @@ export default async function LabelPage({ params }: { params: Promise<{ id: stri
       .from('visits')
       .select(`
         id, visit_number, visit_date,
-        pets(name, species),
-        customers(name, phone),
+        pets(name, species, hn),
+        customers(name, phone, hn),
         vet:profiles!visits_vet_id_fkey(name),
         visit_items(
           id, quantity, dosage, dose_amount, frequency, frequency_hours, food_timing, duration_days,

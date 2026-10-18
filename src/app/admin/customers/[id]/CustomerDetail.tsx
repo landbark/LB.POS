@@ -105,7 +105,10 @@ export default function CustomerDetail({
         </Link>
         <div>
           <h1 className="text-2xl font-bold text-gray-900">{customer.name}</h1>
-          <p className="text-sm text-gray-500 font-mono">{customer.phone}</p>
+          <p className="text-sm text-gray-500 font-mono">
+            {customer.hn && <span className="text-gray-700 font-semibold mr-2">HN {customer.hn}</span>}
+            {customer.phone}
+          </p>
         </div>
       </div>
 
@@ -209,7 +212,10 @@ export default function CustomerDetail({
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
             {pets.map((p) => (
               <Link key={p.id} href={`/admin/pets/${p.id}`} className="bg-white rounded-xl border border-gray-100 p-3 hover:border-blue-200 hover:shadow-sm transition-all">
-                <p className="text-sm font-semibold text-gray-900">{p.name}</p>
+                <p className="text-sm font-semibold text-gray-900">
+                  {p.name}
+                  {p.hn && <span className="ml-2 text-xs font-mono font-normal text-gray-400">{p.hn}</span>}
+                </p>
                 <p className="text-xs text-gray-500">
                   {SPECIES_LABELS[p.species]}
                   {p.breed && ` · ${p.breed}`}

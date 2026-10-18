@@ -61,7 +61,8 @@ export default function ConsentView({ pet, store, weight }: { pet: Pet; store: S
 
           {/* ข้อมูลสัตว์ */}
           <div className="mb-3">
-            <p><span className="text-gray-600">ชื่อสัตว์:</span> <input className={field} style={{ width: '220px' }} defaultValue={pet.name} />
+            <p><span className="text-gray-600">HN:</span> <input className={field} style={{ width: '90px' }} defaultValue={pet.hn ?? ''} />
+              <span className="text-gray-600 ml-3">ชื่อสัตว์:</span> <input className={field} style={{ width: '190px' }} defaultValue={pet.name} />
               <span className="text-gray-600 ml-3">น้ำหนัก:</span> <input className={field} style={{ width: '80px' }} defaultValue={weight ? String(weight) : ''} /> กก.</p>
             <p className="mt-1"><span className="text-gray-600">ชนิด/พันธุ์/เพศ/อายุ:</span> <input className={field} style={{ width: '380px' }} defaultValue={petLine} /></p>
             <p className="mt-1"><span className="text-gray-600">สี/ตำหนิ:</span> <input className={field} style={{ width: '300px' }} defaultValue={pet.color ?? ''} />

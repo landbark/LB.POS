@@ -705,7 +705,10 @@ export default function VisitDetail({
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 mb-4">
         <div className="flex items-start justify-between gap-4">
           <div>
-            <p className="text-lg font-semibold text-gray-900">{pet?.name ?? '—'}</p>
+            <p className="text-lg font-semibold text-gray-900">
+              {pet?.name ?? '—'}
+              {pet?.hn && <span className="ml-2 text-sm font-mono font-semibold text-gray-500">HN {pet.hn}</span>}
+            </p>
             <p className="text-sm text-gray-500">
               {pet && SPECIES_LABELS[pet.species]}
               {pet?.breed && ` · ${pet.breed}`}

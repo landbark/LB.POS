@@ -87,7 +87,10 @@ export default function VisitPrintView({ visit, store }: { visit: Visit; store: 
           <div className="grid grid-cols-2 gap-4 mb-4 pb-4 border-b border-gray-200" style={{ fontSize: '0.9em' }}>
             <div>
               <p className="text-gray-500 mb-0.5">สัตว์ป่วย</p>
-              <p className="font-medium">{pet?.name ?? '—'}</p>
+              <p className="font-medium">
+                {pet?.name ?? '—'}
+                {pet?.hn && <span className="ml-2 font-mono text-gray-600" style={{ fontSize: '0.9em' }}>HN {pet.hn}</span>}
+              </p>
               <p className="text-gray-600" style={{ fontSize: '0.9em' }}>
                 {pet && SPECIES_LABELS[pet.species]}
                 {pet?.breed && ` · ${pet.breed}`}

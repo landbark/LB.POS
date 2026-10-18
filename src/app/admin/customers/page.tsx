@@ -18,7 +18,7 @@ export default async function CustomersPage({
   if (term) {
     // escape % และ _ กันคำค้นของผู้ใช้กลายเป็น wildcard
     const like = `%${term.replace(/[%_\\]/g, (c) => `\\${c}`)}%`
-    query = query.or(`name.ilike.${like},phone.ilike.${like}`)
+    query = query.or(`name.ilike.${like},phone.ilike.${like},hn.ilike.${like}`)
   }
 
   const { data: customers } = await query

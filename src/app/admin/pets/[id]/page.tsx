@@ -48,7 +48,10 @@ export default async function PetDetailPage({ params }: { params: Promise<{ id: 
           <ArrowLeft size={18} />
         </Link>
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">{p.name}</h1>
+          <h1 className="text-2xl font-bold text-gray-900">
+            {p.name}
+            {p.hn && <span className="ml-2 align-middle text-sm font-mono font-semibold text-gray-500">HN {p.hn}</span>}
+          </h1>
           <p className="text-sm text-gray-500">{SPECIES_LABELS[p.species]}{detail && ` · ${detail}`}</p>
         </div>
       </div>

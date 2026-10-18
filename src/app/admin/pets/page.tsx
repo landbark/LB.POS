@@ -14,7 +14,7 @@ export default async function PetsPage({
   const supabase = await createClient()
   const term = (q ?? '').trim()
 
-  const columns = '*, customers(id, name, phone)'
+  const columns = '*, customers(id, name, phone, hn)'
   let pets: Pet[] = []
 
   if (term) {
@@ -22,10 +22,10 @@ export default async function PetsPage({
     // เงื่อนไขบนตารางที่ join มาใส่รวมใน .or() เดียวกันไม่ได้ ต้องยิงสองรอบแล้วรวมผล
     const [byPet, byOwner] = await Promise.all([
       supabase.from('pets').select(columns).eq('active', true)
-        .or(`name.ilike.${like},breed.ilike.${like},microchip.ilike.${like}`)
+        .or(`hn.ilike.${like},name.ilike.${like},breed.ilike.${like},microchip.ilike.${like}`)
         .order('created_at', { ascending: false }).limit(PAGE_SIZE),
-      supabase.from('pets').select('*, customers!inner(id, name, phone)').eq('active', true)
-        .or(`name.ilike.${like},phone.ilike.${like}`, { referencedTable: 'customers' })
+      supabase.from('pets').select('*, customers!inner(id, name, phone, hn)').eq('active', true)
+        .or(`name.ilike.${like},phone.ilike.${like},hn.ilike.${like}`, { referencedTable: 'customers' })
         .order('created_at', { ascending: false }).limit(PAGE_SIZE),
     ])
 

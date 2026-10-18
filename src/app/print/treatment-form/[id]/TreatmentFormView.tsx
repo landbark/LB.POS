@@ -59,7 +59,8 @@ export default function TreatmentFormView({ pet, store, weight }: { pet: Pet; st
 
           {/* สัตว์ + เจ้าของ */}
           <div className="mb-3 border border-gray-200 rounded-lg p-3" style={{ fontSize: '0.95em' }}>
-            <p><span className="text-gray-600">ชื่อสัตว์:</span> <input className={field} style={{ width: '200px' }} defaultValue={pet.name} />
+            <p><span className="text-gray-600">HN:</span> <input className={field} style={{ width: '90px' }} defaultValue={pet.hn ?? ''} />
+              <span className="text-gray-600 ml-3">ชื่อสัตว์:</span> <input className={field} style={{ width: '170px' }} defaultValue={pet.name} />
               <span className="text-gray-600 ml-3">น้ำหนัก:</span> <input className={field} style={{ width: '70px' }} defaultValue={weight ? String(weight) : ''} /> กก.</p>
             <p className="mt-1"><span className="text-gray-600">ชนิด/พันธุ์/เพศ/อายุ:</span> <input className={field} style={{ width: '360px' }} defaultValue={petLine} /></p>
             <p className="mt-1"><span className="text-gray-600">เจ้าของ:</span> <input className={field} style={{ width: '220px' }} defaultValue={pet.customers?.name ?? ''} />

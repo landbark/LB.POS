@@ -13,7 +13,7 @@ import { ageAt, petAge } from '@/lib/pets'
 import BreedSelect from '@/components/BreedSelect'
 import { confirmDialog } from '@/lib/confirm'
 
-type OwnerOption = { id: string; name: string; phone: string }
+type OwnerOption = { id: string; name: string; phone: string; hn?: string | null }
 
 const emptyForm = {
   customer_id: '',
@@ -166,6 +166,7 @@ export default function PetsClient({
           {selectedOwner ? (
             <div className="flex items-center gap-2">
               <div className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white">
+                {selectedOwner.hn && <span className="text-gray-400 font-mono mr-2">{selectedOwner.hn}</span>}
                 {selectedOwner.name} <span className="text-gray-400 font-mono">{selectedOwner.phone}</span>
               </div>
               <button onClick={() => { set('customer_id', ''); setSelectedOwner(null); setOwnerQuery('') }} className="p-2 text-gray-400 hover:text-red-600">
@@ -179,7 +180,7 @@ export default function PetsClient({
                 value={ownerQuery}
                 onChange={(e) => setOwnerQuery(e.target.value)}
                 className={inputClass}
-                placeholder="พิมพ์ชื่อ / เบอร์โทรลูกค้า..."
+                placeholder="พิมพ์ HN / ชื่อ / เบอร์โทรลูกค้า..."
               />
               {ownerMatches.length > 0 && (
                 <div className="absolute z-10 left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg overflow-hidden">
@@ -189,6 +190,7 @@ export default function PetsClient({
                       onClick={() => { set('customer_id', c.id); setSelectedOwner(c); setOwnerQuery('') }}
                       className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50"
                     >
+                      {c.hn && <span className="text-gray-400 font-mono mr-2">{c.hn}</span>}
                       {c.name} <span className="text-gray-400 font-mono">{c.phone}</span>
                     </button>
                   ))}
@@ -302,7 +304,7 @@ export default function PetsClient({
 
       {showAdd && formCard}
 
-      <SearchBox placeholder="ค้นหาชื่อสัตว์ / เจ้าของ / เบอร์..." className="mb-4 max-w-xs" />
+      <SearchBox placeholder="ค้นหา HN / ชื่อสัตว์ / เจ้าของ / เบอร์..." className="mb-4 max-w-xs" />
 
       {atLimit && (
         <p className="text-xs text-gray-500 mb-3">
@@ -314,6 +316,7 @@ export default function PetsClient({
         <table className="w-full">
           <thead className="bg-gray-50 border-b border-gray-100">
             <tr>
+              <th className="text-left text-xs font-medium text-gray-500 uppercase px-4 py-3">HN</th>
               <th className="text-left text-xs font-medium text-gray-500 uppercase px-4 py-3">ชื่อ</th>
               <th className="text-left text-xs font-medium text-gray-500 uppercase px-4 py-3">ชนิด / พันธุ์</th>
               <th className="text-left text-xs font-medium text-gray-500 uppercase px-4 py-3">เพศ</th>
@@ -327,10 +330,11 @@ export default function PetsClient({
             {pets.map((p) => (
               editingId === p.id ? (
                 <tr key={p.id}>
-                  <td colSpan={7} className="px-4 py-3">{formCard}</td>
+                  <td colSpan={8} className="px-4 py-3">{formCard}</td>
                 </tr>
               ) : (
                 <tr key={p.id} className="hover:bg-gray-50">
+                  <td className="px-4 py-3 text-sm font-mono text-gray-500 whitespace-nowrap">{p.hn ?? '—'}</td>
                   <td className="px-4 py-3 text-sm font-medium text-gray-900">
                     <Link href={`/admin/pets/${p.id}`} className="hover:text-blue-600">{p.name}</Link>
                     {p.sterilized && (
@@ -380,7 +384,7 @@ export default function PetsClient({
             ))}
             {pets.length === 0 && (
               <tr>
-                <td colSpan={7} className="px-4 py-10 text-center text-sm text-gray-400">
+                <td colSpan={8} className="px-4 py-10 text-center text-sm text-gray-400">
                   {searching ? 'ไม่พบสัตว์เลี้ยงที่ค้นหา' : 'ยังไม่มีสัตว์เลี้ยงในทะเบียน'}
                 </td>
               </tr>

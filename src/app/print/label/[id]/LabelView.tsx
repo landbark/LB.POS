@@ -29,7 +29,7 @@ interface Visit {
   id: string
   visit_number: string
   visit_date: string
-  pets: { name: string; species: string } | null
+  pets: { name: string; species: string; hn: string | null } | null
   customers: { name: string; phone: string | null } | null
   vet: { name: string } | null
   visit_items: Item[]
@@ -140,7 +140,10 @@ export default function LabelView({ visit, store }: { visit: Visit; store: Store
               </div>
 
               <div className="flex justify-between gap-2 text-gray-700 pt-0.5" style={{ fontSize: '7.2pt' }}>
-                <span className="truncate">{t.pet}: <b>{visit.pets?.name ?? '-'}</b></span>
+                <span className="truncate">
+                  {t.pet}: <b>{visit.pets?.name ?? '-'}</b>
+                  {visit.pets?.hn && <span className="ml-1 text-gray-500">{visit.pets.hn}</span>}
+                </span>
                 <span className="truncate">{t.owner}: {visit.customers?.name ?? '-'}</span>
               </div>
 

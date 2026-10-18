@@ -8,12 +8,12 @@ export default async function AppointmentsPage() {
   const [{ data: appointments }, { data: pets }] = await Promise.all([
     supabase
       .from('appointments')
-      .select('*, pets(id, name, species), customers(id, name, phone), vet:profiles!appointments_vet_id_fkey(name)')
+      .select('*, pets(id, name, species, hn), customers(id, name, phone, hn), vet:profiles!appointments_vet_id_fkey(name)')
       .order('scheduled_at')
       .limit(500),
     // รายชื่อตั้งต้นของช่องเลือกสัตว์ — พิมพ์ค้นแล้วค่อยยิงไปค้นที่ server
     // (เดิมดึงสัตว์ทั้งตาราง พอเกิน 1000 แถวจะหายจากช่องเลือกโดยไม่มีสัญญาณ)
-    supabase.from('pets').select('*, customers(id, name, phone)').eq('active', true)
+    supabase.from('pets').select('*, customers(id, name, phone, hn)').eq('active', true)
       .order('created_at', { ascending: false }).limit(12),
   ])
 

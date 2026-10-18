@@ -195,6 +195,8 @@ export interface ProductLot {
 export interface Customer {
   id: string
   name: string
+  /** เลข HN เจ้าของ "YY####" (ปี พ.ศ. 2 หลัก + ลำดับในปีนั้น) — DB ออกให้ตอน insert */
+  hn: string | null
   phone: string
   points: number
   total_spent: number
@@ -228,6 +230,8 @@ export interface Breed {
 export interface Pet {
   id: string
   customer_id: string
+  /** เลข HN สัตว์ "YY####-N" = HN เจ้าของ + ลำดับสัตว์ของเจ้าของคนนั้น */
+  hn: string | null
   name: string
   species: PetSpecies
   breed: string | null
