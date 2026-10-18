@@ -237,6 +237,7 @@ export default function VisitsClient({
         || (v.customers?.name ?? '').toLowerCase().includes(q)
         || (v.customers?.phone ?? '').includes(q)
         || (v.diagnosis ?? '').toLowerCase().includes(q)
+        || (v.healthy && ('healthy สุขภาพปกติ'.includes(q)))
       return matchStatus && matchQuery
     })
     .slice()
@@ -392,7 +393,14 @@ export default function VisitsClient({
                   {v.pets && <span className="block text-xs text-gray-400">{SPECIES_LABELS[v.pets.species]}</span>}
                 </td>
                 <td className="px-4 py-3 text-sm text-gray-600">{v.customers?.name ?? '—'}</td>
-                <td className="px-4 py-3 text-sm text-gray-600 max-w-[220px] truncate">{v.diagnosis || '—'}</td>
+                <td className="px-4 py-3 text-sm text-gray-600 max-w-[220px] truncate">
+                  {v.healthy && (
+                    <span className="mr-1.5 inline-flex rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">
+                      Healthy
+                    </span>
+                  )}
+                  {v.diagnosis || (v.healthy ? '' : '—')}
+                </td>
                 <td className="px-4 py-3 text-sm text-gray-600">{v.vet?.name ?? '—'}</td>
                 <td className="px-4 py-3 text-center">
                   <span className={`inline-flex text-xs px-2 py-0.5 rounded-full font-medium ${STATUS_STYLE[v.status]}`}>
