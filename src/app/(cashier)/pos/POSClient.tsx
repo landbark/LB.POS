@@ -832,6 +832,13 @@ export default function POSClient({ products, promotions, pointsConfig, cashierI
 
         {/* Summary + Checkout */}
         <div className="border-t border-gray-100 p-3 space-y-2">
+          {/* จำนวนสินค้า — เดิมมีให้ดูแค่บนมือถือ จอใหญ่ที่หน้าร้านใช้จริงไม่มีให้นับทานกับของตรงหน้า */}
+          <div className="flex justify-between text-sm text-gray-500">
+            <span>จำนวนสินค้า</span>
+            <span className="font-medium text-gray-700">
+              {cart.length} รายการ · {cartCount} ชิ้น
+            </span>
+          </div>
           <div className="flex justify-between text-sm text-gray-500">
             <span>ราคาก่อนลด</span>
             <span>฿{subtotal.toFixed(2)}</span>
