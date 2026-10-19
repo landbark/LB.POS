@@ -39,6 +39,10 @@ export async function proxy(request: NextRequest) {
     || pathname.startsWith('/print/receipt')
     // favicon โหลดก่อนล็อกอิน (หน้า login ก็ต้องเห็นไอคอน)
     || pathname === '/api/favicon'
+    // Chrome ดึง manifest/service worker แบบไม่ส่งคุกกี้มาด้วย — ถ้าเด้งไป /login
+    // จะอ่านไม่ออกแล้วขึ้นว่า "This app cannot be installed"
+    || pathname === '/manifest.webmanifest'
+    || pathname === '/sw.js'
     // Vercel Cron ไม่มี session พนักงาน — route เช็ค CRON_SECRET เอง
     || pathname.startsWith('/api/cron')
     // Telegram เรียก webhook เอง (ไม่มี session) — route เช็ค secret token header เอง

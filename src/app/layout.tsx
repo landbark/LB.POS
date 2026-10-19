@@ -3,6 +3,7 @@ import { Geist } from "next/font/google";
 import { Toaster } from "react-hot-toast";
 import TopLoader from "@/components/TopLoader";
 import ConfirmHost from "@/components/ConfirmHost";
+import RegisterSW from "@/components/RegisterSW";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -35,6 +36,7 @@ export default function RootLayout({
         <TopLoader />
         <Toaster position="top-center" />
         <ConfirmHost />
+        <RegisterSW />
         {children}
       </body>
     </html>
