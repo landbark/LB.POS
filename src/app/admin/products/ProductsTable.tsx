@@ -102,7 +102,8 @@ export default function ProductsTable({ products }: { products: Product[] }) {
           </label>
         )}
         <p className="text-sm text-gray-500 shrink-0">
-          {query ? (
+          {/* ตัวกรอง VAT กับ "ซ่อนที่งดจำหน่าย" ก็ต้องนับใหม่ ไม่ใช่โชว์ยอดเต็มค้างไว้จนดูเหมือนกรองไม่ติด */}
+          {query || vatFilter || hideStopped ? (
             <>
               พบ <span className="font-semibold text-gray-900">{count(found.length)}</span> จาก{' '}
               {count(products.length)} รายการ
