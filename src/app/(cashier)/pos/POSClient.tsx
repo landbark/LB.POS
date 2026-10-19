@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, useDeferredValue } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Search, X, Plus, Minus, ShoppingCart, User, MonitorPlay, Stethoscope, ScanBarcode } from 'lucide-react'
@@ -26,6 +26,12 @@ interface Props {
 const SCAN_MIN_LEN = 4
 
 const isScannable = (code: string | null | undefined) => /^\d{8,14}$/.test((code ?? '').trim())
+
+const matchesQuery = (p: Product, q: string) =>
+  !q ||
+  p.name.toLowerCase().includes(q) ||
+  (p.sku != null && p.sku.toLowerCase().includes(q)) ||
+  (p.barcode != null && p.barcode.toLowerCase().includes(q))
 
 // จำนวนสินค้าที่วาดบนกริด — วาดครบสองพันตัวทำให้ทุกตัวอักษรที่พิมพ์หน่วงเป็นสิบ ms
 const GRID_LIMIT = 60
@@ -108,16 +114,15 @@ export default function POSClient({ products, promotions, pointsConfig, cashierI
     ).values()
   )
 
-  const q = search.trim().toLowerCase()
+  // กริดตามหลังช่องพิมพ์ได้ — เครื่องยิงบาร์โค้ดพ่นตัวอักษรรัวเป็นสิบตัวในเสี้ยววินาที
+  // ถ้ากรองสินค้าสองพันตัวแล้ววาดการ์ดใหม่ทุกตัวอักษร ตัวที่พิมพ์มาทีหลังจะตกหล่น
+  // (React คืนค่าใน input กลับเป็น state เก่าระหว่างที่ยัง render ไม่ทัน) — ยิงแล้วไม่ติดเพราะแบบนี้
+  const deferredSearch = useDeferredValue(search)
+  const q = deferredSearch.trim().toLowerCase()
   const filtered = products.filter((p) => {
-    const matchSearch =
-      !q ||
-      p.name.toLowerCase().includes(q) ||
-      (p.sku && p.sku.toLowerCase().includes(q)) ||
-      (p.barcode && p.barcode.toLowerCase().includes(q))
     const matchCategory = !categoryFilter || (p.categories as any)?.name === categoryFilter
     // สินค้าสต็อค 0 ยังโชว์ — ของบนชั้นมักมีจริงแม้ยอดในระบบหมด ขายได้แล้วให้สต็อคติดลบไว้ฟ้องว่าต้องนับใหม่
-    return matchSearch && matchCategory
+    return matchesQuery(p, q) && matchCategory
   })
 
   // สแกนบาร์โค้ดเป็นหลัก — ของที่ยิงไม่ได้คือของที่ต้องกดเลือกเอง เลยดันขึ้นมาก่อน
@@ -399,7 +404,9 @@ export default function POSClient({ products, promotions, pointsConfig, cashierI
 
   // Enter ในช่องค้นหา: บาร์โค้ด/รหัสสินค้าตรง หรือผลค้นหาเหลือตัวเดียว → เข้าตะกร้าทันที
   function handleSearchEnter() {
-    const text = search.trim()
+    // อ่านจากช่องค้นหาโดยตรง ไม่ใช่จาก state — ตอนยิงรัวๆ state ยังตามมาไม่ครบ
+    // แต่ค่าใน input ครบแล้วเสมอ (เคยยิงแล้วขึ้น "ไม่พบสินค้า" ทั้งที่ยิงถูก เพราะอ่าน state เก่า)
+    const text = (searchRef.current?.value ?? search).trim()
     if (!text) return
 
     const scan = findScannedCode(text)
@@ -411,11 +418,25 @@ export default function POSClient({ products, promotions, pointsConfig, cashierI
       return
     }
 
-    if (filtered.length === 1) {
-      addToCart(filtered[0])
+    // หาคู่จากข้อความสดในช่อง ไม่ใช้ผลกรองของกริดที่ตั้งใจให้ตามหลัง
+    const live = text.toLowerCase()
+    const matches = products.filter(
+      (p) => matchesQuery(p, live) && (!categoryFilter || (p.categories as any)?.name === categoryFilter),
+    )
+    if (matches.length === 1) {
+      addToCart(matches[0])
       setSearch('')
-    } else if (filtered.length === 0) {
-      toast.error('ไม่พบสินค้า')
+    } else if (matches.length === 0) {
+      // ยิงบาร์โค้ดที่ไม่มีในระบบ: ต้องล้างช่องทิ้ง ไม่งั้นรหัสที่ยิงค้างอยู่ แล้วครั้งต่อไป
+      // จะไปต่อท้ายของเดิมกลายเป็นข้อความมั่วที่ไม่มีวันตรงกับอะไรเลย — ยิงกี่ทีก็ไม่ติด
+      const scanned = text.match(/\d{8,14}$/)?.[0]
+      if (scanned) {
+        toast.error(`ไม่พบสินค้าที่ใช้บาร์โค้ด ${scanned}`)
+        setSearch('')
+        searchRef.current?.focus()
+      } else {
+        toast.error('ไม่พบสินค้า')
+      }
     }
   }
 
