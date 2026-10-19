@@ -405,8 +405,8 @@ export default function PaymentModal({
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-2xl w-full max-w-sm shadow-2xl max-h-[90dvh] overflow-y-auto">
-        <div className="sticky top-0 bg-white rounded-t-2xl flex items-center justify-between p-4 border-b border-gray-100">
+      <div className="bg-white rounded-2xl w-full max-w-sm shadow-2xl max-h-[92dvh] flex flex-col overflow-hidden">
+        <div className="shrink-0 bg-white rounded-t-2xl flex items-center justify-between px-4 py-3 border-b border-gray-100">
           <h2 className="font-bold text-gray-900">
             {writeoff ? 'ตัดสต็อกออก' : online ? 'บันทึกออเดอร์ออนไลน์' : 'ชำระเงิน'}
           </h2>
@@ -415,7 +415,7 @@ export default function PaymentModal({
           </button>
         </div>
 
-        <div className="p-4 space-y-4">
+        <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-3">
           {/* ช่องทางขาย — ออนไลน์เงินเข้าผ่านแพลตฟอร์ม ไม่ใช่เงินสดหน้าร้าน */}
           <div>
             <p className="text-sm font-medium text-gray-700 mb-2">ช่องทางขาย</p>
@@ -800,15 +800,15 @@ export default function PaymentModal({
           </div>
         </div>
 
-        <div className="p-4 border-t border-gray-100">
+        <div className="shrink-0 p-3 border-t border-gray-100 bg-white">
           {changeDue !== null && (
-            <div className={`flex items-center justify-between rounded-xl px-4 py-2.5 mb-3 ${
+            <div className={`flex items-center justify-between rounded-xl px-4 py-2 mb-2 ${
               changeDue > 0 ? 'bg-blue-50 border-2 border-blue-200' : 'bg-gray-50 border-2 border-gray-100'
             }`}>
               <span className={`text-base font-semibold ${changeDue > 0 ? 'text-blue-900' : 'text-gray-500'}`}>
                 เงินทอน
               </span>
-              <span className={`text-3xl font-extrabold tabular-nums ${changeDue > 0 ? 'text-blue-600' : 'text-gray-400'}`}>
+              <span className={`text-2xl font-extrabold tabular-nums ${changeDue > 0 ? 'text-blue-600' : 'text-gray-400'}`}>
                 ฿{changeDue.toFixed(2)}
               </span>
             </div>
