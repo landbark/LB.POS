@@ -100,5 +100,6 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)'],
+  // ไฟล์นิ่งไม่ต้องเช็คล็อกอิน — ทุก request ที่เข้า proxy เสียเวลาไปคุยกับ Supabase Auth หนึ่งรอบ
+  matcher: ['/((?!_next/static|_next/image|favicon.ico|manifest.webmanifest|sw.js|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|woff2?)$).*)'],
 }

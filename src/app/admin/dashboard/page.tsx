@@ -17,23 +17,13 @@ interface VaxRow {
 export default async function DashboardPage() {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
-  const { data: me } = await supabase.from('profiles').select('role').eq('id', user?.id ?? '').maybeSingle()
-
-  // คำขอเข้าใช้งานที่รอเจ้าของร้านอนุมัติ (คนที่ล็อกอิน Google เข้ามาเอง)
-  const { data: staffRequests } = me?.role === 'admin'
-    ? await supabase
-        .from('profiles')
-        .select('id, name, email, created_at')
-        .eq('active', false)
-        .is('rejected_at', null)
-        .order('created_at', { ascending: false })
-    : { data: [] }
   const todayThai = thaiToday()
   const today = todayThai
   // ช่วง "วันนี้" ตามเวลาไทย → UTC ไว้ query คอลัมน์ timestamptz (created_at, scheduled_at)
   const { startISO: dayStartUtc, endISO: dayEndUtcISO } = thaiDayRange(todayThai)
 
   const [
+    { data: me },
     { count: productCount },
     { data: todayTx },
     { data: lowStockLots },
@@ -43,6 +33,8 @@ export default async function DashboardPage() {
     vaxRows,
     { data: openOrders },
   ] = await Promise.all([
+    // ยิงพร้อมกันทั้งหมด — เดิมรอ profile เสร็จก่อนค่อยเริ่มชุดนี้ เสียเวลาไป-กลับ DB ฟรีๆ หนึ่งรอบ
+    supabase.from('profiles').select('role').eq('id', user?.id ?? '').maybeSingle(),
     supabase.from('products').select('*', { count: 'exact', head: true }).eq('active', true),
     supabase.from('transactions').select('total').gte('created_at', dayStartUtc).lt('created_at', dayEndUtcISO),
     supabase.from('product_lots')
@@ -79,6 +71,16 @@ export default async function DashboardPage() {
       .select('status')
       .in('status', ['pending_payment', 'awaiting_confirm', 'confirmed']),
   ])
+
+  // คำขอเข้าใช้งานที่รอเจ้าของร้านอนุมัติ (คนที่ล็อกอิน Google เข้ามาเอง) — เฉพาะแอดมินถึงจะดึง
+  const { data: staffRequests } = me?.role === 'admin'
+    ? await supabase
+        .from('profiles')
+        .select('id, name, email, created_at')
+        .eq('active', false)
+        .is('rejected_at', null)
+        .order('created_at', { ascending: false })
+    : { data: [] }
 
   const orderCounts = {
     awaiting: (openOrders ?? []).filter((o) => o.status === 'awaiting_confirm').length,
