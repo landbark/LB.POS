@@ -275,7 +275,7 @@ export default function ReceiveClient({
               <tr className="text-xs font-medium text-gray-500 uppercase">
                 <th className="text-left pb-2 pr-2 min-w-40">สินค้า</th>
                 <th className="text-right pb-2 pr-2 w-20">สั่ง</th>
-                <th className="text-left pb-2 pr-2 w-24">รับจริง</th>
+                <th className="text-left pb-2 pr-2 w-32">รับจริง</th>
                 <th className="text-left pb-2 pr-2 w-28">ทุน/หน่วย</th>
                 <th className="text-left pb-2 pr-2 w-32">LOT (ระบบ)</th>
                 <th className="text-left pb-2 pr-2 w-32">LOT บริษัท</th>
@@ -304,11 +304,14 @@ export default function ReceiveClient({
                       {r.itemId ? `${r.orderedQty} ${r.unit}` : <span className="text-amber-600">ไม่ได้สั่ง</span>}
                     </td>
                     <td className="pr-2 py-1.5">
-                      <input
-                        type="number" min="0" value={r.receivedQty}
-                        onChange={(e) => setRow(i, 'receivedQty', e.target.value)}
-                        className={`${inputClass} ${short ? 'border-amber-400 bg-amber-50' : ''}`}
-                      />
+                      <div className="flex items-center gap-1.5">
+                        <input
+                          type="number" min="0" value={r.receivedQty}
+                          onChange={(e) => setRow(i, 'receivedQty', e.target.value)}
+                          className={`${inputClass} ${short ? 'border-amber-400 bg-amber-50' : ''}`}
+                        />
+                        <span className="shrink-0 text-xs text-gray-500">{r.unit}</span>
+                      </div>
                     </td>
                     <td className="pr-2 py-1.5">
                       <input

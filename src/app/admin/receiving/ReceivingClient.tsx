@@ -226,7 +226,7 @@ export default function ReceivingClient({ suppliers, products, purchases }: Prop
             <thead>
               <tr className="text-xs font-medium text-gray-500 uppercase">
                 <th className="text-left pb-2 pr-2 min-w-56">สินค้า</th>
-                <th className="text-left pb-2 pr-2 w-24">จำนวน</th>
+                <th className="text-left pb-2 pr-2 w-32">จำนวน</th>
                 <th className="text-left pb-2 pr-2 w-28">ทุน/หน่วย</th>
                 <th className="text-right pb-2 w-24">รวม</th>
                 <th className="pb-2 w-8"></th>
@@ -237,7 +237,7 @@ export default function ReceivingClient({ suppliers, products, purchases }: Prop
                 const rowTotal = (parseFloat(it.unit_cost) || 0) * (parseInt(it.quantity) || 0)
                 return (
                   <tr key={i}>
-                    <td className="pr-2 py-1.5">
+                    <td className="pr-2 py-1.5 align-top">
                       <ProductPicker
                         products={sortedProducts}
                         value={it.product_id}
@@ -249,16 +249,21 @@ export default function ReceivingClient({ suppliers, products, purchases }: Prop
                         return p ? <p className="mt-0.5 pl-1"><StockBadge product={p} /></p> : null
                       })()}
                     </td>
-                    <td className="pr-2 py-1.5">
-                      <input type="number" min="1" value={it.quantity} onChange={(e) => setItem(i, 'quantity', e.target.value)} className={inputClass} placeholder="0" />
+                    <td className="pr-2 py-1.5 align-top">
+                      <div className="flex items-center gap-1.5">
+                        <input type="number" min="1" value={it.quantity} onChange={(e) => setItem(i, 'quantity', e.target.value)} className={inputClass} placeholder="0" />
+                        <span className="shrink-0 text-xs text-gray-500">
+                          {products.find((x) => x.id === it.product_id)?.unit ?? ''}
+                        </span>
+                      </div>
                     </td>
-                    <td className="pr-2 py-1.5">
+                    <td className="pr-2 py-1.5 align-top">
                       <input type="number" min="0" step="0.01" value={it.unit_cost} onChange={(e) => setItem(i, 'unit_cost', e.target.value)} className={inputClass} placeholder="0.00" />
                     </td>
-                    <td className="py-1.5 text-sm text-right font-medium text-gray-900">
+                    <td className="py-1.5 pt-4 align-top text-sm text-right font-medium text-gray-900">
                       {rowTotal > 0 ? `฿${rowTotal.toFixed(2)}` : '—'}
                     </td>
-                    <td className="py-1.5 text-right">
+                    <td className="py-1.5 pt-3 align-top text-right">
                       <button onClick={() => removeRow(i)} className="p-1 text-gray-300 hover:text-red-500">
                         <Trash2 size={14} />
                       </button>
