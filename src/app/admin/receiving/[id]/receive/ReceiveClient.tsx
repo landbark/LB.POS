@@ -4,8 +4,9 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
-import { PackageCheck, ArrowLeft } from 'lucide-react'
+import { PackageCheck, ArrowLeft, Plus, Trash2 } from 'lucide-react'
 import toast from 'react-hot-toast'
+import { ProductPicker, type ProductOption } from '../../pickers'
 
 interface ReceiveItem {
   id: string
@@ -24,7 +25,9 @@ interface ReceivePurchase {
 }
 
 interface RowState {
-  itemId: string
+  // null = รายการที่เพิ่มตอนรับของ (ของมาเกินใบสั่งซื้อ) ยังไม่มีแถวใน purchase_items
+  itemId: string | null
+  productId: string | null
   productName: string
   unit: string
   orderedQty: number
@@ -46,12 +49,21 @@ function defaultLot(): string {
 
 const inputClass = 'w-full border border-gray-300 rounded-lg px-2.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500'
 
-export default function ReceiveClient({ purchase, receivedBy }: { purchase: ReceivePurchase; receivedBy: string }) {
+export default function ReceiveClient({
+  purchase, receivedBy, products,
+}: {
+  purchase: ReceivePurchase
+  receivedBy: string
+  products: ProductOption[]
+}) {
   const router = useRouter()
   const [loading, setLoading] = useState(false)
+  // รายการที่ถูกลบออกตอนรับของ — ลบออกจากใบสั่งซื้อตอนกดยืนยัน
+  const [removedIds, setRemovedIds] = useState<string[]>([])
   const [rows, setRows] = useState<RowState[]>(
     purchase.purchase_items.map((it) => ({
       itemId: it.id,
+      productId: it.product_id,
       productName: it.products?.name ?? 'สินค้า (ถูกลบแล้ว)',
       unit: it.products?.unit ?? '',
       orderedQty: it.quantity,
@@ -69,6 +81,41 @@ export default function ReceiveClient({ purchase, receivedBy }: { purchase: Rece
     setRows(next)
   }
 
+  // ของมาเกินใบสั่งซื้อ — เพิ่มเข้าใบนี้ได้เลย ไม่ต้องเปิดใบใหม่
+  function addRow() {
+    setRows([...rows, {
+      itemId: null,
+      productId: null,
+      productName: '',
+      unit: '',
+      orderedQty: 0,
+      receivedQty: '',
+      unitCost: '',
+      lotNumber: defaultLot(),
+      supplierLot: '',
+      expiryDate: '',
+    }])
+  }
+
+  function pickProduct(i: number, id: string) {
+    const p = products.find((x) => x.id === id)
+    const next = [...rows]
+    next[i] = {
+      ...next[i],
+      productId: id,
+      productName: p?.name ?? '',
+      unit: p?.unit ?? '',
+      unitCost: next[i].unitCost || (p?.cost != null ? String(p.cost) : ''),
+    }
+    setRows(next)
+  }
+
+  function removeRow(i: number) {
+    const row = rows[i]
+    if (row.itemId) setRemovedIds([...removedIds, row.itemId])
+    setRows(rows.filter((_, idx) => idx !== i))
+  }
+
   const totalReceived = rows.reduce((sum, r) => sum + (parseInt(r.receivedQty) || 0), 0)
   const totalCost = rows.reduce(
     (sum, r) => sum + ((parseInt(r.receivedQty) || 0) * (parseFloat(r.unitCost) || 0)),
@@ -77,8 +124,51 @@ export default function ReceiveClient({ purchase, receivedBy }: { purchase: Rece
   const hasShortfall = rows.some((r) => (parseInt(r.receivedQty) || 0) < r.orderedQty)
 
   async function confirm() {
+    if (rows.some((r) => !r.productId)) {
+      toast.error('ยังมีแถวที่ยังไม่ได้เลือกสินค้า')
+      return
+    }
     setLoading(true)
     const supabase = createClient()
+
+    // ถอดรายการที่ของไม่มาออกจากใบก่อน (กดถังขยะไว้)
+    if (removedIds.length > 0) {
+      const { error } = await supabase.from('purchase_items').delete().in('id', removedIds)
+      if (error) {
+        toast.error('ลบรายการไม่สำเร็จ: ' + error.message)
+        setLoading(false)
+        return
+      }
+    }
+
+    // รายการที่เพิ่งเพิ่มตอนรับของ ต้องมีแถวในใบสั่งซื้อก่อน ถึงจะอ้างอิงกันได้ทีหลัง
+    const added = rows.filter((r) => !r.itemId && r.productId)
+    if (added.length > 0) {
+      const { data: newItems, error } = await supabase
+        .from('purchase_items')
+        .insert(added.map((r) => ({
+          purchase_id: purchase.id,
+          product_id: r.productId,
+          quantity: parseInt(r.receivedQty) || 1,
+          unit_cost: parseFloat(r.unitCost) || 0,
+        })))
+        .select('id, product_id')
+      if (error || !newItems) {
+        toast.error('เพิ่มรายการไม่สำเร็จ: ' + (error?.message ?? ''))
+        setLoading(false)
+        return
+      }
+      // จับคู่ id ที่เพิ่งได้กลับเข้าแถว — เทียบจาก product_id ไม่พึ่งลำดับที่ฐานข้อมูลคืนมา
+      const byProduct = new Map<string, string[]>()
+      for (const it of newItems) {
+        const list = byProduct.get(it.product_id) ?? []
+        list.push(it.id)
+        byProduct.set(it.product_id, list)
+      }
+      for (const r of added) {
+        r.itemId = byProduct.get(r.productId!)?.shift() ?? null
+      }
+    }
 
     const toReceive = rows.filter((r) => (parseInt(r.receivedQty) || 0) > 0)
 
@@ -87,10 +177,9 @@ export default function ReceiveClient({ purchase, receivedBy }: { purchase: Rece
         .from('product_lots')
         .insert(
           toReceive.map((r) => {
-            const item = purchase.purchase_items.find((pi) => pi.id === r.itemId)!
             const qty = parseInt(r.receivedQty)
             return {
-              product_id: item.product_id,
+              product_id: r.productId,
               lot_number: r.lotNumber.trim() || null,
               supplier_lot_number: r.supplierLot.trim() || null,
               expiry_date: r.expiryDate || null,
@@ -121,6 +210,7 @@ export default function ReceiveClient({ purchase, receivedBy }: { purchase: Rece
     }
 
     for (const r of rows) {
+      if (!r.itemId) continue
       await supabase
         .from('purchase_items')
         .update({
@@ -176,7 +266,7 @@ export default function ReceiveClient({ purchase, receivedBy }: { purchase: Rece
 
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
         <p className="text-sm text-gray-500 mb-3">
-          ถ้าของมาไม่ครบ แก้ช่อง &quot;รับจริง&quot; ให้ตรงกับที่ได้รับ ส่วนที่ขาดจะถือว่าไม่ได้รับ (ใบสั่งซื้อจะปิดทันทีหลังยืนยัน)
+          ถ้าของมาไม่ครบ แก้ช่อง &quot;รับจริง&quot; ให้ตรงกับที่ได้รับ · ของไม่มาเลยกดถังขยะถอดออกได้ · ของมาเกินใบกด &quot;เพิ่มรายการที่ไม่ได้สั่ง&quot; (ใบสั่งซื้อจะปิดทันทีหลังยืนยัน)
         </p>
 
         <div className="overflow-x-auto">
@@ -190,7 +280,8 @@ export default function ReceiveClient({ purchase, receivedBy }: { purchase: Rece
                 <th className="text-left pb-2 pr-2 w-32">LOT (ระบบ)</th>
                 <th className="text-left pb-2 pr-2 w-32">LOT บริษัท</th>
                 <th className="text-left pb-2 pr-2 w-36">วันหมดอายุ</th>
-                <th className="text-right pb-2 w-24">รวม</th>
+                <th className="text-right pb-2 pr-2 w-24">รวม</th>
+                <th className="pb-2 w-8"></th>
               </tr>
             </thead>
             <tbody>
@@ -198,9 +289,20 @@ export default function ReceiveClient({ purchase, receivedBy }: { purchase: Rece
                 const rowTotal = (parseInt(r.receivedQty) || 0) * (parseFloat(r.unitCost) || 0)
                 const short = (parseInt(r.receivedQty) || 0) < r.orderedQty
                 return (
-                  <tr key={r.itemId}>
-                    <td className="pr-2 py-1.5 text-sm text-gray-900">{r.productName}</td>
-                    <td className="pr-2 py-1.5 text-sm text-right text-gray-500">{r.orderedQty} {r.unit}</td>
+                  <tr key={r.itemId ?? `new-${i}`}>
+                    <td className="pr-2 py-1.5 text-sm text-gray-900">
+                      {r.itemId ? r.productName : (
+                        <ProductPicker
+                          products={products}
+                          value={r.productId ?? ''}
+                          onChange={(id) => pickProduct(i, id)}
+                          supplierId=""
+                        />
+                      )}
+                    </td>
+                    <td className="pr-2 py-1.5 text-sm text-right text-gray-500">
+                      {r.itemId ? `${r.orderedQty} ${r.unit}` : <span className="text-amber-600">ไม่ได้สั่ง</span>}
+                    </td>
                     <td className="pr-2 py-1.5">
                       <input
                         type="number" min="0" value={r.receivedQty}
@@ -224,8 +326,17 @@ export default function ReceiveClient({ purchase, receivedBy }: { purchase: Rece
                     <td className="pr-2 py-1.5">
                       <input type="date" value={r.expiryDate} onChange={(e) => setRow(i, 'expiryDate', e.target.value)} className={inputClass} />
                     </td>
-                    <td className="py-1.5 text-sm text-right font-medium text-gray-900">
+                    <td className="pr-2 py-1.5 text-sm text-right font-medium text-gray-900">
                       {rowTotal > 0 ? `฿${rowTotal.toFixed(2)}` : '—'}
+                    </td>
+                    <td className="py-1.5 text-right">
+                      <button
+                        onClick={() => removeRow(i)}
+                        title="ถอดรายการนี้ออกจากใบสั่งซื้อ"
+                        className="p-1 text-gray-300 hover:text-red-500"
+                      >
+                        <Trash2 size={14} />
+                      </button>
                     </td>
                   </tr>
                 )
@@ -233,6 +344,10 @@ export default function ReceiveClient({ purchase, receivedBy }: { purchase: Rece
             </tbody>
           </table>
         </div>
+
+        <button onClick={addRow} className="flex items-center gap-1.5 text-sm text-blue-600 hover:text-blue-700 font-medium mt-2">
+          <Plus size={14} /> เพิ่มรายการที่ไม่ได้สั่ง
+        </button>
 
         <div className="flex items-center justify-between mt-4 pt-4 border-t border-gray-100">
           <p className="text-sm text-gray-500">
