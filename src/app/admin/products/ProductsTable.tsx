@@ -3,6 +3,7 @@
 import { useMemo, useState } from 'react'
 import { Search, X } from 'lucide-react'
 import ProductRow from './ProductRow'
+import { isVatApplicable } from '@/lib/vat'
 import type { Product } from '@/lib/types'
 
 // แสดงทีละชุด — ร้านมีสินค้าสองพันกว่าตัว วาดทั้งตารางทีเดียวหน้าหนืด
@@ -17,6 +18,8 @@ const PAGE = 50
 export default function ProductsTable({ products }: { products: Product[] }) {
   const [query, setQuery] = useState('')
   const [hideStopped, setHideStopped] = useState(false)
+  // '' = ทุกตัว, 'yes' = เฉพาะที่เข้าข่าย VAT, 'no' = เฉพาะที่ไม่เข้าข่าย
+  const [vatFilter, setVatFilter] = useState<'' | 'yes' | 'no'>('')
   const [shown, setShown] = useState(PAGE)
 
   const haystacks = useMemo(
@@ -37,13 +40,17 @@ export default function ProductsTable({ products }: { products: Product[] }) {
 
   const found = useMemo(() => {
     const terms = query.trim().toLowerCase().split(/\s+/).filter(Boolean)
-    const pool = hideStopped ? products.filter((p) => p.active) : products
+    let pool = hideStopped ? products.filter((p) => p.active) : products
+    if (vatFilter) {
+      const want = vatFilter === 'yes'
+      pool = pool.filter((p) => isVatApplicable(p) === want)
+    }
     if (terms.length === 0) return pool
     return pool.filter((p) => {
       const haystack = haystacks.get(p.id) ?? ''
       return terms.every((t) => haystack.includes(t))
     })
-  }, [products, haystacks, query, hideStopped])
+  }, [products, haystacks, query, hideStopped, vatFilter])
 
   function search(value: string) {
     setQuery(value)
@@ -74,6 +81,15 @@ export default function ProductsTable({ products }: { products: Product[] }) {
             </button>
           )}
         </div>
+        <select
+          value={vatFilter}
+          onChange={(e) => { setVatFilter(e.target.value as '' | 'yes' | 'no'); setShown(PAGE) }}
+          className="shrink-0 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+        >
+          <option value="">VAT: ทั้งหมด</option>
+          <option value="yes">เฉพาะที่มี VAT</option>
+          <option value="no">เฉพาะที่ไม่มี VAT</option>
+        </select>
         {stoppedCount > 0 && (
           <label className="flex items-center gap-2 text-sm text-gray-600 shrink-0">
             <input

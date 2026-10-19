@@ -9,6 +9,13 @@ import type { StoreSettings } from '@/lib/types'
 // เกณฑ์จดทะเบียน VAT ตามกฎหมาย: รายรับจากสินค้า/บริการที่อยู่ในบังคับ VAT เกิน 1.8 ล้านบาทต่อปี
 const VAT_THRESHOLD = 1_800_000
 
+export interface DetailRow {
+  name: string
+  vat: boolean
+  qty: number
+  amount: number
+}
+
 interface MonthRow {
   month: number
   vat_sales: number
@@ -25,12 +32,16 @@ export default function VatReportClient({
   months,
   store,
   loadError,
+  month,
+  detail,
 }: {
   year: number
   currentYear: number
   months: MonthRow[]
   store: StoreSettings | null
   loadError: string | null
+  month: number | null
+  detail: DetailRow[]
 }) {
   const router = useRouter()
 
@@ -171,8 +182,19 @@ export default function VatReportClient({
           </thead>
           <tbody className="divide-y divide-gray-50">
             {rows.map((r) => (
-              <tr key={r.month} className={r.bills === 0 ? 'text-gray-300' : ''}>
-                <td className="px-4 py-2.5 text-sm">{MONTH_TH[r.month - 1]}</td>
+              <tr
+                key={r.month}
+                onClick={() => r.bills > 0 && router.push(`/admin/reports/vat?year=${year}${month === r.month ? '' : `&month=${r.month}`}`)}
+                className={`${r.bills === 0 ? 'text-gray-300' : 'cursor-pointer hover:bg-gray-50'} ${month === r.month ? 'bg-blue-50' : ''}`}
+              >
+                <td className="px-4 py-2.5 text-sm">
+                  {MONTH_TH[r.month - 1]}
+                  {r.bills > 0 && (
+                    <span className="ml-2 text-xs text-blue-600">
+                      {month === r.month ? 'ซ่อนรายละเอียด' : 'ดูรายละเอียด'}
+                    </span>
+                  )}
+                </td>
                 <td className="px-4 py-2.5 text-sm text-right font-medium">{money(r.vat)}</td>
                 <td className="px-4 py-2.5 text-sm text-right">{money(r.nonVat)}</td>
                 <td className="px-4 py-2.5 text-sm text-right">{money(r.vat + r.nonVat)}</td>
@@ -191,6 +213,73 @@ export default function VatReportClient({
           </tfoot>
         </table>
       </div>
+
+      {month && (
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden mt-6">
+          <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between gap-2">
+            <h2 className="font-semibold text-gray-900">
+              รายละเอียด {MONTH_TH[month - 1]} {year}
+              <span className="ml-2 text-xs font-normal text-gray-400">{detail.length} รายการ</span>
+            </h2>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => downloadCsv(
+                  [
+                    [`รายละเอียดยอดขายแยก VAT ${MONTH_TH[month - 1]} ${year} — ${store?.name ?? 'LANDBARK'}`],
+                    ['สินค้า', 'กลุ่ม VAT', 'จำนวน', 'ยอดขาย'],
+                    ...detail.map((d) => [d.name, d.vat ? 'มี VAT' : 'ไม่มี VAT', String(d.qty), d.amount.toFixed(2)]),
+                  ],
+                  `landbark-vat-${year}-${String(month).padStart(2, '0')}.csv`,
+                )}
+                className="flex items-center gap-1.5 text-xs font-medium text-gray-600 hover:text-gray-900 border border-gray-200 rounded-lg px-2.5 py-1.5"
+              >
+                <Download size={13} /> CSV
+              </button>
+              <Link href={`/admin/reports/vat?year=${year}`} className="text-xs text-gray-400 hover:text-gray-600">ปิด</Link>
+            </div>
+          </div>
+          <table className="w-full">
+            <thead className="bg-gray-50 border-b border-gray-100">
+              <tr>
+                <th className="text-left text-xs font-medium text-gray-500 uppercase px-4 py-2.5">สินค้า</th>
+                <th className="text-center text-xs font-medium text-gray-500 uppercase px-4 py-2.5 w-28">กลุ่ม</th>
+                <th className="text-right text-xs font-medium text-gray-500 uppercase px-4 py-2.5 w-20">จำนวน</th>
+                <th className="text-right text-xs font-medium text-gray-500 uppercase px-4 py-2.5 w-32">ยอดขาย</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-50">
+              {detail.map((d, i) => (
+                <tr key={`${d.name}-${i}`} className="hover:bg-gray-50">
+                  <td className="px-4 py-2 text-sm text-gray-900">{d.name}</td>
+                  <td className="px-4 py-2 text-center">
+                    <span className={`inline-flex text-xs px-2 py-0.5 rounded-full font-medium ${
+                      d.vat ? 'bg-indigo-50 text-indigo-700' : 'bg-gray-100 text-gray-500'
+                    }`}>
+                      {d.vat ? 'มี VAT' : 'ไม่มี VAT'}
+                    </span>
+                  </td>
+                  <td className="px-4 py-2 text-sm text-right text-gray-600">{d.qty.toLocaleString('th-TH')}</td>
+                  <td className="px-4 py-2 text-sm text-right font-medium text-gray-900">{money(d.amount)}</td>
+                </tr>
+              ))}
+              {detail.length === 0 && (
+                <tr><td colSpan={4} className="px-4 py-8 text-center text-sm text-gray-400">ไม่มีรายการขายในเดือนนี้</td></tr>
+              )}
+            </tbody>
+            <tfoot className="bg-gray-50 border-t-2 border-gray-300">
+              <tr className="font-bold text-gray-900">
+                <td className="px-4 py-2.5 text-sm" colSpan={2}>รวม</td>
+                <td className="px-4 py-2.5 text-sm text-right">{detail.reduce((s, d) => s + d.qty, 0).toLocaleString('th-TH')}</td>
+                <td className="px-4 py-2.5 text-sm text-right">{money(detail.reduce((s, d) => s + d.amount, 0))}</td>
+              </tr>
+            </tfoot>
+          </table>
+          <p className="px-4 py-3 text-xs text-gray-400 border-t border-gray-100">
+            ตารางนี้คิดจากราคาสินค้าในบิล (ก่อนหักส่วนลด/แต้ม/เครดิตท้ายบิล) ยอดรวมจึงสูงกว่าตารางด้านบนเล็กน้อย
+            — ใช้ดูว่ายอดมาจากสินค้าตัวไหน ส่วนยอดยื่นภาษีให้ยึดตารางรายเดือน
+          </p>
+        </div>
+      )}
 
       <p className="text-xs text-gray-400 mt-4">
         ยอดคิดจากราคาที่เก็บได้จริงต่อบิล (หักส่วนลด/แต้ม/เครดิตแล้ว) เฉลี่ยตามสัดส่วนราคาสินค้าในบิลนั้น

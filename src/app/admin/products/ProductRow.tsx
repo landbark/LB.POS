@@ -7,6 +7,7 @@ import DeleteProductButton from './DeleteProductButton'
 import OnlineToggle from './OnlineToggle'
 import StopSellingToggle from './StopSellingToggle'
 import { isClinicOnly } from '@/lib/clinic'
+import { isVatApplicable } from '@/lib/vat'
 import { formatWeight } from '@/lib/shop'
 import type { Product } from '@/lib/types'
 
@@ -16,6 +17,7 @@ export default function ProductRow({ product }: { product: Product }) {
   const totalStock = lots.reduce((sum, lot) => sum + (lot.quantity ?? 0), 0)
   const lowStock = !product.is_service && totalStock <= product.min_stock
   const clinicOnly = isClinicOnly(product)
+  const vat = isVatApplicable(product)
   const today = new Date().toISOString().split('T')[0]
 
   return (
@@ -50,6 +52,7 @@ export default function ProductRow({ product }: { product: Product }) {
               <p className="text-xs text-gray-500">
                 {product.unit}
                 {!product.active && <span className="ml-1.5 font-medium text-red-600">· งดจำหน่าย</span>}
+                {vat && <span className="ml-1.5 text-indigo-600">· VAT</span>}
                 {clinicOnly && <span className="ml-1.5 text-amber-600">· ของคลินิก</span>}
                 {product.is_service && <span className="ml-1.5 text-gray-400">· บริการ</span>}
                 {product.on_shopee && <span className="ml-1.5 text-orange-600">· Shopee</span>}
