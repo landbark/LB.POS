@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { useLookup } from '@/lib/use-lookup'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { ChevronLeft, ChevronRight, Plus, X } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Plus, X, Phone } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { confirmDialog } from '@/lib/confirm'
 import {
@@ -330,6 +330,15 @@ export default function AppointmentsClient({
                     {APPOINTMENT_TYPE_LABELS[a.type]}
                   </span>
                 </div>
+                {a.customers?.phone && (
+                  <a
+                    href={`tel:${a.customers.phone.replace(/[^0-9+]/g, '')}`}
+                    className="inline-flex items-center gap-1 mt-1.5 text-xs font-medium text-blue-600 hover:text-blue-700"
+                    title="กดเพื่อโทรหาเจ้าของ"
+                  >
+                    <Phone size={12} /> {a.customers.phone}
+                  </a>
+                )}
                 <div className="flex items-center gap-1.5 mt-2">
                   {a.status === 'scheduled' ? (
                     <>
