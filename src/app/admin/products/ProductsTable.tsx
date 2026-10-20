@@ -1,8 +1,12 @@
 'use client'
 
 import { useMemo, useState } from 'react'
-import { Search, X } from 'lucide-react'
+import { useRouter } from 'next/navigation'
+import { Search, X, Receipt } from 'lucide-react'
+import toast from 'react-hot-toast'
 import ProductRow from './ProductRow'
+import { createClient } from '@/lib/supabase/client'
+import { confirmDialog } from '@/lib/confirm'
 import { isVatApplicable } from '@/lib/vat'
 import type { Product } from '@/lib/types'
 
@@ -16,6 +20,10 @@ const PAGE = 50
  * พิมพ์ได้หลายคำ ไม่ต้องเรียงให้ตรงกับชื่อ: "royal renal 400" เจอ ROYAL CANIN ... RENAL ... 400 G.
  */
 export default function ProductsTable({ products }: { products: Product[] }) {
+  const router = useRouter()
+  // ติ๊กหลายตัวแล้วตั้งค่าทีเดียว — ร้านมีสินค้าสองพันตัว เข้าไปแก้ทีละตัวไม่ไหว
+  const [picked, setPicked] = useState<Set<string>>(new Set())
+  const [saving, setSaving] = useState(false)
   const [query, setQuery] = useState('')
   const [hideStopped, setHideStopped] = useState(false)
   // '' = ทุกตัว, 'yes' = เฉพาะที่เข้าข่าย VAT, 'no' = เฉพาะที่ไม่เข้าข่าย
@@ -57,8 +65,51 @@ export default function ProductsTable({ products }: { products: Product[] }) {
     setShown(PAGE) // ค้นใหม่แล้วกลับไปเริ่มที่ชุดแรก ไม่ค้างอยู่หน้าลึกๆ ของผลเก่า
   }
 
+  function toggleOne(id: string) {
+    setPicked((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  /** ตั้งค่า VAT ให้ทุกตัวที่ติ๊กไว้ — true = มี, false = ไม่มี, null = ใช้ตามหมวดหมู่ */
+  async function applyVat(value: boolean | null) {
+    const ids = [...picked]
+    if (ids.length === 0) return
+    const label = value === null ? 'ใช้ตามหมวดหมู่' : value ? 'มี VAT' : 'ไม่มี VAT'
+    const { confirmed } = await confirmDialog({
+      title: `ตั้งเป็น "${label}"?`,
+      message: `สินค้าที่เลือกไว้ ${ids.length.toLocaleString('th-TH')} รายการจะถูกตั้งเป็น ${label}`,
+      confirmLabel: 'ตั้งค่า',
+      tone: 'primary',
+    })
+    if (!confirmed) return
+
+    setSaving(true)
+    const supabase = createClient()
+    // ยัด id เป็นพันตัวใน .in() ทีเดียวไม่ได้ ความยาว URL เกินลิมิต — แบ่งเป็นชุดละ 200
+    for (let i = 0; i < ids.length; i += 200) {
+      const { error } = await supabase
+        .from('products')
+        .update({ vat_applicable: value })
+        .in('id', ids.slice(i, i + 200))
+      if (error) {
+        setSaving(false)
+        toast.error('ตั้งค่าไม่สำเร็จ: ' + error.message)
+        return
+      }
+    }
+    setSaving(false)
+    setPicked(new Set())
+    toast.success(`ตั้ง ${ids.length.toLocaleString('th-TH')} รายการเป็น ${label} แล้ว`)
+    router.refresh()
+  }
+
   const visible = found.slice(0, shown)
   const count = (n: number) => n.toLocaleString('th-TH')
+  const allVisiblePicked = visible.length > 0 && visible.every((p) => picked.has(p.id))
 
   return (
     <>
@@ -114,10 +165,71 @@ export default function ProductsTable({ products }: { products: Product[] }) {
         </p>
       </div>
 
+      {picked.size > 0 && (
+        <div className="sticky top-0 z-10 mb-3 flex flex-wrap items-center gap-2 rounded-xl border border-blue-200 bg-blue-50 px-4 py-2.5">
+          <Receipt size={15} className="text-blue-600 shrink-0" />
+          <span className="text-sm font-medium text-blue-900">
+            เลือกไว้ {count(picked.size)} รายการ
+          </span>
+          {picked.size < found.length && (
+            <button
+              onClick={() => setPicked(new Set(found.map((p) => p.id)))}
+              className="text-xs font-medium text-blue-700 underline underline-offset-2 hover:text-blue-900"
+            >
+              เลือกทั้งหมดที่ค้นเจอ ({count(found.length)})
+            </button>
+          )}
+          <div className="ml-auto flex flex-wrap items-center gap-2">
+            <button
+              onClick={() => applyVat(true)}
+              disabled={saving}
+              className="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700 disabled:opacity-40"
+            >
+              ตั้งเป็น มี VAT
+            </button>
+            <button
+              onClick={() => applyVat(false)}
+              disabled={saving}
+              className="rounded-lg bg-gray-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-gray-700 disabled:opacity-40"
+            >
+              ตั้งเป็น ไม่มี VAT
+            </button>
+            <button
+              onClick={() => applyVat(null)}
+              disabled={saving}
+              title="ลบค่าที่ตั้งรายตัว ให้ใช้ค่าของหมวดหมู่แทน"
+              className="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-40"
+            >
+              ใช้ตามหมวดหมู่
+            </button>
+            <button
+              onClick={() => setPicked(new Set())}
+              className="text-xs text-gray-500 hover:text-gray-700"
+            >
+              ล้างการเลือก
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-x-auto">
         <table className="w-full">
           <thead className="bg-gray-50 border-b border-gray-100">
             <tr>
+              <th className="pl-4 py-3 w-8">
+                <input
+                  type="checkbox"
+                  checked={allVisiblePicked}
+                  onChange={() => {
+                    const next = new Set(picked)
+                    if (allVisiblePicked) visible.forEach((p) => next.delete(p.id))
+                    else visible.forEach((p) => next.add(p.id))
+                    setPicked(next)
+                  }}
+                  aria-label="เลือกทั้งหมดในหน้านี้"
+                  className="w-4 h-4 accent-blue-600"
+                />
+              </th>
               <th className="text-left text-xs font-medium text-gray-500 uppercase px-4 py-3">สินค้า</th>
               <th className="text-left text-xs font-medium text-gray-500 uppercase px-4 py-3">SKU</th>
               <th className="text-left text-xs font-medium text-gray-500 uppercase px-4 py-3">บาร์โค้ด</th>
@@ -131,11 +243,16 @@ export default function ProductsTable({ products }: { products: Product[] }) {
           </thead>
           <tbody className="divide-y divide-gray-50">
             {visible.map((product) => (
-              <ProductRow key={product.id} product={product} />
+              <ProductRow
+                key={product.id}
+                product={product}
+                selected={picked.has(product.id)}
+                onToggle={() => toggleOne(product.id)}
+              />
             ))}
             {found.length === 0 && (
               <tr>
-                <td colSpan={9} className="px-4 py-10 text-center text-sm text-gray-400">
+                <td colSpan={10} className="px-4 py-10 text-center text-sm text-gray-400">
                   {products.length === 0
                     ? 'ยังไม่มีสินค้า — กด "เพิ่มสินค้า" เพื่อเริ่มต้น'
                     : `ไม่เจอสินค้าที่ตรงกับ "${query}"`}

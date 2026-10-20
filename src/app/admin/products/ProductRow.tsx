@@ -11,7 +11,13 @@ import { isVatApplicable } from '@/lib/vat'
 import { formatWeight } from '@/lib/shop'
 import type { Product } from '@/lib/types'
 
-export default function ProductRow({ product }: { product: Product }) {
+export default function ProductRow({
+  product, selected, onToggle,
+}: {
+  product: Product
+  selected: boolean
+  onToggle: () => void
+}) {
   const [expanded, setExpanded] = useState(false)
   const lots = product.product_lots ?? []
   const totalStock = lots.reduce((sum, lot) => sum + (lot.quantity ?? 0), 0)
@@ -22,7 +28,16 @@ export default function ProductRow({ product }: { product: Product }) {
 
   return (
     <>
-      <tr className={`hover:bg-gray-50 ${product.active ? '' : 'opacity-60'}`}>
+      <tr className={`hover:bg-gray-50 ${product.active ? '' : 'opacity-60'} ${selected ? 'bg-blue-50/60' : ''}`}>
+        <td className="pl-4 py-3 w-8">
+          <input
+            type="checkbox"
+            checked={selected}
+            onChange={onToggle}
+            aria-label={`เลือก ${product.name}`}
+            className="w-4 h-4 accent-blue-600"
+          />
+        </td>
         <td className="px-4 py-3">
           <button
             type="button"
@@ -102,7 +117,7 @@ export default function ProductRow({ product }: { product: Product }) {
       </tr>
       {expanded && (
         <tr className="bg-gray-50/60">
-          <td colSpan={9} className="px-4 py-3">
+          <td colSpan={10} className="px-4 py-3">
             {lots.length === 0 ? (
               <p className="text-sm text-gray-400 py-1">ยังไม่มี lot</p>
             ) : (
