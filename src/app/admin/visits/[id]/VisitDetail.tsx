@@ -637,6 +637,11 @@ export default function VisitDetail({
               ) : null}
               <td className="py-2">
                 <input
+                  // ช่องนี้ไม่ได้ผูกค่ากับ state (ใช้ defaultValue) พอจำนวนถูกคำนวณใหม่จากวิธีใช้ยา
+                  // หรือจากปริมาณที่ฉีดจริง ตัวเลขในช่องจะค้างของเก่าไว้ ทั้งที่ยอดเงินคิดจากค่าใหม่แล้ว
+                  // — แล้วพอหมอไปคลิกช่องนี้ onBlur จะเอาเลขเก่าที่ค้างอยู่ไปเขียนทับของจริง
+                  // ใส่ key ให้ React สร้าง input ใหม่ทุกครั้งที่จำนวนเปลี่ยน ตัวเลขจะตรงเสมอ
+                  key={`qty-${item.id}-${item.quantity}`}
                   type="number"
                   min="1"
                   defaultValue={item.quantity}
