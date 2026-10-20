@@ -39,7 +39,8 @@ const GRID_LIMIT = 60
 export default function POSClient({ products, promotions, pointsConfig, cashierId, promptpayId, roundingMode, clinicQueue }: Props) {
   const router = useRouter()
   // เวชระเบียนที่กำลังเก็บเงินอยู่ — จ่ายเสร็จแล้วจะถูก mark เป็น paid พร้อมผูกเลขที่บิล
-  const [activeVisit, setActiveVisit] = useState<ClinicQueueVisit | null>(null)
+  // เจ้าของคนเดียวพาสัตว์มาหลายตัว (หรือตัวเดิมหลายใบ) รวมเก็บเงินทีเดียวได้ เลยเก็บเป็นรายการ
+  const [activeVisits, setActiveVisits] = useState<ClinicQueueVisit[]>([])
   const [showQueue, setShowQueue] = useState(false)
   // แผงตะกร้าบนมือถือ — จอใหญ่โชว์ตลอดอยู่แล้ว ไม่สนค่านี้
   const [cartOpen, setCartOpen] = useState(false)
@@ -233,7 +234,15 @@ export default function POSClient({ products, promotions, pointsConfig, cashierI
 
   // ดึงรายการที่หมอสั่งจ่ายเข้าตะกร้า — ราคาใช้ตามที่บันทึกไว้ในเวชระเบียน ไม่ใช่ราคาสินค้าปัจจุบัน
   async function loadVisit(visit: ClinicQueueVisit) {
-    if (cart.length > 0) {
+    // ใบที่สองขึ้นไปต้องเป็นเจ้าของคนเดียวกัน ไม่งั้นเงินของคนหนึ่งจะไปอยู่ในบิลของอีกคน
+    const merging = activeVisits.length > 0
+    if (merging) {
+      const owner = activeVisits[0].customer?.id ?? null
+      if ((visit.customer?.id ?? null) !== owner) {
+        toast.error('คนละเจ้าของกัน — ต้องเก็บเงินแยกบิล')
+        return
+      }
+    } else if (cart.length > 0) {
       const { confirmed } = await confirmDialog({
         title: 'แทนที่ตะกร้าเดิม?',
         message: 'ตะกร้ามีของอยู่แล้ว — จะแทนที่ด้วยรายการจากคลินิก',
@@ -248,7 +257,7 @@ export default function POSClient({ products, promotions, pointsConfig, cashierI
       toast(`ขายเกินสต็อค: ${short.map((i) => i.product.name).join(', ')}`, { icon: '⚠️' })
     }
 
-    setCart(visit.items.map((i) => ({
+    const incoming = visit.items.map((i) => ({
       product: i.product,
       quantity: i.quantity,
       unit_price: i.unit_price,
@@ -258,11 +267,32 @@ export default function POSClient({ products, promotions, pointsConfig, cashierI
       discount_value: 0,
       subtotal: i.unit_price * i.quantity,
       lot_id: getBestLot(i.product),
-    })))
-    setCustomer(visit.customer)
-    setCustomerPhone(visit.customer?.phone ?? '')
-    setShowAddCustomer(false)
-    setActiveVisit(visit)
+    }))
+
+    if (merging) {
+      // ของซ้ำกันที่ราคาเท่ากันรวมเป็นบรรทัดเดียว — ราคาต่างกันต้องแยก (หมอตั้งราคารายใบได้)
+      const next = [...cart]
+      for (const add of incoming) {
+        const at = next.findIndex(
+          (c) => c.product.id === add.product.id && c.unit_price === add.unit_price && c.discount_value === 0,
+        )
+        if (at >= 0) {
+          const qty = next[at].quantity + add.quantity
+          next[at] = { ...next[at], quantity: qty, subtotal: next[at].unit_price * qty }
+        } else {
+          next.push(add)
+        }
+      }
+      setCart(next)
+      setActiveVisits([...activeVisits, visit])
+      toast.success(`รวมใบ ${visit.visit_number} (${visit.pet_name || 'ไม่ระบุสัตว์'}) เข้าบิลแล้ว`)
+    } else {
+      setCart(incoming)
+      setCustomer(visit.customer)
+      setCustomerPhone(visit.customer?.phone ?? '')
+      setShowAddCustomer(false)
+      setActiveVisits([visit])
+    }
     setShowQueue(false)
   }
 
@@ -493,7 +523,14 @@ export default function POSClient({ products, promotions, pointsConfig, cashierI
   }, [cart, customer, subtotal, totalDiscount, total, pointsConfig, showPayment])
 
   const cartCount = cart.reduce((n, i) => n + i.quantity, 0)
-  const queue = clinicQueue.filter((v) => !paidVisitIds.includes(v.id))
+  const activeVisitIds = activeVisits.map((v) => v.id)
+  const queue = clinicQueue.filter(
+    (v) => !paidVisitIds.includes(v.id) && !activeVisitIds.includes(v.id),
+  )
+  // ใบของเจ้าของคนเดียวกับที่กำลังเก็บเงินอยู่ — รวมเข้าบิลเดียวกันได้
+  const sameOwnerQueue = activeVisits.length > 0
+    ? queue.filter((v) => (v.customer?.id ?? null) === (activeVisits[0].customer?.id ?? null))
+    : []
 
   return (
     // มือถือ: สินค้าเต็มจอ ตะกร้าซ่อนอยู่หลังแถบล่าง — จอใหญ่: สองคอลัมน์เหมือนเดิม
@@ -624,7 +661,7 @@ export default function POSClient({ products, promotions, pointsConfig, cashierI
           </button>
         </div>
         {/* คิวเก็บเงินจากคลินิก */}
-        {queue.length > 0 && !activeVisit && (
+        {queue.length > 0 && activeVisits.length === 0 && (
           <div className="px-3 pt-3">
             <button
               onClick={() => setShowQueue(true)}
@@ -635,23 +672,39 @@ export default function POSClient({ products, promotions, pointsConfig, cashierI
             </button>
           </div>
         )}
-        {activeVisit && (
-          <div className="px-3 pt-3">
-            <div className="flex items-center justify-between gap-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-              <div className="min-w-0">
-                <p className="text-xs font-medium text-amber-800 truncate">
-                  คลินิก: {activeVisit.pet_name || 'ไม่ระบุสัตว์'}
-                </p>
-                <p className="text-[11px] text-amber-600 font-mono">{activeVisit.visit_number}</p>
+        {activeVisits.length > 0 && (
+          <div className="px-3 pt-3 space-y-2">
+            <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0 space-y-0.5">
+                  {activeVisits.map((v) => (
+                    <div key={v.id} className="min-w-0">
+                      <p className="text-xs font-medium text-amber-800 truncate">
+                        คลินิก: {v.pet_name || 'ไม่ระบุสัตว์'}
+                      </p>
+                      <p className="text-[11px] text-amber-600 font-mono">{v.visit_number}</p>
+                    </div>
+                  ))}
+                </div>
+                <button
+                  onClick={() => { setActiveVisits([]); setCart([]); setDiscountRow(null) }}
+                  title="ยกเลิกการเก็บเงินรายการนี้"
+                  className="text-amber-500 hover:text-amber-700 shrink-0"
+                >
+                  <X size={14} />
+                </button>
               </div>
-              <button
-                onClick={() => { setActiveVisit(null); setCart([]); setDiscountRow(null) }}
-                title="ยกเลิกการเก็บเงินรายการนี้"
-                className="text-amber-500 hover:text-amber-700 shrink-0"
-              >
-                <X size={14} />
-              </button>
             </div>
+            {/* เจ้าของคนเดียวกันมีใบอื่นค้างอยู่ — รวมเข้าบิลนี้ได้เลย ไม่ต้องเก็บเงินสองรอบ */}
+            {sameOwnerQueue.length > 0 && (
+              <button
+                onClick={() => setShowQueue(true)}
+                className="w-full flex items-center justify-center gap-2 bg-amber-100 hover:bg-amber-200 border border-amber-300 text-amber-900 text-sm font-medium py-2 rounded-lg transition-colors"
+              >
+                <Stethoscope size={15} />
+                เจ้าของคนนี้มีอีก {sameOwnerQueue.length} ใบ — รวมบิล
+              </button>
+            )}
           </div>
         )}
         {/* จอสอง */}
@@ -906,18 +959,18 @@ export default function POSClient({ products, promotions, pointsConfig, cashierI
           cashierId={cashierId}
           promptpayId={promptpayId}
           roundingMode={roundingMode}
-          visitId={activeVisit?.id ?? null}
+          visitIds={activeVisitIds}
           onClose={() => setShowPayment(false)}
           onSuccess={(info) => {
             // ตัดสต็อกออกก็ปิดใบเหมือนกัน — ของออกจากสต็อกไปแล้ว ไม่ต้องค้างในคิวให้เก็บเงินอีก
-            if (activeVisit) setPaidVisitIds((ids) => [...ids, activeVisit.id])
+            if (activeVisitIds.length > 0) setPaidVisitIds((ids) => [...ids, ...activeVisitIds])
             setCart([])
             setDiscountRow(null)
             setCustomer(null)
             setCustomerPhone('')
             setShowAddCustomer(false)
             setShowPayment(false)
-            setActiveVisit(null)
+            setActiveVisits([])
             toast.success(info?.writeoff ? 'ตัดสต็อกออกแล้ว' : 'บันทึกการขายแล้ว')
             // คิวคลินิกอยู่ฝั่ง server — ต้อง refresh ไม่งั้นรายการที่เพิ่งเก็บเงินยังค้างอยู่
             router.refresh()
@@ -941,11 +994,15 @@ export default function POSClient({ products, promotions, pointsConfig, cashierI
             <div className="max-h-96 overflow-y-auto divide-y divide-gray-50">
               {queue.map((v) => {
                 const visitTotal = v.items.reduce((sum, i) => sum + i.unit_price * i.quantity, 0)
+                const otherOwner = activeVisits.length > 0
+                  && (v.customer?.id ?? null) !== (activeVisits[0].customer?.id ?? null)
                 return (
                   <button
                     key={v.id}
                     onClick={() => loadVisit(v)}
-                    className="w-full text-left px-2 py-3 hover:bg-gray-50"
+                    disabled={otherOwner}
+                    title={otherOwner ? 'คนละเจ้าของกับบิลที่กำลังเก็บเงินอยู่' : undefined}
+                    className="w-full text-left px-2 py-3 hover:bg-gray-50 disabled:opacity-40 disabled:hover:bg-transparent disabled:cursor-not-allowed"
                   >
                     <div className="flex items-center justify-between gap-2">
                       <div className="min-w-0">

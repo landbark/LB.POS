@@ -21,8 +21,8 @@ interface Props {
   cashierId: string
   promptpayId: string | null
   roundingMode: RoundingMode
-  /** เก็บเงินให้เวชระเบียนคลินิกใบไหน — จ่ายเสร็จ (หรือตัดสต็อกออก) จะ mark เป็น paid */
-  visitId: string | null
+  /** เวชระเบียนคลินิกที่เก็บเงินรวมในบิลนี้ — จ่ายเสร็จ (หรือตัดสต็อกออก) จะ mark เป็น paid ทุกใบ */
+  visitIds: string[]
   onClose: () => void
   onSuccess: (info?: { writeoff?: boolean }) => void
 }
@@ -39,7 +39,7 @@ const PAYMENT_LABELS: Record<SplitMethod, string> = {
 const SPLIT_METHODS = Object.keys(PAYMENT_LABELS) as SplitMethod[]
 
 export default function PaymentModal({
-  cart, subtotal, totalDiscount, total, customer, pointsConfig, cashierId, promptpayId, roundingMode, visitId, onClose, onSuccess,
+  cart, subtotal, totalDiscount, total, customer, pointsConfig, cashierId, promptpayId, roundingMode, visitIds, onClose, onSuccess,
 }: Props) {
   // writeoff = ตัดของออกจากสต็อกเฉยๆ ไม่ใช่การขาย (ของเสีย/ของแถม/ใช้ในร้าน) — ไม่สร้างใบเสร็จ
   const [mode, setMode] = useState<'sale' | 'writeoff'>('sale')
@@ -190,14 +190,17 @@ export default function PaymentModal({
       })
       // ของในเวชระเบียนถูกตัดออกไปแล้ว ไม่มีอะไรให้เก็บเงินอีก — ปิดใบไม่ให้ค้างในคิวแคชเชียร์
       // (status paid แต่ไม่มี transaction_id เหมือนปุ่ม "จบการรักษาไม่คิดเงิน" ฝั่งหมอ)
-      if (visitId) {
-        const { data: v } = await writeoffDb.from('visits').select('notes').eq('id', visitId).single()
+      if (visitIds.length > 0) {
         const stamp = new Date().toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' })
         const line = `[ตัดสต็อกออก ไม่คิดเงิน ${stamp}] ${reason}`
-        await writeoffDb
-          .from('visits')
-          .update({ status: 'paid', notes: [v?.notes?.trim(), line].filter(Boolean).join('\n') })
-          .eq('id', visitId)
+        const { data: visits } = await writeoffDb.from('visits').select('id, notes').in('id', visitIds)
+        // หมายเหตุเดิมของแต่ละใบไม่เหมือนกัน ต่อท้ายทีละใบ ไม่งั้นโน้ตของใบหนึ่งจะไปทับอีกใบ
+        for (const v of visits ?? []) {
+          await writeoffDb
+            .from('visits')
+            .update({ status: 'paid', notes: [v.notes?.trim(), line].filter(Boolean).join('\n') })
+            .eq('id', v.id)
+        }
       }
       setLoading(false)
       setWrittenOff(true)
@@ -309,11 +312,12 @@ export default function PaymentModal({
     })
 
     // ปิดเวชระเบียนคลินิกที่เพิ่งเก็บเงิน — ผูกกับบิลไว้เพื่อพิมพ์ใบเสร็จซ้ำ/คืนสถานะตอนยกเลิกบิล
-    if (visitId) {
+    // เจ้าของเดียวกันหลายใบรวมเป็นบิลเดียวได้ ทุกใบผูกกับบิลนั้นเหมือนกันหมด
+    if (visitIds.length > 0) {
       await supabase
         .from('visits')
         .update({ status: 'paid', transaction_id: tx.id })
-        .eq('id', visitId)
+        .in('id', visitIds)
     }
 
     // Update customer points + credit
@@ -470,7 +474,7 @@ export default function PaymentModal({
             <div className="space-y-2">
               <p className="text-xs text-red-700 bg-red-50 rounded-lg px-3 py-2">
                 ของจะถูกหักออกจากสต็อกตามตะกร้า แต่ <b>ไม่บันทึกเป็นการขาย</b> ไม่มีใบเสร็จ ไม่มียอดเงิน
-                {visitId && <> · ใบตรวจรักษาที่ดึงมาจะถูก<b>ปิดโดยไม่คิดเงิน</b></>}
+                {visitIds.length > 0 && <> · ใบตรวจรักษาที่ดึงมา ({visitIds.length}) จะถูก<b>ปิดโดยไม่คิดเงิน</b></>}
               </p>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">เหตุผล</label>
