@@ -10,6 +10,23 @@ export const FREQUENCY_OPTIONS: { value: Frequency; label: string; perDay: numbe
   { value: 'prn', label: 'PRN — เมื่อมีอาการ', perDay: null },
 ]
 
+/**
+ * รูปแบบยา — ดูจากหน่วยขาย เพราะร้านตั้งหน่วยตามของจริงอยู่แล้ว
+ *   ml./cc  = ยาฉีด (คิดเงินตามปริมาตร)
+ *   ขวด     = ยาน้ำ (จ่ายเป็นขวด แต่ขนาดใช้บอกเป็น ml เช่น ครั้งละ 2.5 ml)
+ *   หลอด    = ยาทา (ไม่มีขนาดต่อครั้ง บอกแค่วันละกี่ครั้ง)
+ *   ที่เหลือ = เม็ด/แคปซูล/ซอง (นับเป็นเม็ด มีเศษได้)
+ */
+export type DrugForm = 'solid' | 'liquid' | 'topical' | 'injection'
+
+export function drugForm(unit: string | null | undefined): DrugForm {
+  const u = (unit ?? '').trim().toLowerCase()
+  if (/^(ml|cc|มล)\.?$/.test(u)) return 'injection'
+  if (/^(ขวด|bottle|ออนซ์|oz\.?)$/.test(u)) return 'liquid'
+  if (/^(หลอด|tube|กระปุก|jar)$/.test(u)) return 'topical'
+  return 'solid'
+}
+
 /** ช่วงเวลาให้ยาในหนึ่งวัน — หมอเลือกเองได้ว่าเม็ดไหนให้ตอนไหน */
 export const TIME_SLOTS = [
   { value: 'morning', th: 'เช้า', en: 'morning' },
@@ -113,8 +130,11 @@ function amountText(dose: number, unit: string, lang: 'th' | 'en'): string {
 }
 
 // ข้อความ "วันละ N ครั้ง (เช้า-เย็น)" ประกอบจากเวลาที่หมอเลือก ไม่ใช่ข้อความสำเร็จรูปตายตัว
-function timesText(frequency: Frequency, slots: TimeSlot[], lang: 'th' | 'en'): string | null {
-  if (frequency === 'prn') return lang === 'th' ? 'กินเมื่อมีอาการ' : 'as needed'
+function timesText(frequency: Frequency, slots: TimeSlot[], lang: 'th' | 'en', form: DrugForm): string | null {
+  if (frequency === 'prn') {
+    if (form === 'topical') return lang === 'th' ? 'ทาเมื่อมีอาการ' : 'Apply as needed'
+    return lang === 'th' ? 'กินเมื่อมีอาการ' : 'as needed'
+  }
   const perDay = dosesPerDay(frequency, null)
   if (!perDay) return null
   const picked = slots.length > 0 ? slots : defaultTimes(frequency)
@@ -151,19 +171,30 @@ export interface SigInput {
  */
 export function sigText(sig: SigInput, lang: 'th' | 'en' = 'th'): string {
   const parts: string[] = []
+  const form = drugForm(sig.unit)
   const unit = lang === 'en' ? '' : sig.unit
 
-  if (sig.dose_amount) {
-    parts.push(lang === 'th'
-      ? `ครั้งละ ${amountText(sig.dose_amount, unit, 'th')}`
-      : `Take ${amountText(sig.dose_amount, sig.unit, 'en')}`)
+  // ยาทาไม่มีขนาดต่อครั้ง — บีบหลอดเท่าไรไม่มีใครตวง บอกแค่วันละกี่ครั้งก็พอ
+  if (form !== 'topical' && sig.dose_amount) {
+    if (form === 'liquid') {
+      // ยาน้ำ: ขายเป็นขวด แต่ขนาดที่ป้อนบอกเป็น ml เสมอ
+      const ml = +sig.dose_amount.toFixed(2)
+      parts.push(lang === 'th' ? `ครั้งละ ${ml} ml` : `Take ${ml} ml`)
+    } else {
+      parts.push(lang === 'th'
+        ? `ครั้งละ ${amountText(sig.dose_amount, unit, 'th')}`
+        : `Take ${amountText(sig.dose_amount, sig.unit, 'en')}`)
+    }
   }
 
   if (sig.frequency === 'q_h' && sig.frequency_hours) {
-    parts.push(lang === 'th' ? `ทุกๆ ${sig.frequency_hours} ชั่วโมง` : `every ${sig.frequency_hours} hours`)
+    const every = lang === 'th' ? `ทุกๆ ${sig.frequency_hours} ชั่วโมง` : `every ${sig.frequency_hours} hours`
+    parts.push(form === 'topical' ? (lang === 'th' ? `ทา${every}` : `Apply ${every}`) : every)
   } else if (sig.frequency) {
-    const t = timesText(sig.frequency, parseTimes(sig.dose_times), lang)
-    if (t) parts.push(t)
+    const t = timesText(sig.frequency, parseTimes(sig.dose_times), lang, form)
+    if (t) parts.push(form === 'topical' && sig.frequency !== 'prn'
+      ? (lang === 'th' ? `ทา${t}` : `Apply ${t}`)
+      : t)
   }
 
   if (sig.food_timing) parts.push((lang === 'th' ? FOOD_TH : FOOD_EN)[sig.food_timing])

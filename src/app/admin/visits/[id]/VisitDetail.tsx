@@ -12,7 +12,7 @@ import { isClinicOnly, isVaccine, isVolumeDosed, billedMl } from '@/lib/clinic'
 import { computeNextDue } from '@/lib/vaccines'
 import {
   FREQUENCY_OPTIONS, FOOD_OPTIONS, suggestedQuantity, sigText, labelName, labelIndication,
-  TIME_SLOTS, defaultTimes, parseTimes, dosesPerDay, type TimeSlot,
+  TIME_SLOTS, defaultTimes, parseTimes, dosesPerDay, drugForm, type TimeSlot,
 } from '@/lib/sig'
 import VaccineSection from '@/app/admin/pets/[id]/VaccineSection'
 import { confirmDialog } from '@/lib/confirm'
@@ -257,7 +257,12 @@ export default function VisitDetail({
     patch: Partial<Pick<VisitItem, 'dose_amount' | 'frequency' | 'frequency_hours' | 'food_timing' | 'duration_days'>>
   ) {
     const next = { ...item, ...patch }
-    const qty = suggestedQuantity(next.dose_amount, next.frequency, next.frequency_hours, next.duration_days)
+    // คำนวณจำนวนให้เฉพาะยาเม็ด/แคปซูล — ยาน้ำนับเป็นขวด ยาทานับเป็นหลอด
+    // เอา ml ต่อครั้งไปคูณวันแล้วใส่เป็นจำนวนขวดไม่ได้
+    const auto = drugForm(item.products?.unit) === 'solid'
+    const qty = auto
+      ? suggestedQuantity(next.dose_amount, next.frequency, next.frequency_hours, next.duration_days)
+      : null
     await updateItem(item, qty && qty !== item.quantity ? { ...patch, quantity: qty } : patch)
   }
 
@@ -573,34 +578,58 @@ export default function VisitDetail({
               ) : showDosage ? (
                 <td className="py-2">
                   <div className="flex flex-wrap items-center gap-1">
-                    {/* ครั้งละ: จำนวนเต็ม + เศษ แยกช่องกัน เลือกง่ายกว่าไล่หาในลิสต์เดียว */}
-                    <span className="text-xs text-gray-400">ครั้งละ</span>
-                    <input
-                      // ค่าเปลี่ยนจากช่องเศษด้วย ต้องสร้าง input ใหม่ ไม่งั้นเลขในช่องค้างของเก่า
-                      key={`whole-${item.id}-${item.dose_amount ?? ''}`}
-                      type="number" min={0} step={1}
-                      defaultValue={wholeOf(item.dose_amount)}
-                      disabled={itemsLocked}
-                      onBlur={(e) => {
-                        const whole = e.target.value === '' ? 0 : Math.max(0, parseInt(e.target.value, 10) || 0)
-                        setDose(item, whole, fracOf(item.dose_amount))
-                      }}
-                      placeholder="0"
-                      className={`${sigInput} w-14 text-right`}
-                      title="จำนวนเต็มต่อครั้ง"
-                    />
-                    <select
-                      value={String(fracOf(item.dose_amount))}
-                      disabled={itemsLocked}
-                      onChange={(e) => setDose(item, Number(wholeOf(item.dose_amount) || 0), Number(e.target.value))}
-                      className={sigInput}
-                      title="เศษต่อครั้ง"
-                    >
-                      {FRACTIONS.map((f) => (
-                        <option key={f.value} value={String(f.value)}>{f.label}</option>
-                      ))}
-                    </select>
-                    <span className="text-xs text-gray-400">{item.products?.unit ?? ''}</span>
+                    {/* ยาเม็ด: จำนวนเต็ม + เศษ แยกช่อง · ยาน้ำ: ใส่ ml มีทศนิยมได้ · ยาทา: ไม่มีขนาด */}
+                    {drugForm(item.products?.unit) === 'solid' && (
+                      <>
+                        <span className="text-xs text-gray-400">ครั้งละ</span>
+                        <input
+                          // ค่าเปลี่ยนจากช่องเศษด้วย ต้องสร้าง input ใหม่ ไม่งั้นเลขในช่องค้างของเก่า
+                          key={`whole-${item.id}-${item.dose_amount ?? ''}`}
+                          type="number" min={0} step={1}
+                          defaultValue={wholeOf(item.dose_amount)}
+                          disabled={itemsLocked}
+                          onBlur={(e) => {
+                            const whole = e.target.value === '' ? 0 : Math.max(0, parseInt(e.target.value, 10) || 0)
+                            setDose(item, whole, fracOf(item.dose_amount))
+                          }}
+                          placeholder="0"
+                          className={`${sigInput} w-14 text-right`}
+                          title="จำนวนเต็มต่อครั้ง"
+                        />
+                        <select
+                          value={String(fracOf(item.dose_amount))}
+                          disabled={itemsLocked}
+                          onChange={(e) => setDose(item, Number(wholeOf(item.dose_amount) || 0), Number(e.target.value))}
+                          className={sigInput}
+                          title="เศษต่อครั้ง"
+                        >
+                          {FRACTIONS.map((f) => (
+                            <option key={f.value} value={String(f.value)}>{f.label}</option>
+                          ))}
+                        </select>
+                        <span className="text-xs text-gray-400">{item.products?.unit ?? ''}</span>
+                      </>
+                    )}
+                    {drugForm(item.products?.unit) === 'liquid' && (
+                      <>
+                        <span className="text-xs text-gray-400">ครั้งละ</span>
+                        <input
+                          key={`ml-${item.id}-${item.dose_amount ?? ''}`}
+                          type="number" min={0} step="0.01"
+                          defaultValue={item.dose_amount ?? ''}
+                          disabled={itemsLocked}
+                          onBlur={(e) => {
+                            const v = e.target.value === '' ? null : parseFloat(e.target.value)
+                            if (v === (item.dose_amount ?? null)) return
+                            updateSig(item, { dose_amount: v != null && v > 0 ? v : null })
+                          }}
+                          placeholder="0.00"
+                          className={`${sigInput} w-20 text-right`}
+                          title="ปริมาณต่อครั้ง (ml)"
+                        />
+                        <span className="text-xs text-gray-400">ml</span>
+                      </>
+                    )}
 
                     <select
                       value={item.frequency ?? ''}
@@ -632,7 +661,7 @@ export default function VisitDetail({
                       value={item.food_timing ?? ''}
                       disabled={itemsLocked}
                       onChange={(e) => updateSig(item, { food_timing: (e.target.value || null) as VisitItem['food_timing'] })}
-                      className={sigInput}
+                      className={`${sigInput} ${drugForm(item.products?.unit) === 'topical' ? 'hidden' : ''}`}
                       title="ก่อน/หลัง/พร้อมอาหาร"
                     >
                       <option value="">อาหาร…</option>
@@ -690,7 +719,7 @@ export default function VisitDetail({
                   />
 
                   {/* ข้อความที่จะไปขึ้นบนฉลากจริง — หมอเห็นเลยว่าเจ้าของจะอ่านว่าอะไร */}
-                  {item.dose_amount != null && item.frequency && (
+                  {(item.dose_amount != null || drugForm(item.products?.unit) === 'topical') && item.frequency && (
                     <div className="mt-1 text-xs text-emerald-700">
                       <p>
                         ฉลาก: <b>{item.products ? labelName(item.products) : ''}</b>
