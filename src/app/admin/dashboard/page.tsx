@@ -200,7 +200,7 @@ export default async function DashboardPage() {
             {todayAppts.map((a) => (
               <div key={a.id} className="flex justify-between text-sm">
                 <span className="text-gray-700">
-                  {new Date(a.scheduled_at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })} · {(a.pets as unknown as { name: string } | null)?.name ?? '—'}
+                  {new Date(a.scheduled_at).toLocaleTimeString('th-TH', { timeZone: 'Asia/Bangkok', hour: '2-digit', minute: '2-digit' })} · {(a.pets as unknown as { name: string } | null)?.name ?? '—'}
                   <span className="text-gray-400"> · {(a.customers as unknown as { name: string } | null)?.name ?? ''}</span>
                 </span>
                 <span className="text-gray-500">{APPOINTMENT_TYPE_LABELS[a.type as AppointmentType]}</span>

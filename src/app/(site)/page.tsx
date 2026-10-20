@@ -8,7 +8,7 @@ import { getAnnouncements, getStorefront } from '@/lib/shop-data'
 export const dynamic = 'force-dynamic'
 
 const dateTh = (iso: string) =>
-  new Date(iso).toLocaleDateString('th-TH', { day: 'numeric', month: 'long', year: 'numeric' })
+  new Date(iso).toLocaleDateString('th-TH', { timeZone: 'Asia/Bangkok', day: 'numeric', month: 'long', year: 'numeric' })
 
 export default async function HomePage() {
   const [store, announcements] = await Promise.all([getStorefront(), getAnnouncements(12)])

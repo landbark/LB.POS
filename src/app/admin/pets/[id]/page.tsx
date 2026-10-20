@@ -7,7 +7,8 @@ import { ageAt, petAge } from '@/lib/pets'
 import VaccineSection from './VaccineSection'
 import TransferOwnerButton from './TransferOwnerButton'
 
-const fmtDate = (d: string) => new Date(d).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' })
+const fmtDate = (d: string) =>
+  new Date(d).toLocaleDateString('th-TH', { timeZone: 'Asia/Bangkok', day: 'numeric', month: 'short', year: '2-digit' })
 
 export default async function PetDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params

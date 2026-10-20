@@ -36,7 +36,7 @@ export default function StockHistory({ movements, unit }: { movements: Movement[
             return (
               <tr key={m.id} className="hover:bg-gray-50">
                 <td className="px-4 py-3 text-sm text-gray-600 whitespace-nowrap">
-                  {new Date(m.created_at).toLocaleString('th-TH', { dateStyle: 'short', timeStyle: 'short' })}
+                  {new Date(m.created_at).toLocaleString('th-TH', { timeZone: 'Asia/Bangkok', dateStyle: 'short', timeStyle: 'short' })}
                 </td>
                 <td className="px-4 py-3">
                   <span className={`inline-flex text-xs px-2 py-0.5 rounded-full font-medium ${cfg.className}`}>
