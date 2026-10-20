@@ -16,7 +16,7 @@ export default async function LabelPage({ params }: { params: Promise<{ id: stri
         customers(name, phone, hn),
         vet:profiles!visits_vet_id_fkey(name),
         visit_items(
-          id, quantity, dosage, dose_amount, frequency, frequency_hours, food_timing, duration_days,
+          id, quantity, dosage, dose_amount, frequency, frequency_hours, food_timing, duration_days, dose_times,
           products(
             name, unit, is_service, is_vaccine,
             label_name, label_name_en, indication, indication_en, brand,

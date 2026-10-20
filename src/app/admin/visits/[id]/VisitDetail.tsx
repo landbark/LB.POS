@@ -10,7 +10,10 @@ import { SPECIES_LABELS, VISIT_STATUS_LABELS, type PetVaccination, type Vaccine,
 import { petAge, petWarnings } from '@/lib/pets'
 import { isClinicOnly, isVaccine, isVolumeDosed, billedMl } from '@/lib/clinic'
 import { computeNextDue } from '@/lib/vaccines'
-import { FREQUENCY_OPTIONS, FOOD_OPTIONS, suggestedQuantity, sigText, labelName, labelIndication } from '@/lib/sig'
+import {
+  FREQUENCY_OPTIONS, FOOD_OPTIONS, suggestedQuantity, sigText, labelName, labelIndication,
+  TIME_SLOTS, defaultTimes, parseTimes, dosesPerDay, type TimeSlot,
+} from '@/lib/sig'
 import VaccineSection from '@/app/admin/pets/[id]/VaccineSection'
 import { confirmDialog } from '@/lib/confirm'
 
@@ -37,9 +40,21 @@ interface HistoryEntry {
   weight?: number | null
 }
 
-// ป้ายเศษเม็ดที่ใช้บ่อย — ให้หมอกดเลือกเร็วๆ ไม่ต้องพิมพ์ทศนิยม
-const DOSE_LABEL: Record<string, string> = {
-  '0.25': '¼', '0.333': '⅓', '0.5': '½', '0.75': '¾', '1.5': '1½',
+// เศษเม็ดที่ใช้บ่อย — แยกจากจำนวนเต็ม หมอจะได้ผสมเองได้ทุกแบบ (1 เม็ดครึ่ง = 1 + ½)
+const FRACTIONS: { value: number; label: string }[] = [
+  { value: 0, label: 'ไม่มีเศษ' },
+  { value: 0.25, label: '¼' },
+  { value: 1 / 3, label: '⅓' },
+  { value: 0.5, label: '½' },
+  { value: 2 / 3, label: '⅔' },
+  { value: 0.75, label: '¾' },
+]
+
+const wholeOf = (dose: number | null) => (dose == null ? '' : String(Math.floor(dose + 1e-9)))
+const fracOf = (dose: number | null) => {
+  if (dose == null) return 0
+  const rest = dose - Math.floor(dose + 1e-9)
+  return FRACTIONS.find((f) => f.value > 0 && Math.abs(f.value - rest) < 0.02)?.value ?? 0
 }
 
 const inputClass = 'w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500'
@@ -201,7 +216,7 @@ export default function VisitDetail({
 
   async function updateItem(
     item: VisitItem,
-    patch: Partial<Pick<VisitItem, 'quantity' | 'unit_price' | 'dosage' | 'dose_amount' | 'dose_ml' | 'frequency' | 'frequency_hours' | 'food_timing' | 'duration_days'>>
+    patch: Partial<Pick<VisitItem, 'quantity' | 'unit_price' | 'dosage' | 'dose_amount' | 'dose_ml' | 'frequency' | 'frequency_hours' | 'food_timing' | 'duration_days' | 'dose_times'>>
   ) {
     const supabase = createClient()
     const { error } = await supabase.from('visit_items').update(patch).eq('id', item.id)
@@ -210,6 +225,30 @@ export default function VisitDetail({
       return
     }
     refresh()
+  }
+
+  // ครั้งละเท่าไร = จำนวนเต็ม + เศษ (0 ทั้งคู่ = ยังไม่ได้กรอก)
+  function setDose(item: VisitItem, whole: number, frac: number) {
+    const dose = whole + frac
+    if (dose === (item.dose_amount ?? 0)) return
+    updateSig(item, { dose_amount: dose > 0 ? dose : null })
+  }
+
+  // เวลาที่เลือกไว้ ถ้ายังไม่เคยแตะ ใช้ค่าเริ่มต้นตามความถี่ (เหมือนที่ฉลากเคยพิมพ์มาก่อน)
+  const timesOf = (item: VisitItem): TimeSlot[] => {
+    const saved = parseTimes(item.dose_times)
+    return saved.length > 0 ? saved : defaultTimes(item.frequency)
+  }
+
+  function toggleTime(item: VisitItem, slot: TimeSlot) {
+    const perDay = dosesPerDay(item.frequency, item.frequency_hours)
+    const current = timesOf(item)
+    let next = current.includes(slot) ? current.filter((t) => t !== slot) : [...current, slot]
+    // เลือกได้ไม่เกินจำนวนครั้งต่อวัน — เกินเมื่อไหร่ตัวที่เลือกไว้ก่อนสุดหลุดออก
+    if (perDay && next.length > perDay) next = next.slice(next.length - perDay)
+    // เรียงตามลำดับเวลาจริงเสมอ ฉลากจะได้ไม่อ่านว่า "เย็น-เช้า"
+    const ordered = TIME_SLOTS.filter((t) => next.includes(t.value)).map((t) => t.value)
+    updateItem(item, { dose_times: ordered.length > 0 ? ordered.join(',') : null })
   }
 
   // แก้วิธีใช้แล้วคำนวณจำนวนยาให้ใหม่ในคำสั่งเดียว — หมอแก้จำนวนทับทีหลังได้ (เช่นอยากจ่ายเผื่อ)
@@ -534,19 +573,34 @@ export default function VisitDetail({
               ) : showDosage ? (
                 <td className="py-2">
                   <div className="flex flex-wrap items-center gap-1">
-                    {/* จำนวนต่อครั้ง — ปุ่มลัดเศษเม็ดที่ใช้บ่อย */}
-                    <select
-                      value={item.dose_amount != null ? String(item.dose_amount) : ''}
+                    {/* ครั้งละ: จำนวนเต็ม + เศษ แยกช่องกัน เลือกง่ายกว่าไล่หาในลิสต์เดียว */}
+                    <span className="text-xs text-gray-400">ครั้งละ</span>
+                    <input
+                      // ค่าเปลี่ยนจากช่องเศษด้วย ต้องสร้าง input ใหม่ ไม่งั้นเลขในช่องค้างของเก่า
+                      key={`whole-${item.id}-${item.dose_amount ?? ''}`}
+                      type="number" min={0} step={1}
+                      defaultValue={wholeOf(item.dose_amount)}
                       disabled={itemsLocked}
-                      onChange={(e) => updateSig(item, { dose_amount: e.target.value ? Number(e.target.value) : null })}
+                      onBlur={(e) => {
+                        const whole = e.target.value === '' ? 0 : Math.max(0, parseInt(e.target.value, 10) || 0)
+                        setDose(item, whole, fracOf(item.dose_amount))
+                      }}
+                      placeholder="0"
+                      className={`${sigInput} w-14 text-right`}
+                      title="จำนวนเต็มต่อครั้ง"
+                    />
+                    <select
+                      value={String(fracOf(item.dose_amount))}
+                      disabled={itemsLocked}
+                      onChange={(e) => setDose(item, Number(wholeOf(item.dose_amount) || 0), Number(e.target.value))}
                       className={sigInput}
-                      title="จำนวนต่อครั้ง"
+                      title="เศษต่อครั้ง"
                     >
-                      <option value="">ครั้งละ…</option>
-                      {['0.25', '0.333', '0.5', '0.75', '1', '1.5', '2', '3', '4'].map((v) => (
-                        <option key={v} value={v}>{DOSE_LABEL[v] ?? v}</option>
+                      {FRACTIONS.map((f) => (
+                        <option key={f.value} value={String(f.value)}>{f.label}</option>
                       ))}
                     </select>
+                    <span className="text-xs text-gray-400">{item.products?.unit ?? ''}</span>
 
                     <select
                       value={item.frequency ?? ''}
@@ -599,6 +653,30 @@ export default function VisitDetail({
                     />
                   </div>
 
+                  {/* เวลาให้ยา — เดิมระบบเดาให้ตายตัว วันละครั้งเป็น "เช้า" เสมอ แก้ไม่ได้ */}
+                  {item.frequency && item.frequency !== 'prn' && item.frequency !== 'q_h' && (
+                    <div className="flex flex-wrap items-center gap-1 mt-1">
+                      {TIME_SLOTS.map((slot) => {
+                        const picked = timesOf(item).includes(slot.value)
+                        return (
+                          <button
+                            key={slot.value}
+                            type="button"
+                            disabled={itemsLocked}
+                            onClick={() => toggleTime(item, slot.value)}
+                            className={`rounded-full border px-2 py-0.5 text-xs transition-colors disabled:opacity-50 ${
+                              picked
+                                ? 'border-blue-500 bg-blue-50 text-blue-700 font-medium'
+                                : 'border-gray-200 text-gray-500 hover:border-gray-300'
+                            }`}
+                          >
+                            {slot.th}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  )}
+
                   <input
                     type="text"
                     defaultValue={item.dosage ?? ''}
@@ -624,6 +702,7 @@ export default function VisitDetail({
                           frequency_hours: item.frequency_hours,
                           food_timing: item.food_timing,
                           duration_days: item.duration_days,
+                          dose_times: item.dose_times,
                           unit: item.products?.unit ?? '',
                           note: item.dosage,
                         })}

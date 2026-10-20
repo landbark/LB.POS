@@ -316,6 +316,8 @@ export interface VisitItem {
   frequency_hours: number | null
   food_timing: FoodTiming | null
   duration_days: number | null
+  /** เวลาที่ให้ยาในแต่ละวัน คั่นด้วยจุลภาค เช่น 'morning,evening' */
+  dose_times: string | null
   created_at: string
   products?: Product
 }

@@ -10,6 +10,34 @@ export const FREQUENCY_OPTIONS: { value: Frequency; label: string; perDay: numbe
   { value: 'prn', label: 'PRN — เมื่อมีอาการ', perDay: null },
 ]
 
+/** ช่วงเวลาให้ยาในหนึ่งวัน — หมอเลือกเองได้ว่าเม็ดไหนให้ตอนไหน */
+export const TIME_SLOTS = [
+  { value: 'morning', th: 'เช้า', en: 'morning' },
+  { value: 'noon', th: 'กลางวัน', en: 'noon' },
+  { value: 'evening', th: 'เย็น', en: 'evening' },
+  { value: 'bedtime', th: 'ก่อนนอน', en: 'bedtime' },
+] as const
+
+export type TimeSlot = (typeof TIME_SLOTS)[number]['value']
+
+/** เวลาที่ใช้เมื่อหมอไม่ได้เลือกเอง — เหมือนที่ระบบเคยเดาให้ตายตัว */
+export function defaultTimes(frequency: Frequency | null): TimeSlot[] {
+  switch (frequency) {
+    case 'sid': return ['morning']
+    case 'bid': return ['morning', 'evening']
+    case 'tid': return ['morning', 'noon', 'evening']
+    case 'qid': return ['morning', 'noon', 'evening', 'bedtime']
+    default: return []
+  }
+}
+
+/** อ่านค่าที่เก็บไว้ ('morning,evening') — ของเก่าเป็น NULL จะได้รายการว่าง */
+export function parseTimes(raw: string | null | undefined): TimeSlot[] {
+  if (!raw) return []
+  const valid = TIME_SLOTS.map((t) => t.value) as readonly string[]
+  return raw.split(',').map((x) => x.trim()).filter((x): x is TimeSlot => valid.includes(x))
+}
+
 export const FOOD_OPTIONS: { value: FoodTiming; label: string }[] = [
   { value: 'ac', label: 'AC — ก่อนอาหาร' },
   { value: 'pc', label: 'PC — หลังอาหาร' },
@@ -84,19 +112,21 @@ function amountText(dose: number, unit: string, lang: 'th' | 'en'): string {
   return `${whole}${hit.glyph} ${unit}`.trim()
 }
 
-const TIMES_TH: Record<string, string> = {
-  sid: 'วันละ 1 ครั้ง (เช้า)',
-  bid: 'วันละ 2 ครั้ง (เช้า-เย็น)',
-  tid: 'วันละ 3 ครั้ง (เช้า-กลางวัน-เย็น)',
-  qid: 'วันละ 4 ครั้ง (เช้า-กลางวัน-เย็น-ก่อนนอน)',
-  prn: 'กินเมื่อมีอาการ',
-}
-const TIMES_EN: Record<string, string> = {
-  sid: 'once daily (morning)',
-  bid: 'twice daily (morning & evening)',
-  tid: 'three times daily (morning, noon, evening)',
-  qid: 'four times daily (morning, noon, evening, bedtime)',
-  prn: 'as needed',
+// ข้อความ "วันละ N ครั้ง (เช้า-เย็น)" ประกอบจากเวลาที่หมอเลือก ไม่ใช่ข้อความสำเร็จรูปตายตัว
+function timesText(frequency: Frequency, slots: TimeSlot[], lang: 'th' | 'en'): string | null {
+  if (frequency === 'prn') return lang === 'th' ? 'กินเมื่อมีอาการ' : 'as needed'
+  const perDay = dosesPerDay(frequency, null)
+  if (!perDay) return null
+  const picked = slots.length > 0 ? slots : defaultTimes(frequency)
+  const names = picked.map((v) => {
+    const slot = TIME_SLOTS.find((t) => t.value === v)!
+    return lang === 'th' ? slot.th : slot.en
+  })
+  if (lang === 'en') {
+    const word = perDay === 1 ? 'once' : perDay === 2 ? 'twice' : `${perDay} times`
+    return names.length > 0 ? `${word} daily (${names.join(', ')})` : `${word} daily`
+  }
+  return names.length > 0 ? `วันละ ${perDay} ครั้ง (${names.join('-')})` : `วันละ ${perDay} ครั้ง`
 }
 const FOOD_TH: Record<FoodTiming, string> = { ac: 'ก่อนอาหาร', pc: 'หลังอาหาร', wm: 'พร้อมอาหาร' }
 const FOOD_EN: Record<FoodTiming, string> = { ac: 'before meals', pc: 'after meals', wm: 'with food' }
@@ -107,6 +137,8 @@ export interface SigInput {
   frequency_hours: number | null
   food_timing: FoodTiming | null
   duration_days: number | null
+  /** เวลาที่ให้ยา คั่นด้วยจุลภาค เช่น 'morning,evening' — ว่างไว้ = ใช้ค่าเริ่มต้นตามความถี่ */
+  dose_times?: string | null
   /** หน่วยของสินค้า เช่น เม็ด / ซอง / ml. */
   unit: string
   /** หมอพิมพ์เพิ่มเอง — ต่อท้ายข้อความที่ระบบสร้าง */
@@ -130,7 +162,7 @@ export function sigText(sig: SigInput, lang: 'th' | 'en' = 'th'): string {
   if (sig.frequency === 'q_h' && sig.frequency_hours) {
     parts.push(lang === 'th' ? `ทุกๆ ${sig.frequency_hours} ชั่วโมง` : `every ${sig.frequency_hours} hours`)
   } else if (sig.frequency) {
-    const t = (lang === 'th' ? TIMES_TH : TIMES_EN)[sig.frequency]
+    const t = timesText(sig.frequency, parseTimes(sig.dose_times), lang)
     if (t) parts.push(t)
   }
 

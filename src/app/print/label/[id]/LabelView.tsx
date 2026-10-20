@@ -13,6 +13,7 @@ interface Item {
   frequency_hours: number | null
   food_timing: FoodTiming | null
   duration_days: number | null
+  dose_times: string | null
   products: {
     name: string
     unit: string
@@ -127,6 +128,7 @@ export default function LabelView({ visit, store }: { visit: Visit; store: Store
             frequency_hours: item.frequency_hours,
             food_timing: item.food_timing,
             duration_days: item.duration_days,
+            dose_times: item.dose_times,
             unit: item.products?.unit ?? '',
             note: item.dosage,
           }, lang)
