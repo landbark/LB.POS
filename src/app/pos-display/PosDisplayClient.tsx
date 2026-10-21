@@ -72,6 +72,8 @@ interface Props {
 export default function PosDisplayClient({ storeName, logoUrl, paymentQrUrl }: Props) {
   const [msg, setMsg] = useState<PosDisplayMessage | null>(null)
   const [fullscreen, setFullscreen] = useState(false)
+  // หน้าขายเปิดมาพร้อม ?fs=1 = อยากให้เต็มจอเอง — ถ้าเบราว์เซอร์ไม่ยอมค่อยขึ้นปุ่มให้แตะ
+  const [needsTap, setNeedsTap] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
   const itemsEndRef = useRef<HTMLDivElement>(null)
 
@@ -82,9 +84,20 @@ export default function PosDisplayClient({ storeName, logoUrl, paymentQrUrl }: P
   }, [])
 
   useEffect(() => {
-    function onChange() { setFullscreen(!!document.fullscreenElement) }
+    function onChange() {
+      const on = !!document.fullscreenElement
+      setFullscreen(on)
+      if (on) setNeedsTap(false)
+    }
     document.addEventListener('fullscreenchange', onChange)
     return () => document.removeEventListener('fullscreenchange', onChange)
+  }, [])
+
+  // ขยายเต็มจอเองตอนเปิดมาจากปุ่ม "โชว์จอลูกค้า"
+  // (เบราว์เซอร์ยอมเฉพาะตอนที่หน้าต่างยังถือ "การกด" ที่เปิดมันมาอยู่ — ไม่ยอมก็ให้แตะเอง)
+  useEffect(() => {
+    if (!new URLSearchParams(window.location.search).has('fs')) return
+    containerRef.current?.requestFullscreen().catch(() => setNeedsTap(true))
   }, [])
 
   // เลื่อนรายการสินค้าไปตัวล่าสุดเสมอ — ลูกค้าจะได้เห็นชิ้นที่เพิ่งสแกนทันที
@@ -97,7 +110,7 @@ export default function PosDisplayClient({ storeName, logoUrl, paymentQrUrl }: P
     if (document.fullscreenElement) {
       document.exitFullscreen()
     } else {
-      containerRef.current?.requestFullscreen()
+      containerRef.current?.requestFullscreen().catch(() => setNeedsTap(true))
     }
   }
 
@@ -128,6 +141,21 @@ export default function PosDisplayClient({ storeName, logoUrl, paymentQrUrl }: P
       >
         {fullscreen ? <Minimize size={18} /> : <Maximize size={18} />}
       </button>
+
+      {/* เบราว์เซอร์ไม่ยอมให้ขยายเองตอนเปิด — แตะตรงไหนก็ได้ของจอนี้ครั้งเดียว */}
+      {needsTap && (
+        <button
+          onClick={toggleFullscreen}
+          className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-3"
+          style={{ background: 'rgba(30,19,12,0.92)', color: TEXT_LIGHT }}
+        >
+          <Maximize size={48} />
+          <span style={{ fontSize: 'clamp(1.1rem, 3.5vh, 2rem)' }}>แตะที่จอนี้เพื่อขยายเต็มจอ</span>
+          <span style={{ color: TEXT_MUTED, fontSize: 'clamp(0.8rem, 2vh, 1.1rem)' }}>
+            ทำครั้งเดียว แล้วปล่อยหน้าต่างนี้ไว้ได้เลย
+          </span>
+        </button>
+      )}
 
       <div className="flex items-center justify-center shrink-0" style={{ gap: 'clamp(0.5rem, 1.5vh, 1rem)', paddingTop: 'clamp(0.75rem, 2.5vh, 1.5rem)', paddingBottom: 'clamp(0.25rem, 1vh, 0.75rem)' }}>
         {logoUrl && (

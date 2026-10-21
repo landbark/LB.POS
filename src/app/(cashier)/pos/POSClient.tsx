@@ -11,6 +11,7 @@ import PaymentModal from './PaymentModal'
 import { confirmDialog } from '@/lib/confirm'
 import BarcodeScanner, { type ScanFeedback } from '@/components/BarcodeScanner'
 import { withBoothPrices } from '@/lib/booth'
+import { openCustomerDisplay } from '@/lib/posDisplayWindow'
 
 /** รอบออกบูธที่เปิดอยู่ — ไม่มีรอบเปิด (null) ก็กดโหมดบูธไม่ได้ */
 export interface BoothContext {
@@ -114,6 +115,18 @@ export default function POSClient({ products: allProducts, booth, promotions, po
       else localStorage.removeItem('lb_booth_trip')
     } catch {
       // เก็บไม่ได้ก็ใช้ได้ปกติ แค่ต้องกดใหม่ถ้ารีเฟรชหน้า
+    }
+  }
+
+  async function showCustomerDisplay() {
+    const result = await openCustomerDisplay()
+    if (result === 'blocked') {
+      toast.error('เบราว์เซอร์บล็อกหน้าต่างใหม่ — กดอนุญาตป๊อปอัปของเว็บนี้แล้วลองอีกครั้ง')
+    } else if (result === 'moved') {
+      toast('ย้ายไปจอที่สองแล้ว — แตะที่จอนั้นหนึ่งครั้งเพื่อขยายเต็มจอ', { icon: '🖥️', duration: 6000 })
+    } else if (result === 'fallback') {
+      // ต่อจอเดียว/ไม่ให้สิทธิ์ — เปิดได้แต่ลากไปเองเหมือนเดิม
+      toast('เปิดหน้าต่างจอลูกค้าแล้ว — ลากไปจอที่สองแล้วกดปุ่มเต็มจอ', { icon: '🖥️', duration: 6000 })
     }
   }
 
@@ -804,7 +817,7 @@ export default function POSClient({ products: allProducts, booth, promotions, po
         {/* จอสอง */}
         <div className="px-3 pt-3">
           <button
-            onClick={() => window.open('/pos-display', 'landbark-customer-display', 'width=1000,height=750')}
+            onClick={showCustomerDisplay}
             className="w-full flex items-center justify-center gap-2 border border-gray-200 hover:bg-gray-50 text-gray-600 text-xs font-medium py-1.5 rounded-lg transition-colors"
           >
             <MonitorPlay size={14} />
