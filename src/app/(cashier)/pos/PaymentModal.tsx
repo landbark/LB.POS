@@ -23,6 +23,8 @@ interface Props {
   roundingMode: RoundingMode
   /** เวชระเบียนคลินิกที่เก็บเงินรวมในบิลนี้ — จ่ายเสร็จ (หรือตัดสต็อกออก) จะ mark เป็น paid ทุกใบ */
   visitIds: string[]
+  /** ขายอยู่ในโหมดบูธ — ล็อกช่องทางเป็น 'booth' แล้วผูกบิลเข้ารอบนั้น */
+  boothTripId: string | null
   onClose: () => void
   onSuccess: (info?: { writeoff?: boolean }) => void
 }
@@ -38,14 +40,17 @@ const PAYMENT_LABELS: Record<SplitMethod, string> = {
 
 const SPLIT_METHODS = Object.keys(PAYMENT_LABELS) as SplitMethod[]
 
+// ช่องทางที่เลือกเองได้ตรงนี้ — 'booth' ไม่อยู่ในนี้ มาจากสวิตช์โหมดบูธในหน้าขายเท่านั้น
+const STORE_CHANNELS = SALES_CHANNELS.filter((c) => c.value !== 'booth')
+
 export default function PaymentModal({
-  cart, subtotal, totalDiscount, total, customer, pointsConfig, cashierId, promptpayId, roundingMode, visitIds, onClose, onSuccess,
+  cart, subtotal, totalDiscount, total, customer, pointsConfig, cashierId, promptpayId, roundingMode, visitIds, boothTripId, onClose, onSuccess,
 }: Props) {
   // writeoff = ตัดของออกจากสต็อกเฉยๆ ไม่ใช่การขาย (ของเสีย/ของแถม/ใช้ในร้าน) — ไม่สร้างใบเสร็จ
   const [mode, setMode] = useState<'sale' | 'writeoff'>('sale')
   const [writeoffReason, setWriteoffReason] = useState('')
   const [writtenOff, setWrittenOff] = useState(false)
-  const [channel, setChannel] = useState<SalesChannel>('store')
+  const [channel, setChannel] = useState<SalesChannel>(boothTripId ? 'booth' : 'store')
   const [orderNo, setOrderNo] = useState('')
   const [method, setMethod] = useState<PaymentMethod>('cash')
   const [cashReceived, setCashReceived] = useState('')
@@ -252,6 +257,7 @@ export default function PaymentModal({
           payment_method: primaryMethod,
           sales_channel: channel,
           external_order_no: isOnlineChannel(channel) ? (orderNo.trim() || null) : null,
+          booth_trip_id: channel === 'booth' ? boothTripId : null,
           cash_received: cashIn && cashIn > 0 ? cashIn : null,
           change_given: cashIn && cashIn > 0 ? (changeOut ?? 0) : null,
           points_earned: earnedPoints,
@@ -423,8 +429,14 @@ export default function PaymentModal({
           {/* ช่องทางขาย — ออนไลน์เงินเข้าผ่านแพลตฟอร์ม ไม่ใช่เงินสดหน้าร้าน */}
           <div>
             <p className="text-sm font-medium text-gray-700 mb-2">ช่องทางขาย</p>
+            {/* ขายที่บูธมาจากสวิตช์โหมดบูธในหน้าขาย เลือกตรงนี้ไม่ได้ ไม่งั้นบิลจะไม่ผูกกับรอบ */}
+            {boothTripId ? (
+              <div className="rounded-lg border-2 border-amber-300 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-900">
+                งานออกบูธ — บิลนี้จะเข้ารอบที่เปิดอยู่
+              </div>
+            ) : (
             <div className="grid grid-cols-4 gap-1.5">
-              {SALES_CHANNELS.map((c) => (
+              {STORE_CHANNELS.map((c) => (
                 <button
                   key={c.value}
                   onClick={() => {
@@ -445,6 +457,7 @@ export default function PaymentModal({
                 </button>
               ))}
             </div>
+            )}
             <button
               onClick={() => setMode(writeoff ? 'sale' : 'writeoff')}
               className={`mt-1.5 w-full py-2 rounded-lg text-xs font-medium border-2 transition-colors ${

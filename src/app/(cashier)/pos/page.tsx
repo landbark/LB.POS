@@ -9,7 +9,7 @@ export default async function POSPage() {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
 
-  const [products, { data: promotions }, { data: pointsConfig }, { data: storeSettings }, { data: pendingVisits }] = await Promise.all([
+  const [products, { data: promotions }, { data: pointsConfig }, { data: storeSettings }, { data: pendingVisits }, { data: boothTrip }] = await Promise.all([
     // ไล่ดึงทีละหน้า — supabase ตัดที่ 1000 แถว ส่วนร้านมีสินค้าเกินนั้นแล้ว
     fetchAll((from, to) =>
       supabase
@@ -38,6 +38,12 @@ export default async function POSPage() {
       .select('id, visit_number, pets(name), customers(*), visit_items(id, product_id, quantity, unit_price, dosage)')
       .eq('status', 'pending_payment')
       .order('visit_date'),
+    // รอบออกบูธที่เปิดอยู่ (มีได้ทีละรอบ) — มีรอบเปิดถึงจะกดโหมดบูธในหน้าขายได้
+    supabase
+      .from('booth_trips')
+      .select('id, trip_number, name, location, booth_trip_items(product_id, taken_quantity)')
+      .eq('status', 'open')
+      .maybeSingle(),
   ])
 
   // ปิดระบบแต้ม = ส่ง null ลงไป หน้าขายจะไม่คิด/ไม่ให้ใช้แต้มเลย (แต้มเดิมของลูกค้ายังอยู่)
@@ -64,9 +70,27 @@ export default async function POSPage() {
       .filter((item): item is ClinicQueueItem => Boolean(item.product)),
   }))
 
+  // โหมดบูธขายเฉพาะของที่ลงใบเบิกไว้ ส่งรายการ id ไปให้หน้าขายกรอง
+  const booth = boothTrip
+    ? {
+        id: boothTrip.id,
+        trip_number: boothTrip.trip_number,
+        label: [boothTrip.name, boothTrip.location].filter(Boolean).join(' · ') || 'งานออกบูธ',
+        productIds: (boothTrip.booth_trip_items ?? []).map((i: { product_id: string }) => i.product_id),
+        // ไว้ขึ้นป้ายบอกคนที่ร้านว่าของตัวนี้ถูกยกไปงานกี่ชิ้น (สต็อกในระบบยังนับรวมอยู่)
+        takenByProduct: Object.fromEntries(
+          (boothTrip.booth_trip_items ?? []).map((i: { product_id: string; taken_quantity: number }) => [
+            i.product_id,
+            i.taken_quantity,
+          ]),
+        ) as Record<string, number>,
+      }
+    : null
+
   return (
     <POSClient
       products={shelfProducts}
+      booth={booth}
       promotions={promotions ?? []}
       pointsConfig={activePointsConfig}
       cashierId={user?.id ?? ''}

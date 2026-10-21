@@ -1,18 +1,31 @@
 'use client'
 
-import { useState, useEffect, useRef, useCallback, useDeferredValue } from 'react'
+import { useState, useEffect, useMemo, useRef, useCallback, useDeferredValue } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { Search, X, Plus, Minus, ShoppingCart, User, MonitorPlay, Stethoscope, ScanBarcode } from 'lucide-react'
+import { Search, X, Plus, Minus, ShoppingCart, User, MonitorPlay, Stethoscope, ScanBarcode, Store } from 'lucide-react'
 import toast from 'react-hot-toast'
 import type { Product, CartItem, Promotion, PointsConfig, Customer, PaymentMethod, ClinicQueueVisit, RoundingMode } from '@/lib/types'
 import { POS_DISPLAY_CHANNEL, type PosDisplayMessage } from '@/lib/posDisplay'
 import PaymentModal from './PaymentModal'
 import { confirmDialog } from '@/lib/confirm'
 import BarcodeScanner, { type ScanFeedback } from '@/components/BarcodeScanner'
+import { withBoothPrices } from '@/lib/booth'
+
+/** รอบออกบูธที่เปิดอยู่ — ไม่มีรอบเปิด (null) ก็กดโหมดบูธไม่ได้ */
+export interface BoothContext {
+  id: string
+  trip_number: string
+  label: string
+  /** สินค้าที่อยู่ในใบเบิกของรอบนี้ */
+  productIds: string[]
+  /** ยกไปงานกี่ชิ้นต่อสินค้าหนึ่งตัว */
+  takenByProduct: Record<string, number>
+}
 
 interface Props {
   products: Product[]
+  booth: BoothContext | null
   promotions: Promotion[]
   pointsConfig: PointsConfig | null
   cashierId: string
@@ -36,7 +49,7 @@ const matchesQuery = (p: Product, q: string) =>
 // จำนวนสินค้าที่วาดบนกริด — วาดครบสองพันตัวทำให้ทุกตัวอักษรที่พิมพ์หน่วงเป็นสิบ ms
 const GRID_LIMIT = 60
 
-export default function POSClient({ products, promotions, pointsConfig, cashierId, promptpayId, roundingMode, clinicQueue }: Props) {
+export default function POSClient({ products: allProducts, booth, promotions, pointsConfig, cashierId, promptpayId, roundingMode, clinicQueue }: Props) {
   const router = useRouter()
   // เวชระเบียนที่กำลังเก็บเงินอยู่ — จ่ายเสร็จแล้วจะถูก mark เป็น paid พร้อมผูกเลขที่บิล
   // เจ้าของคนเดียวพาสัตว์มาหลายตัว (หรือตัวเดิมหลายใบ) รวมเก็บเงินทีเดียวได้ เลยเก็บเป็นรายการ
@@ -59,6 +72,10 @@ export default function POSClient({ products, promotions, pointsConfig, cashierI
   const [newCustomerName, setNewCustomerName] = useState('')
   const [showPayment, setShowPayment] = useState(false)
   const [categoryFilter, setCategoryFilter] = useState('')
+  // โหมดบูธ — จำไว้ที่เครื่อง ไม่ใช่ที่บัญชี: เครื่องที่ไปงานเปิดไว้ ส่วนเครื่องที่ร้านยังขายราคาปกติ
+  const [boothMode, setBoothMode] = useState(false)
+  // ในโหมดบูธปกติโชว์เฉพาะของในใบเบิก — ติ๊กอันนี้ถ้าต้องขายตัวที่ลืมลงใบ
+  const [boothShowAll, setBoothShowAll] = useState(false)
   const searchRef = useRef<HTMLInputElement>(null)
   const [showScanner, setShowScanner] = useState(false)
   // ปุ่มกล้องโชว์เฉพาะมือถือ/แท็บเล็ตที่เปิดกล้องได้ — เครื่องที่ใช้เมาส์ยิงด้วยเครื่องยิงอยู่แล้ว
@@ -70,6 +87,35 @@ export default function POSClient({ products, promotions, pointsConfig, cashierI
         window.matchMedia('(pointer: coarse)').matches,
     )
   }, [])
+
+  // อ่านค่าที่เครื่องนี้ตั้งไว้หลัง mount (ฝั่ง server ไม่มี localStorage จะทำให้ html ไม่ตรงกัน)
+  // รอบปิดไปแล้วก็ปิดโหมดให้เอง ไม่งั้นวันรุ่งขึ้นที่ร้านจะขายราคาบูธโดยไม่รู้ตัว
+  useEffect(() => {
+    if (!booth) {
+      setBoothMode(false)
+      return
+    }
+    try {
+      setBoothMode(localStorage.getItem('lb_booth_trip') === booth.id)
+    } catch {
+      // โหมดส่วนตัว/ปิดคุกกี้ — ไม่เป็นไร เริ่มที่โหมดปกติ
+    }
+  }, [booth])
+
+  function toggleBoothMode(on: boolean) {
+    if (cart.length > 0) {
+      toast.error('เคลียร์ตะกร้าก่อนสลับโหมด — ราคาในตะกร้าจะไม่เปลี่ยนตาม')
+      return
+    }
+    setBoothMode(on)
+    setCategoryFilter('')
+    try {
+      if (on && booth) localStorage.setItem('lb_booth_trip', booth.id)
+      else localStorage.removeItem('lb_booth_trip')
+    } catch {
+      // เก็บไม่ได้ก็ใช้ได้ปกติ แค่ต้องกดใหม่ถ้ารีเฟรชหน้า
+    }
+  }
 
   // เครื่องยิงบาร์โค้ดทำงานเหมือนคีย์บอร์ด ต้องมี focus อยู่ที่ช่องค้นหาตลอดถึงจะยิงได้เลยโดยไม่ต้องคลิกก่อน
   // เฉพาะเครื่องที่ใช้เมาส์ — มือถือ/แท็บเล็ตจะเด้งคีย์บอร์ดขึ้นมาบังจอ
@@ -105,6 +151,15 @@ export default function POSClient({ products, promotions, pointsConfig, cashierI
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [showPayment, showScanner])
+
+  // โหมดบูธ: สลับ price เป็นราคาบูธทั้งก้อนตั้งแต่ต้นทาง แทนที่จะไปแก้ทุกจุดที่อ่านราคา
+  // (กริด, ตะกร้า, โปรโมชั่น, จอลูกค้า) — พลาดจุดเดียวลูกค้าจ่ายผิดราคา
+  const products = useMemo(() => {
+    if (!boothMode || !booth) return allProducts
+    const inSheet = new Set(booth.productIds)
+    const pool = boothShowAll ? allProducts : allProducts.filter((p) => inSheet.has(p.id))
+    return withBoothPrices(pool)
+  }, [allProducts, booth, boothMode, boothShowAll])
 
   // Get unique categories from products
   const categories = Array.from(
@@ -537,6 +592,39 @@ export default function POSClient({ products, promotions, pointsConfig, cashierI
     <div className="flex h-[calc(100dvh-56px)]">
       {/* Left: Product Grid */}
       <div className="flex-1 flex flex-col bg-gray-50 overflow-hidden">
+        {/* โหมดบูธ — โชว์เฉพาะตอนมีรอบออกบูธเปิดอยู่ */}
+        {booth && (
+          <div className={`px-4 py-2 border-b ${boothMode ? 'bg-amber-100 border-amber-300' : 'bg-white border-gray-200'}`}>
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+              <button
+                onClick={() => toggleBoothMode(!boothMode)}
+                className={`inline-flex items-center gap-2 rounded-lg px-3 py-1.5 text-sm font-semibold transition-colors ${
+                  boothMode
+                    ? 'bg-amber-600 text-white hover:bg-amber-700'
+                    : 'border-2 border-amber-300 text-amber-800 hover:bg-amber-50'
+                }`}
+              >
+                <Store size={15} />
+                {boothMode ? 'กำลังขายที่บูธ — กดเพื่อกลับหน้าร้าน' : 'เปิดโหมดบูธ'}
+              </button>
+              <span className={`text-xs ${boothMode ? 'text-amber-900' : 'text-gray-500'}`}>
+                {boothMode ? `${booth.label} · ราคาบูธ` : `มีรอบออกบูธเปิดอยู่: ${booth.label}`}
+              </span>
+              {boothMode && (
+                <label className="ml-auto flex items-center gap-1.5 text-xs text-amber-900">
+                  <input
+                    type="checkbox"
+                    checked={boothShowAll}
+                    onChange={(e) => setBoothShowAll(e.target.checked)}
+                    className="w-3.5 h-3.5 accent-amber-600"
+                  />
+                  โชว์สินค้าทั้งร้าน (ไม่เฉพาะของในใบเบิก)
+                </label>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* Search + Filter */}
         <div className="p-4 bg-white border-b border-gray-200 space-y-2">
           <div className="relative">
@@ -616,6 +704,12 @@ export default function POSClient({ products, promotions, pointsConfig, cashierI
                   {product.sku && (
                     <p className="text-[11px] font-mono text-gray-400 mb-1 truncate">{product.sku}</p>
                   )}
+                  {/* ของที่ยกไปออกบูธยังนับอยู่ในสต็อกนี้ — เตือนคนที่ร้านว่าของอาจไม่ได้อยู่บนชั้น */}
+                  {!boothMode && booth && booth.takenByProduct[product.id] > 0 && (
+                    <p className="text-[11px] font-medium text-amber-700 mb-0.5">
+                      เบิกไปบูธ {booth.takenByProduct[product.id]} {product.unit}
+                    </p>
+                  )}
                   <p className="text-sm font-bold text-blue-600">
                     ฿{product.price.toLocaleString('th-TH', { minimumFractionDigits: 2 })}
                   </p>
@@ -661,7 +755,7 @@ export default function POSClient({ products, promotions, pointsConfig, cashierI
           </button>
         </div>
         {/* คิวเก็บเงินจากคลินิก */}
-        {queue.length > 0 && activeVisits.length === 0 && (
+        {queue.length > 0 && activeVisits.length === 0 && !boothMode && (
           <div className="px-3 pt-3">
             <button
               onClick={() => setShowQueue(true)}
@@ -960,6 +1054,7 @@ export default function POSClient({ products, promotions, pointsConfig, cashierI
           promptpayId={promptpayId}
           roundingMode={roundingMode}
           visitIds={activeVisitIds}
+          boothTripId={boothMode && booth ? booth.id : null}
           onClose={() => setShowPayment(false)}
           onSuccess={(info) => {
             // ตัดสต็อกออกก็ปิดใบเหมือนกัน — ของออกจากสต็อกไปแล้ว ไม่ต้องค้างในคิวให้เก็บเงินอีก

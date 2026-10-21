@@ -25,6 +25,7 @@ export default function ProductForm({ categories, units, suppliers, product }: P
     category_id: product?.category_id ?? '',
     supplier_id: product?.supplier_id ?? '',
     price: product?.price?.toString() ?? '',
+    booth_price: product?.booth_price?.toString() ?? '',
     cost: product?.cost?.toString() ?? '',
     unit: product?.unit ?? (units[0]?.name ?? 'ชิ้น'),
     min_stock: product?.min_stock?.toString() ?? '5',
@@ -148,6 +149,8 @@ export default function ProductForm({ categories, units, suppliers, product }: P
       category_id: form.category_id || null,
       supplier_id: form.supplier_id || null,
       price: parseFloat(form.price),
+      // เว้นว่าง = ขายที่บูธราคาเดียวกับหน้าร้าน
+      booth_price: form.booth_price.trim() ? parseFloat(form.booth_price) : null,
       cost: form.cost ? parseFloat(form.cost) : null,
       unit: form.unit,
       min_stock: parseInt(form.min_stock),
@@ -372,6 +375,24 @@ export default function ProductForm({ categories, units, suppliers, product }: P
             />
           </div>
         </div>
+
+        {!form.is_service && (
+          <div>
+            <label className={labelClass}>ราคาตอนออกบูธ (บาท)</label>
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              value={form.booth_price}
+              onChange={(e) => set('booth_price', e.target.value)}
+              className={inputClass}
+              placeholder="เว้นว่าง = ใช้ราคาขายปกติ"
+            />
+            <p className="text-xs text-gray-400 mt-1">
+              ใช้เฉพาะตอนเปิดโหมดบูธในหน้าขาย — หน้าร้านกับเว็บยังขายราคาปกติ
+            </p>
+          </div>
+        )}
 
         <div>
           <label className={labelClass}>VAT</label>

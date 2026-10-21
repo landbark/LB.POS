@@ -8,6 +8,7 @@ import ProductRow from './ProductRow'
 import { createClient } from '@/lib/supabase/client'
 import { confirmDialog } from '@/lib/confirm'
 import { isVatApplicable } from '@/lib/vat'
+import { hasBoothPrice } from '@/lib/booth'
 import type { Product } from '@/lib/types'
 
 // แสดงทีละชุด — ร้านมีสินค้าสองพันกว่าตัว วาดทั้งตารางทีเดียวหน้าหนืด
@@ -28,6 +29,8 @@ export default function ProductsTable({ products }: { products: Product[] }) {
   const [hideStopped, setHideStopped] = useState(false)
   // '' = ทุกตัว, 'yes' = เฉพาะที่เข้าข่าย VAT, 'no' = เฉพาะที่ไม่เข้าข่าย
   const [vatFilter, setVatFilter] = useState<'' | 'yes' | 'no'>('')
+  // '' = ทุกตัว, 'yes' = เฉพาะที่ตั้งราคาบูธไว้ (ไว้ไล่ตรวจราคาก่อนออกงาน)
+  const [boothFilter, setBoothFilter] = useState<'' | 'yes' | 'no'>('')
   const [shown, setShown] = useState(PAGE)
 
   const haystacks = useMemo(
@@ -53,12 +56,16 @@ export default function ProductsTable({ products }: { products: Product[] }) {
       const want = vatFilter === 'yes'
       pool = pool.filter((p) => isVatApplicable(p) === want)
     }
+    if (boothFilter) {
+      const want = boothFilter === 'yes'
+      pool = pool.filter((p) => hasBoothPrice(p) === want)
+    }
     if (terms.length === 0) return pool
     return pool.filter((p) => {
       const haystack = haystacks.get(p.id) ?? ''
       return terms.every((t) => haystack.includes(t))
     })
-  }, [products, haystacks, query, hideStopped, vatFilter])
+  }, [products, haystacks, query, hideStopped, vatFilter, boothFilter])
 
   function search(value: string) {
     setQuery(value)
@@ -107,6 +114,89 @@ export default function ProductsTable({ products }: { products: Product[] }) {
     router.refresh()
   }
 
+  /** ยิง update เป็นก้อน — id เป็นพันตัวใน .in() ทีเดียวไม่ได้ ความยาว URL เกินลิมิต */
+  async function patchChunks(ids: string[], patch: Record<string, unknown>) {
+    const supabase = createClient()
+    for (let i = 0; i < ids.length; i += 200) {
+      const { error } = await supabase.from('products').update(patch).in('id', ids.slice(i, i + 200))
+      if (error) throw new Error(error.message)
+    }
+  }
+
+  /**
+   * ตั้งราคาบูธให้ทุกตัวที่ติ๊กไว้
+   *
+   * mode percent = ลดจากราคาปกติของแต่ละตัว (ราคาต่างกัน ค่าที่ได้ก็ต่างกัน ต้องจับกลุ่มตามราคา
+   * ที่คำนวณได้แล้วค่อยยิงทีละกลุ่ม), fixed = ราคาเดียวกันหมด, clear = ล้างให้กลับไปใช้ราคาปกติ
+   */
+  async function applyBoothPrice(mode: 'percent' | 'fixed' | 'clear') {
+    const ids = [...picked]
+    if (ids.length === 0) return
+    const n = count(ids.length)
+
+    let input = ''
+    if (mode !== 'clear') {
+      const ask = await confirmDialog({
+        title: mode === 'percent' ? 'ลดจากราคาปกติกี่ %' : 'ตั้งราคาบูธเท่ากับเท่าไร',
+        message:
+          mode === 'percent'
+            ? `สินค้าที่เลือกไว้ ${n} รายการจะได้ราคาบูธ = ราคาปกติหักส่วนลดนี้`
+            : `สินค้าที่เลือกไว้ ${n} รายการจะใช้ราคาบูธเท่ากันทั้งหมด`,
+        reasonLabel: mode === 'percent' ? 'ส่วนลด (%)' : 'ราคาบูธ (บาท)',
+        reasonPlaceholder: mode === 'percent' ? 'เช่น 10' : 'เช่น 99',
+        reasonRequired: true,
+        confirmLabel: 'ตั้งราคา',
+        tone: 'primary',
+      })
+      if (!ask.confirmed) return
+      input = ask.value.trim()
+      const num = parseFloat(input)
+      if (!isFinite(num) || num < 0 || (mode === 'percent' && num > 100)) {
+        toast.error(mode === 'percent' ? 'ใส่เป็นตัวเลข 0–100' : 'ใส่ราคาเป็นตัวเลขไม่ติดลบ')
+        return
+      }
+    } else {
+      const { confirmed } = await confirmDialog({
+        title: 'ใช้ราคาปกติตอนออกบูธ?',
+        message: `สินค้าที่เลือกไว้ ${n} รายการจะเลิกใช้ราคาบูธ กลับไปขายราคาเดียวกับหน้าร้าน`,
+        confirmLabel: 'ล้างราคาบูธ',
+        tone: 'primary',
+      })
+      if (!confirmed) return
+    }
+
+    setSaving(true)
+    try {
+      if (mode === 'clear') {
+        await patchChunks(ids, { booth_price: null })
+      } else if (mode === 'fixed') {
+        await patchChunks(ids, { booth_price: parseFloat(input) })
+      } else {
+        const pct = parseFloat(input)
+        const byPrice = new Map<number, string[]>()
+        const pickedProducts = products.filter((p) => picked.has(p.id))
+        for (const p of pickedProducts) {
+          // ปัดเป็นสตางค์ก่อนเทียบ ไม่งั้น float ทำให้กลุ่มแตกเป็นเศษๆ
+          const value = Math.round(p.price * (1 - pct / 100) * 100) / 100
+          const group = byPrice.get(value)
+          if (group) group.push(p.id)
+          else byPrice.set(value, [p.id])
+        }
+        for (const [value, groupIds] of byPrice) await patchChunks(groupIds, { booth_price: value })
+      }
+    } catch (e) {
+      setSaving(false)
+      toast.error('ตั้งราคาไม่สำเร็จ: ' + (e as Error).message)
+      return
+    }
+    setSaving(false)
+    setPicked(new Set())
+    toast.success(
+      mode === 'clear' ? `ล้างราคาบูธ ${n} รายการแล้ว` : `ตั้งราคาบูธให้ ${n} รายการแล้ว`,
+    )
+    router.refresh()
+  }
+
   const visible = found.slice(0, shown)
   const count = (n: number) => n.toLocaleString('th-TH')
   const allVisiblePicked = visible.length > 0 && visible.every((p) => picked.has(p.id))
@@ -141,6 +231,15 @@ export default function ProductsTable({ products }: { products: Product[] }) {
           <option value="yes">เฉพาะที่มี VAT</option>
           <option value="no">เฉพาะที่ไม่มี VAT</option>
         </select>
+        <select
+          value={boothFilter}
+          onChange={(e) => { setBoothFilter(e.target.value as '' | 'yes' | 'no'); setShown(PAGE) }}
+          className="shrink-0 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+        >
+          <option value="">ราคาบูธ: ทั้งหมด</option>
+          <option value="yes">เฉพาะที่ตั้งราคาบูธไว้</option>
+          <option value="no">เฉพาะที่ใช้ราคาปกติ</option>
+        </select>
         {stoppedCount > 0 && (
           <label className="flex items-center gap-2 text-sm text-gray-600 shrink-0">
             <input
@@ -154,7 +253,7 @@ export default function ProductsTable({ products }: { products: Product[] }) {
         )}
         <p className="text-sm text-gray-500 shrink-0">
           {/* ตัวกรอง VAT กับ "ซ่อนที่งดจำหน่าย" ก็ต้องนับใหม่ ไม่ใช่โชว์ยอดเต็มค้างไว้จนดูเหมือนกรองไม่ติด */}
-          {query || vatFilter || hideStopped ? (
+          {query || vatFilter || boothFilter || hideStopped ? (
             <>
               พบ <span className="font-semibold text-gray-900">{count(found.length)}</span> จาก{' '}
               {count(products.length)} รายการ
@@ -201,6 +300,31 @@ export default function ProductsTable({ products }: { products: Product[] }) {
               className="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-40"
             >
               ใช้ตามหมวดหมู่
+            </button>
+            <span className="h-5 w-px bg-blue-200" aria-hidden />
+            <button
+              onClick={() => applyBoothPrice('percent')}
+              disabled={saving}
+              title="ราคาบูธ = ราคาปกติของแต่ละตัว หักส่วนลดที่กรอก"
+              className="rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-amber-700 disabled:opacity-40"
+            >
+              ราคาบูธ: ลด %
+            </button>
+            <button
+              onClick={() => applyBoothPrice('fixed')}
+              disabled={saving}
+              title="ตั้งราคาบูธเท่ากันทุกตัวที่เลือก"
+              className="rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-xs font-medium text-amber-800 hover:bg-amber-50 disabled:opacity-40"
+            >
+              ราคาบูธ: ตั้งเท่ากัน
+            </button>
+            <button
+              onClick={() => applyBoothPrice('clear')}
+              disabled={saving}
+              title="เลิกใช้ราคาบูธ กลับไปขายราคาเดียวกับหน้าร้าน"
+              className="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-40"
+            >
+              ล้างราคาบูธ
             </button>
             <button
               onClick={() => setPicked(new Set())}

@@ -5,6 +5,7 @@ export const SALES_CHANNELS: { value: SalesChannel; label: string; short: string
   { value: 'shopee', label: 'Shopee', short: 'Shopee' },
   { value: 'tiktok', label: 'TikTok', short: 'TikTok' },
   { value: 'lazada', label: 'Lazada', short: 'Lazada' },
+  { value: 'booth', label: 'งานออกบูธ', short: 'ออกบูธ' },
 ]
 
 export const CHANNEL_LABEL: Record<SalesChannel, string> =
@@ -16,6 +17,12 @@ export const CHANNEL_BADGE: Record<SalesChannel, string> = {
   shopee: 'bg-orange-100 text-orange-700',
   tiktok: 'bg-neutral-900 text-white',
   lazada: 'bg-indigo-100 text-indigo-700',
+  booth: 'bg-amber-100 text-amber-800',
 }
 
-export const isOnlineChannel = (c: SalesChannel) => c !== 'store'
+/**
+ * ขายผ่านแพลตฟอร์ม = เงินเข้าผ่านระบบของเขา ไม่ได้รับเงินเอง
+ *
+ * บูธไม่นับเป็นออนไลน์ — รับเงินสด/โอน/สแกนจ่ายเองที่หน้างานเหมือนหน้าร้าน
+ */
+export const isOnlineChannel = (c: SalesChannel) => c !== 'store' && c !== 'booth'

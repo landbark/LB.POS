@@ -94,7 +94,8 @@ export default function ShiftClient({
     async function loadSummary(shift: Shift) {
       const supabase = createClient()
       const [{ data: completed }, { data: refunds }, { data: moves }] = await Promise.all([
-        supabase.from('transactions').select('total, payment_method, transaction_payments(method, amount)').eq('status', 'completed').gte('created_at', shift.opened_at),
+        // ยอดขายที่บูธไม่เข้าเก๊ะที่ร้าน — คนที่ไปงานถือเงินทอนแยกไปต่างหาก (ดูสรุปที่ /admin/booth)
+        supabase.from('transactions').select('total, payment_method, transaction_payments(method, amount)').eq('status', 'completed').neq('sales_channel', 'booth').gte('created_at', shift.opened_at),
         supabase.from('transactions').select('total').eq('status', 'cancelled').eq('refund_method', 'cash').gte('cancelled_at', shift.opened_at),
         supabase.from('cash_movements').select('*, profiles(name)').eq('shift_id', shift.id).order('created_at'),
       ])

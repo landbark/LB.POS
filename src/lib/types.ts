@@ -57,6 +57,8 @@ export interface Product {
   category_id: string | null
   supplier_id: string | null
   price: number
+  /** ราคาขายตอนออกบูธ — null = ใช้ราคาปกติ (ชุดเดียวใช้ได้ทุกงาน) */
+  booth_price: number | null
   cost: number | null
   unit: string
   min_stock: number
@@ -443,8 +445,8 @@ export interface Promotion {
 }
 
 export type PaymentMethod = 'cash' | 'transfer' | 'card' | 'qr'
-/** ช่องทางที่บิลนี้ขายออกไป — store = หน้าร้าน ที่เหลือคือ marketplace */
-export type SalesChannel = 'store' | 'shopee' | 'tiktok' | 'lazada'
+/** ช่องทางที่บิลนี้ขายออกไป — store = หน้าร้าน, booth = ยกของไปขายที่งาน, ที่เหลือคือ marketplace */
+export type SalesChannel = 'store' | 'shopee' | 'tiktok' | 'lazada' | 'booth'
 /** ปัดเศษสตางค์ท้ายบิล — none = ไม่ปัด, normal = .50 ขึ้นไปปัดขึ้น, up/down = ปัดขึ้น/ลงเสมอ */
 export type RoundingMode = 'none' | 'normal' | 'up' | 'down'
 export type TransactionStatus = 'completed' | 'cancelled'
@@ -477,6 +479,8 @@ export interface Transaction {
   sales_channel: SalesChannel
   /** เลขที่ออเดอร์ฝั่ง marketplace — มีเฉพาะบิลที่ไม่ใช่หน้าร้าน */
   external_order_no: string | null
+  /** รอบออกบูธที่บิลนี้ขายได้ — มีเฉพาะ sales_channel = 'booth' */
+  booth_trip_id: string | null
   payment_method_original: PaymentMethod | null
   payment_edited_at: string | null
   payment_edited_by: string | null
@@ -721,4 +725,45 @@ export interface CartItem {
   discount_value: number
   subtotal: number
   lot_id: string | null
+}
+
+// ───────────────────────────────────────────────────────────────
+// งานออกบูธ — ยกของไปขายนอกร้านเดือนละครั้ง ราคาคนละชุดกับหน้าร้าน
+// ───────────────────────────────────────────────────────────────
+export type BoothTripStatus = 'open' | 'closed'
+
+export interface BoothTrip {
+  id: string
+  trip_number: string
+  name: string | null
+  location: string | null
+  trip_date: string
+  status: BoothTripStatus
+  opened_at: string
+  opened_by: string | null
+  closed_at: string | null
+  closed_by: string | null
+  /** เงินทอนที่เตรียมแยกไปต่างหาก — ไม่เกี่ยวกับเก๊ะที่ร้าน */
+  float_cash: number
+  /** เงินสดที่นับได้ตอนกลับ (null = ยังไม่ได้นับ) */
+  cash_counted: number | null
+  booth_fee: number
+  travel_cost: number
+  other_cost: number
+  other_cost_note: string | null
+  notes: string | null
+  created_at: string
+  opener?: Profile
+  closer?: Profile
+}
+
+export interface BoothTripItem {
+  id: string
+  trip_id: string
+  product_id: string
+  taken_quantity: number
+  /** null = ยังไม่ได้กรอกใบคืน */
+  returned_quantity: number | null
+  created_at: string
+  products?: Product
 }

@@ -90,7 +90,7 @@ export async function proxy(request: NextRequest) {
 
     // สัตวแพทย์: ทำงานคลินิก + ดูสินค้า/สต็อค/ลูกค้าได้ แต่ไม่ยุ่งกับการขาย/จัดซื้อ/เงิน
     // (RLS ฝั่ง DB กันการเขียนไว้อีกชั้น — ตรงนี้แค่ไม่ให้หลงเข้าหน้าที่ใช้ไม่ได้)
-    const vetBlockedPaths = ['/pos', '/admin/receiving', '/admin/suppliers', '/admin/shift', '/admin/daily', '/admin/documents', '/admin/orders']
+    const vetBlockedPaths = ['/pos', '/admin/receiving', '/admin/suppliers', '/admin/shift', '/admin/daily', '/admin/documents', '/admin/orders', '/admin/booth']
     if (profile?.role === 'vet' && vetBlockedPaths.some((p) => pathname === p || pathname.startsWith(p + '/'))) {
       return NextResponse.redirect(new URL(homePath('vet'), request.url))
     }

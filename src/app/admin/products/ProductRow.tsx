@@ -8,6 +8,7 @@ import OnlineToggle from './OnlineToggle'
 import StopSellingToggle from './StopSellingToggle'
 import { isClinicOnly } from '@/lib/clinic'
 import { isVatApplicable } from '@/lib/vat'
+import { hasBoothPrice } from '@/lib/booth'
 import { formatWeight } from '@/lib/shop'
 import type { Product } from '@/lib/types'
 
@@ -91,6 +92,11 @@ export default function ProductRow({
         </td>
         <td className="px-4 py-3 text-sm text-right font-medium text-gray-900">
           ฿{product.price.toLocaleString('th-TH', { minimumFractionDigits: 2 })}
+          {hasBoothPrice(product) && (
+            <span className="block text-xs font-normal text-amber-700" title="ราคาตอนออกบูธ">
+              บูธ ฿{product.booth_price!.toLocaleString('th-TH', { minimumFractionDigits: 2 })}
+            </span>
+          )}
         </td>
         <td className="px-4 py-3 text-sm text-right">
           <span className={lowStock ? 'text-red-600 font-semibold' : 'text-gray-700'}>
