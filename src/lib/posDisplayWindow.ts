@@ -29,6 +29,8 @@ interface ScreenDetails {
 }
 
 type WindowWithScreens = Window & { getScreenDetails?: () => Promise<ScreenDetails> }
+/** `isExtended` ยังไม่อยู่ใน TS lib — อ่านได้โดยไม่ต้องขอสิทธิ์ บอกแค่ว่าต่อหลายจออยู่ไหม */
+type ScreenMaybeExtended = Screen & { isExtended?: boolean }
 
 let displayWindow: Window | null = null
 
@@ -51,7 +53,11 @@ async function pickScreen(): Promise<ScreenDetailed | null> {
     ])
     if (!details) return null
 
-    const others = details.screens.filter((s) => s.label !== details.currentScreen.label)
+    // เทียบด้วยพิกัด ไม่ใช่ชื่อ — จอรุ่นเดียวกันสองใบได้ label เหมือนกัน
+    const cur = details.currentScreen
+    const others = details.screens.filter(
+      (s) => s.availLeft !== cur.availLeft || s.availTop !== cur.availTop,
+    )
     if (others.length === 0) return null
     remember(READY_KEY, '1')
 
@@ -75,13 +81,37 @@ async function pickScreen(): Promise<ScreenDetailed | null> {
 const fillScreen = (s: ScreenDetailed) =>
   `popup=yes,fullscreen=yes,left=${s.availLeft},top=${s.availTop},width=${s.availWidth},height=${s.availHeight}`
 
-export type OpenDisplayResult = 'focused' | 'placed' | 'moved' | 'fallback' | 'blocked'
+export type OpenDisplayResult =
+  | 'focused'        // หน้าต่างเปิดค้างอยู่แล้ว แค่ดึงขึ้นมา
+  | 'placed'         // เปิดตรงจอที่สองให้เรียบร้อย
+  | 'one-screen'     // เครื่องนี้ต่อจอเดียว
+  | 'just-allowed'   // เพิ่งกดอนุญาต — กดปุ่มอีกครั้งจะไปจอที่สอง
+  | 'denied'         // Chrome ปิดสิทธิ์จัดการหน้าต่างไว้
+  | 'unsupported'    // เบราว์เซอร์ไม่มี Window Management API
+  | 'blocked'        // ป๊อปอัปโดนบล็อก
+
+const openFallback = () => {
+  displayWindow = window.open('/pos-display', WINDOW_NAME, 'popup=yes,width=1000,height=750')
+  return displayWindow
+}
+
+/** สถานะสิทธิ์ "จัดการหน้าต่างบนจอทั้งหมด" โดยไม่เด้งกล่องถาม */
+async function windowPermission(): Promise<PermissionState | null> {
+  try {
+    // ชื่อสิทธิ์ยังไม่อยู่ใน TS lib — Chrome 111+ ใช้ 'window-management'
+    const status = await navigator.permissions.query({ name: 'window-management' as PermissionName })
+    return status.state
+  } catch {
+    return null
+  }
+}
 
 /**
  * ต้องเรียกจากการกดปุ่มเท่านั้น (เบราว์เซอร์บล็อกป๊อปอัปที่ไม่ได้มาจากการกด)
  *
- * ครั้งแรกที่ยังไม่มีสิทธิ์: เปิดหน้าต่างก่อนทันทีตอนที่ยังมี "การกด" อยู่ในมือ แล้วค่อยขออนุญาต
- * และย้ายไปจอที่สอง — ถ้าขอสิทธิ์ก่อนจะเสียจังหวะการกดไป แล้วป๊อปอัปโดนบล็อก
+ * **ลำดับสำคัญมาก**: `window.open()` กิน user activation ของการกดไป ขอสิทธิ์ทีหลังจึงเด้งกล่องถาม
+ * ไม่ได้เลย (เคยพลาดมาแล้ว — กล่องไม่เคยขึ้น เลยหาจอที่สองไม่เจอทุกครั้ง) ต้องเช็ค/ขอสิทธิ์ก่อน
+ * แล้วค่อยเปิดหน้าต่าง ส่วน `permissions.query()` ไม่กิน activation จึง await ได้อย่างปลอดภัย
  */
 export async function openCustomerDisplay(): Promise<OpenDisplayResult> {
   if (displayWindow && !displayWindow.closed) {
@@ -89,21 +119,31 @@ export async function openCustomerDisplay(): Promise<OpenDisplayResult> {
     return 'focused'
   }
 
-  // เคยให้สิทธิ์แล้ว = ถามพิกัดจอได้เร็วพอที่จะยังเปิดป๊อปอัปได้ เปิดตรงจอที่สองไปเลยทีเดียว
-  const known = recall(READY_KEY) === '1' ? await pickScreen() : null
-  if (known) {
-    displayWindow = window.open(`/pos-display?fs=1`, WINDOW_NAME, fillScreen(known))
-    return displayWindow ? 'placed' : 'blocked'
+  if (typeof (window as WindowWithScreens).getScreenDetails !== 'function') {
+    return openFallback() ? 'unsupported' : 'blocked'
+  }
+  // เช็คได้โดยไม่ต้องมีสิทธิ์ — ต่อจอเดียวก็ไม่ต้องไปกวนให้กดอนุญาตเปล่าๆ
+  if ((screen as ScreenMaybeExtended).isExtended === false) {
+    return openFallback() ? 'one-screen' : 'blocked'
   }
 
-  displayWindow = window.open('/pos-display', WINDOW_NAME, 'popup=yes,width=1000,height=750')
-  if (!displayWindow) return 'blocked'
+  const permission = await windowPermission()
+  if (permission === 'denied') {
+    return openFallback() ? 'denied' : 'blocked'
+  }
 
-  const screen = await pickScreen()
-  if (!screen) return 'fallback'
+  if (permission === 'prompt' || permission === null) {
+    // กล่องขออนุญาตใช้เวลานานกว่าที่ "การกด" จะหมดอายุ (5 วินาที) ป๊อปอัปรอบนี้จึงมักโดนบล็อก
+    // ตั้งใจให้ครั้งแรกเป็นการตั้งค่าอย่างเดียว แล้วบอกให้กดอีกที — ครั้งต่อไปจบในกดเดียวตลอด
+    const screenNow = await pickScreen()
+    if (!screenNow) return openFallback() ? 'denied' : 'blocked'
+    displayWindow = window.open(`/pos-display?fs=1`, WINDOW_NAME, fillScreen(screenNow))
+    return displayWindow ? 'placed' : 'just-allowed'
+  }
 
-  // ย้ายทีหลังจึงสั่งเต็มจอข้ามหน้าต่างไม่ได้ — หน้าจอลูกค้าจะขึ้นปุ่มให้แตะเอง (ครั้งแรกครั้งเดียว)
-  displayWindow.moveTo(screen.availLeft, screen.availTop)
-  displayWindow.resizeTo(screen.availWidth, screen.availHeight)
-  return 'moved'
+  const target = await pickScreen()
+  if (!target) return openFallback() ? 'one-screen' : 'blocked'
+
+  displayWindow = window.open(`/pos-display?fs=1`, WINDOW_NAME, fillScreen(target))
+  return displayWindow ? 'placed' : 'blocked'
 }

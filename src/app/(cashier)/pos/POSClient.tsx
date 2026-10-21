@@ -118,16 +118,22 @@ export default function POSClient({ products: allProducts, booth, promotions, po
     }
   }
 
+  // บอกให้รู้ทุกครั้งว่าทำไมไม่ไปจอที่สอง — ไม่งั้นกดแล้วหน้าต่างโผล่ที่เดิมโดยไม่รู้สาเหตุ
+  const DISPLAY_MESSAGE: Record<string, string> = {
+    'one-screen': 'เครื่องนี้ไม่ได้ต่อจอที่สอง — เปิดเป็นหน้าต่างธรรมดาให้แทน',
+    'just-allowed': 'อนุญาตเรียบร้อย — กดปุ่มนี้อีกครั้ง หน้าต่างจะไปโผล่ที่จอลูกค้าเลย',
+    denied: 'Chrome ปิดสิทธิ์ "จัดการหน้าต่างบนจอทั้งหมด" ไว้ — กดไอคอนซ้ายช่อง URL แล้วเปิดให้เว็บนี้',
+    unsupported: 'เบราว์เซอร์นี้ย้ายหน้าต่างข้ามจอไม่ได้ — ลากไปจอที่สองแล้วกดปุ่มเต็มจอเอง',
+  }
+
   async function showCustomerDisplay() {
     const result = await openCustomerDisplay()
     if (result === 'blocked') {
       toast.error('เบราว์เซอร์บล็อกหน้าต่างใหม่ — กดอนุญาตป๊อปอัปของเว็บนี้แล้วลองอีกครั้ง')
-    } else if (result === 'moved') {
-      toast('ย้ายไปจอที่สองแล้ว — แตะที่จอนั้นหนึ่งครั้งเพื่อขยายเต็มจอ', { icon: '🖥️', duration: 6000 })
-    } else if (result === 'fallback') {
-      // ต่อจอเดียว/ไม่ให้สิทธิ์ — เปิดได้แต่ลากไปเองเหมือนเดิม
-      toast('เปิดหน้าต่างจอลูกค้าแล้ว — ลากไปจอที่สองแล้วกดปุ่มเต็มจอ', { icon: '🖥️', duration: 6000 })
+      return
     }
+    const message = DISPLAY_MESSAGE[result]
+    if (message) toast(message, { icon: '🖥️', duration: 8000 })
   }
 
   // เครื่องยิงบาร์โค้ดทำงานเหมือนคีย์บอร์ด ต้องมี focus อยู่ที่ช่องค้นหาตลอดถึงจะยิงได้เลยโดยไม่ต้องคลิกก่อน
