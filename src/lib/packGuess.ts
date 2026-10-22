@@ -77,6 +77,21 @@ function isPlausibleDiscount(packPrice: number, basePrice: number, factor: numbe
 export const discountLooksOff = (packPrice: number, basePrice: number, factor: number) =>
   factor > 0 && basePrice > 0 && packPrice > 0 && packPrice / (basePrice * factor) < 0.65
 
+/**
+ * รหัสที่กรอกคนละตัวอักษรกันแต่เป็นสินค้าเดียวกัน — ตอนย้ายระบบใส่สลับไว้
+ * KNB = ตัวใหญ่ (ลัง/กระสอบ), KNV = ตัวย่อย (ซอง/ถุง) เช่น KNB050C ↔ KNV050
+ *
+ * ใช้ต่อเมื่อหารหัส 6 ตัวหน้าตรงๆ ไม่เจอเท่านั้น
+ */
+const CODE_ALIASES: Record<string, string> = { KNB: 'KNV' }
+
+/** รหัสอื่นที่ควรลองหาเป็นตัวหน่วยย่อย เรียงตามลำดับที่ควรลอง */
+export function baseCodeAliases(code: string): string[] {
+  const prefix = code.slice(0, 3).toUpperCase()
+  const alias = CODE_ALIASES[prefix]
+  return alias ? [alias + code.slice(3)] : []
+}
+
 /** ชื่อหน่วยที่น่าจะเป็นของตัวแพ็ก — ใช้หน่วยที่กรอกไว้ก่อน ไม่มีค่อยเดาจากท้าย SKU */
 export function guessPackUnitName(unit: string | null, sku: string | null): string {
   if (unit && unit.trim()) return unit.trim()

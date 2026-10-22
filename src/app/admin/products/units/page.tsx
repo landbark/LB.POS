@@ -2,7 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { fetchAll } from '@/lib/supabase/fetch-all'
 import Link from 'next/link'
 import { ArrowLeft } from 'lucide-react'
-import { packSizeFromName, suggestFactor, guessPackUnitName, packIsPosHidden } from '@/lib/packGuess'
+import { packSizeFromName, suggestFactor, guessPackUnitName, packIsPosHidden, baseCodeAliases } from '@/lib/packGuess'
 import PackMergeClient, { type MergeCandidate, type MergedRow, type Side } from './PackMergeClient'
 
 /**
@@ -14,7 +14,8 @@ import PackMergeClient, { type MergeCandidate, type MergedRow, type Side } from 
 const COLUMNS = `
   id, name, sku, unit, price, cost, active, replaced_by_unit_id,
   category_id, supplier_id, vat_applicable, clinic_only,
-  product_lots(quantity)
+  product_lots(quantity),
+  product_units!product_units_product_id_fkey(id)
 `
 
 interface Row {
@@ -31,6 +32,7 @@ interface Row {
   vat_applicable: boolean | null
   clinic_only: boolean | null
   product_lots: { quantity: number }[] | null
+  product_units: { id: string }[] | null
 }
 
 const PACK_SUFFIX = /[bc]$/i
@@ -72,12 +74,19 @@ export default async function ProductUnitsPage() {
   for (const marked of products) {
     if (!marked.sku || !PACK_SUFFIX.test(marked.sku)) continue
     if (marked.replaced_by_unit_id) continue
+    // มีหน่วยใหญ่ผูกอยู่แล้ว = ตัวนี้คือหน่วยย่อย ไม่ใช่แพ็กที่รอยุบ
+    // (BFL086sc เป็นซองแบ่งขาย แต่ SKU ดันลงท้ายด้วย c)
+    if ((marked.product_units ?? []).length > 0) continue
 
     const code = marked.sku.slice(0, BASE_CODE_LEN)
-    const partnerRow = marked.sku.length > BASE_CODE_LEN ? bySku.get(code) : undefined
-    const partner = partnerRow && !partnerRow.replaced_by_unit_id && partnerRow.id !== marked.id
-      ? partnerRow
-      : null
+    const usable = (r: Row | undefined) =>
+      r && !r.replaced_by_unit_id && r.id !== marked.id ? r : null
+    // รหัส 6 ตัวหน้าก่อน ไม่เจอค่อยลองรหัสที่ใส่สลับไว้ (KNB ↔ KNV)
+    let partner = marked.sku.length > BASE_CODE_LEN ? usable(bySku.get(code)) : null
+    for (const alt of partner ? [] : baseCodeAliases(code)) {
+      partner = usable(bySku.get(alt))
+      if (partner) break
+    }
 
     // ตัวที่แพงกว่าคือหน่วยใหญ่ — ส่วนใหญ่ตัวลงท้าย b/c เป็นแพ็ก แต่มีกลับทางด้วย
     // (BFL086 = กระปุก 250 ฿ / BFL086sc = ซองแบ่งขาย 10 ฿ — ตัว sc คือหน่วยย่อย)
