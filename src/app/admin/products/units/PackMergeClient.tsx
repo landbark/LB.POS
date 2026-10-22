@@ -65,6 +65,8 @@ interface Draft {
   cost: string
   sellablePos: boolean
   purchasable: boolean
+  /** ย้ายสต็อคของตัวแพ็ก (× ตัวคูณ) มารวมกับหน่วยย่อยไหม — ปกติไม่ย้าย ยอดที่ย้ายระบบมานับซ้ำกันอยู่ */
+  moveStock: boolean
   /** สลับว่าตัวไหนเป็นหน่วยย่อย */
   swapped: boolean
   /** ตัวฐานที่หามาเองด้วย SKU (แถวที่ไม่มีคู่) */
@@ -98,7 +100,13 @@ function initialCost(pack: Side, base: Side | null, factor: number): string {
   return pack.cost != null ? String(pack.cost) : ''
 }
 
-function makeDraft(c: MergeCandidate, swapped = false, foundBase: Side | null = null, keep?: Partial<Draft>): Draft {
+function makeDraft(
+  c: MergeCandidate,
+  swapped = false,
+  foundBase: Side | null = null,
+  moveStock = false,
+  keep?: Partial<Draft>,
+): Draft {
   const pack = swapped ? (c.base ?? foundBase ?? c.pack) : c.pack
   const base = swapped ? c.pack : (c.base ?? foundBase)
   const factor = base ? suggestFactor(pack, base, pack.nameHint) : 0
@@ -110,6 +118,7 @@ function makeDraft(c: MergeCandidate, swapped = false, foundBase: Side | null = 
     cost: initialCost(pack, base, factor),
     sellablePos: !packIsPosHidden(unitName),
     purchasable: true,
+    moveStock,
     swapped,
     foundBase,
     baseSkuInput: '',
@@ -144,6 +153,13 @@ export default function PackMergeClient({
   const [busy, setBusy] = useState<string | null>(null)
   const [tab, setTab] = useState<'todo' | 'done'>(all.length > 0 ? 'todo' : 'done')
   const [search, setSearch] = useState('')
+  // ยอดสต็อคของแถวแพ็กที่ย้ายระบบมา นับของกองเดียวกับหน่วยย่อยอยู่แล้ว — ปกติจึงไม่ย้ายมาบวก
+  const [moveStockAll, setMoveStockAll] = useState(false)
+
+  function setMoveStockForAll(on: boolean) {
+    setMoveStockAll(on)
+    setDrafts((d) => Object.fromEntries(Object.entries(d).map(([k, v]) => [k, { ...v, moveStock: on }])))
+  }
 
   function setDraft(key: string, patch: Partial<Draft>) {
     setDrafts((d) => ({ ...d, [key]: { ...d[key], ...patch } }))
@@ -194,7 +210,7 @@ export default function PackMergeClient({
       stock: ((data.product_lots ?? []) as { quantity: number }[]).reduce((s, l) => s + l.quantity, 0),
       nameHint: null,
     }
-    setDrafts((d) => ({ ...d, [c.key]: makeDraft(c, false, found) }))
+    setDrafts((d) => ({ ...d, [c.key]: makeDraft(c, false, found, d[c.key].moveStock) }))
     toast.success(`ผูกกับ ${found.name}`)
   }
 
@@ -269,6 +285,7 @@ export default function PackMergeClient({
       p_sellable_pos: d.sellablePos,
       p_purchasable: d.purchasable,
       p_created_by: userId || null,
+      p_move_stock: d.moveStock,
     })
     if (error) {
       toast.error(`${pack.sku}: ${error.message}`)
@@ -292,9 +309,11 @@ export default function PackMergeClient({
           ? `สร้างสินค้าใหม่ ${c.baseCode} · ${d.newName} · ฿${d.newPrice || '0'}/${d.newUnit}\n`
           : '') +
         `1 ${d.unitName} = ${factor} ${creating ? d.newUnit : base?.unit ?? ''}` +
-        (pack.stock !== 0
-          ? `\nสต็อค ${pack.stock} ${d.unitName} → ย้ายไปเป็น ${pack.stock * factor} ${creating ? d.newUnit : base?.unit ?? ''}`
-          : '\nไม่มีสต็อคค้างให้ย้าย') +
+        (pack.stock === 0
+          ? '\nไม่มีสต็อคค้างฝั่งหน่วยใหญ่'
+          : d.moveStock
+            ? `\nสต็อค ${pack.stock} ${d.unitName} → ย้ายไปรวมเป็น ${pack.stock * factor} ${creating ? d.newUnit : base?.unit ?? ''}`
+            : `\nตัดยอด ${pack.stock} ${d.unitName} ของหน่วยใหญ่ทิ้ง — สต็อคใช้ของหน่วยย่อย${base ? ` (${base.stock} ${base.unit})` : ''}`) +
         `\n\nย้อนคืนเองไม่ได้ — ถ้าตัวคูณผิดต้องไปปรับสต็อคที่หน้าสินค้าทีหลัง`,
       confirmLabel: creating ? 'สร้าง + ยุบรวม' : 'ยุบรวม',
     })
@@ -394,6 +413,21 @@ export default function PackMergeClient({
             </button>
           </div>
 
+          <label className="flex items-start gap-2 bg-white border border-gray-200 rounded-xl px-3 py-2.5 cursor-pointer">
+            <input
+              type="checkbox" checked={moveStockAll}
+              onChange={(e) => setMoveStockForAll(e.target.checked)}
+              className="mt-0.5 w-4 h-4"
+            />
+            <span className="text-xs text-gray-600 leading-relaxed">
+              <span className="font-medium text-gray-900">ย้ายสต็อคของหน่วยใหญ่มารวมด้วย (× ตัวคูณ)</span>
+              <span className="block text-gray-500">
+                ปกติ<span className="font-medium">ไม่ต้องติ๊ก</span> — ยอดที่ย้ายระบบเข้ามานับของกองเดียวกันไว้ทั้งสองแถว
+                เอามาคูณบวกอีกจะบวมกว่าของจริง ระบบจะตัดยอดฝั่งหน่วยใหญ่ทิ้งแล้วใช้ยอดของหน่วยเล็กสุดที่มีอยู่
+              </span>
+            </span>
+          </label>
+
           {all.length === 0 && (
             <div className="bg-white border border-gray-200 rounded-xl p-8 text-center text-gray-500">
               <Boxes size={32} className="mx-auto mb-2 text-gray-300" />
@@ -441,7 +475,7 @@ export default function PackMergeClient({
                     </div>
                     {canSwap && (
                       <button
-                        onClick={() => setDrafts((s) => ({ ...s, [c.key]: makeDraft(c, !d.swapped, d.foundBase) }))}
+                        onClick={() => setDrafts((s) => ({ ...s, [c.key]: makeDraft(c, !d.swapped, d.foundBase, d.moveStock) }))}
                         title="สลับว่าตัวไหนเป็นหน่วยย่อย"
                         className="shrink-0 flex items-center gap-1 text-xs font-medium text-gray-500 hover:text-blue-600 border border-gray-200 rounded-lg px-2 py-1"
                       >
@@ -602,14 +636,31 @@ export default function PackMergeClient({
                         />
                         ใช้สั่งของ
                       </label>
+                      <label className="flex items-center gap-1.5 text-xs text-gray-600">
+                        <input
+                          type="checkbox" checked={d.moveStock}
+                          onChange={(e) => setDraft(c.key, { moveStock: e.target.checked })}
+                          className="w-4 h-4"
+                        />
+                        ย้ายสต็อค
+                      </label>
                     </div>
                   </div>
 
                   <div className="flex items-center justify-between mt-3 pt-3 border-t border-gray-100">
                     <span className="text-xs text-gray-500">
-                      {factor > 0 && pack.stock !== 0
-                        ? `ย้ายสต็อค ${pack.stock} × ${factor} = ${pack.stock * factor} ${baseUnit} ไปรวมกับหน่วยย่อย`
-                        : 'ไม่มีสต็อคค้างให้ย้าย'}
+                      {pack.stock === 0
+                        ? 'ไม่มีสต็อคค้างฝั่งหน่วยใหญ่'
+                        : d.moveStock && factor > 0
+                          ? `ย้ายสต็อค ${pack.stock} × ${factor} = ${pack.stock * factor} ${baseUnit} ไปรวมกับหน่วยย่อย`
+                          : `ตัดยอด ${pack.stock} ${d.unitName || pack.unit} ของหน่วยใหญ่ทิ้ง — สต็อคใช้ของหน่วยย่อย${
+                              base ? ` ${base.stock} ${base.unit}` : ''
+                            }`}
+                      {pack.stock !== 0 && !d.moveStock && base && base.stock === 0 && (
+                        <span className="block text-amber-600 font-medium">
+                          หน่วยย่อยไม่มีสต็อคเลย — ยุบแล้วจะเหลือ 0 ติ๊ก &quot;ย้ายสต็อค&quot; ถ้าของมีจริงบนชั้น
+                        </span>
+                      )}
                     </span>
                     <button
                       onClick={() => handleMerge(c)}
