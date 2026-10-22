@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import PrintToolbar from '@/components/PrintToolbar'
 import type { StoreSettings, PaymentMethod, SalesChannel } from '@/lib/types'
-import { CHANNEL_LABEL, isOnlineChannel } from '@/lib/salesChannel'
+import { CHANNEL_LABEL, isOnlineChannel, platformPaymentLabel } from '@/lib/salesChannel'
 import { paymentLines } from '@/lib/payments'
 
 interface ReceiptTx {
@@ -187,7 +187,11 @@ export default function ReceiptView({
                 ))}
               </>
             ) : (
-              <div className="flex justify-between pt-1"><span>ชำระโดย</span><span>{PAYMENT_LABELS[tx.payment_method]}</span></div>
+              /* ขายผ่านแพลตฟอร์มเก็บเป็นโอนเงินไว้ในคอลัมน์เดิม — บนใบเสร็จต้องบอกตามจริงว่าเก็บเงินทางไหน */
+              <div className="flex justify-between pt-1">
+                <span>ชำระโดย</span>
+                <span>{platformPaymentLabel(tx.sales_channel) ?? PAYMENT_LABELS[tx.payment_method]}</span>
+              </div>
             )}
             {tx.sales_channel && isOnlineChannel(tx.sales_channel) && (
               <>

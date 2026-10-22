@@ -27,6 +27,11 @@ export const CHANNEL_BADGE: Record<SalesChannel, string> = {
  */
 export const isOnlineChannel = (c: SalesChannel) => c !== 'store' && c !== 'booth'
 
+/** ช่องทางที่ร้านรับเงินเอง — ใช้กรองใน query (PostgREST .in(...)) ให้ตรงกับ isOwnMoney */
+export const OWN_MONEY_CHANNELS: SalesChannel[] = SALES_CHANNELS
+  .map((c) => c.value)
+  .filter((c) => !isOnlineChannel(c))
+
 /**
  * บิลนี้นับเป็น "เงินที่ร้านรับเอง" ไหม
  *
@@ -35,3 +40,12 @@ export const isOnlineChannel = (c: SalesChannel) => c !== 'store' && c !== 'boot
  * POS บันทึกไว้แค่ตัดสต็อก ยอดจึงไม่เข้าสรุปรายวัน/ปิดกะ/วิธีชำระ
  */
 export const isOwnMoney = (c: SalesChannel | null | undefined) => !isOnlineChannel(c ?? 'store')
+
+/**
+ * ป้าย "รับเงินทางไหน" ของบิลขายผ่านแพลตฟอร์ม — คืน null ถ้าเป็นบิลที่ร้านรับเงินเอง
+ *
+ * บิลพวกนี้ถูกบันทึกเป็น payment_method 'transfer' ไว้ (คอลัมน์เดิมไม่มีค่าอื่นให้ใส่)
+ * แต่เงินไม่ได้โอนเข้าบัญชีร้านตรงๆ โชว์ว่า "โอนเงิน" คนอ่านจะเข้าใจผิด
+ */
+export const platformPaymentLabel = (c: SalesChannel | null | undefined) =>
+  c && isOnlineChannel(c) ? `รับผ่าน ${CHANNEL_LABEL[c]}` : null

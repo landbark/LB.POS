@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from 'next/server'
 import { getStaff } from '@/lib/require-staff'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { buildSaleMessage, notifyEvent } from '@/lib/notify'
-import { CHANNEL_LABEL, isOnlineChannel } from '@/lib/salesChannel'
+import { CHANNEL_LABEL, platformPaymentLabel } from '@/lib/salesChannel'
 import type { PaymentMethod, SalesChannel } from '@/lib/types'
 
 const PAYMENT_LABEL: Record<PaymentMethod, string> = {
@@ -40,8 +40,9 @@ export async function POST(request: NextRequest) {
       transactionNumber: tx.transaction_number,
       total: tx.total,
       itemCount: (tx.transaction_items ?? []).length,
-      paymentLabel: PAYMENT_LABEL[tx.payment_method as PaymentMethod] ?? tx.payment_method,
-      channelLabel: isOnlineChannel(channel) ? CHANNEL_LABEL[channel] : null,
+      // บิลแพลตฟอร์มบอกว่า "รับผ่าน Shopee" ในบรรทัดรับเงินไปเลย ไม่ต้องซ้ำด้วยชื่อช่องทางอีก
+      paymentLabel: platformPaymentLabel(channel) ?? PAYMENT_LABEL[tx.payment_method as PaymentMethod] ?? tx.payment_method,
+      channelLabel: channel === 'booth' ? CHANNEL_LABEL[channel] : null,
       cashier: cashier?.name ?? null,
       customer: customer?.name ?? null,
     }),

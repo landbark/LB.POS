@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { fetchAll } from '@/lib/supabase/fetch-all'
+import { OWN_MONEY_CHANNELS } from '@/lib/salesChannel'
 import VatReportClient, { type DetailRow } from './VatReportClient'
 
 // ปีตามเวลาไทย (server อยู่ UTC)
@@ -38,8 +39,10 @@ export default async function VatReportPage({
     }>((from, to) =>
       supabase
         .from('transaction_items')
-        .select('quantity, subtotal, vat_applicable, products(name), transactions!inner(status, created_at)')
+        .select('quantity, subtotal, vat_applicable, products(name), transactions!inner(status, created_at, sales_channel)')
         .neq('transactions.status', 'cancelled')
+        // ขายผ่านแพลตฟอร์มไม่นับเป็นยอดขายของร้าน — แพลตฟอร์มหักค่าธรรมเนียมแล้วมีสรุปการเงินของตัวเอง
+        .in('transactions.sales_channel', OWN_MONEY_CHANNELS)
         .gte('transactions.created_at', start)
         .lt('transactions.created_at', end)
         .order('id')

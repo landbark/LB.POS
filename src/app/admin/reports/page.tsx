@@ -3,7 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { fetchAll } from '@/lib/supabase/fetch-all'
 import { thaiDayRange, thaiMonthStart } from '@/lib/thaiDate'
 import { sumByMethod, type PaidTransaction } from '@/lib/payments'
-import { isOwnMoney } from '@/lib/salesChannel'
+import { isOwnMoney, OWN_MONEY_CHANNELS } from '@/lib/salesChannel'
 
 export default async function ReportsPage() {
   const supabase = await createClient()
@@ -18,6 +18,7 @@ export default async function ReportsPage() {
     ),
     fetchAll((from, to) =>
       supabase.from('transactions').select('total')
+        .in('sales_channel', OWN_MONEY_CHANNELS)
         .gte('created_at', startOfMonth).order('id').range(from, to)
     ),
     supabase
@@ -29,9 +30,10 @@ export default async function ReportsPage() {
     fetchAll((from, to) =>
       supabase
         .from('transaction_items')
-        .select('subtotal, vat_applicable, products(is_service), transactions!inner(created_at, status)')
+        .select('subtotal, vat_applicable, products(is_service), transactions!inner(created_at, status, sales_channel)')
         .gte('transactions.created_at', startOfMonth)
         .neq('transactions.status', 'cancelled')
+        .in('transactions.sales_channel', OWN_MONEY_CHANNELS)
         .order('id')
         .range(from, to)
     ),
@@ -47,12 +49,12 @@ export default async function ReportsPage() {
   const vatRate = store?.vat_rate ?? 7
   const vatAmount = vatBase * (vatRate / 100)
 
-  const todayTotal = todayTx?.reduce((s, t) => s + t.total, 0) ?? 0
-  const monthTotal = monthTx?.reduce((s, t) => s + t.total, 0) ?? 0
-
-  // ขายผ่านแพลตฟอร์มเงินเข้าทางแพลตฟอร์ม ไม่ใช่เงินที่ร้านรับเอง — ไม่นับเป็นเงินโอนในช่องนี้
+  // ขายผ่านแพลตฟอร์มเงินเข้าทางแพลตฟอร์ม ไม่ใช่เงินที่ร้านรับเอง — ไม่นับทั้งยอดและวิธีชำระ
   const ownTodayTx = (todayTx ?? []).filter((t) => isOwnMoney(t.sales_channel))
   const paymentBreakdown = sumByMethod(ownTodayTx as PaidTransaction[])
+
+  const todayTotal = ownTodayTx.reduce((s, t) => s + t.total, 0)
+  const monthTotal = monthTx?.reduce((s, t) => s + t.total, 0) ?? 0
 
   const PAYMENT_TH: Record<string, string> = {
     cash: 'เงินสด',
@@ -67,14 +69,14 @@ export default async function ReportsPage() {
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
         <div className="bg-white rounded-xl p-5 shadow-sm border border-gray-100">
-          <p className="text-sm text-gray-500">ยอดขายวันนี้</p>
+          <p className="text-sm text-gray-500">ยอดขายวันนี้ <span className="text-xs text-gray-400">· ไม่รวมแพลตฟอร์ม</span></p>
           <p className="text-2xl font-bold text-gray-900 mt-1">
             ฿{todayTotal.toLocaleString('th-TH', { minimumFractionDigits: 2 })}
           </p>
-          <p className="text-xs text-gray-400 mt-0.5">{todayTx?.length ?? 0} รายการ</p>
+          <p className="text-xs text-gray-400 mt-0.5">{ownTodayTx.length} รายการ</p>
         </div>
         <div className="bg-white rounded-xl p-5 shadow-sm border border-gray-100">
-          <p className="text-sm text-gray-500">ยอดขายเดือนนี้</p>
+          <p className="text-sm text-gray-500">ยอดขายเดือนนี้ <span className="text-xs text-gray-400">· ไม่รวมแพลตฟอร์ม</span></p>
           <p className="text-2xl font-bold text-gray-900 mt-1">
             ฿{monthTotal.toLocaleString('th-TH', { minimumFractionDigits: 2 })}
           </p>
@@ -110,7 +112,7 @@ export default async function ReportsPage() {
             <p className="text-xl font-bold text-teal-600 mt-0.5">฿{serviceRevenue.toLocaleString('th-TH', { minimumFractionDigits: 2 })}</p>
           </div>
         </div>
-        <p className="text-xs text-gray-400 mt-3">แยกตามสินค้าที่ตั้งค่า &quot;เป็นค่าบริการ&quot; · ยอดตามราคาก่อนหักส่วนลดท้ายบิล</p>
+        <p className="text-xs text-gray-400 mt-3">แยกตามสินค้าที่ตั้งค่า &quot;เป็นค่าบริการ&quot; · ยอดตามราคาก่อนหักส่วนลดท้ายบิล · ไม่รวมขายผ่านแพลตฟอร์ม</p>
       </div>
 
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 mb-6">
@@ -134,7 +136,7 @@ export default async function ReportsPage() {
             <p className="text-xl font-bold text-gray-900 mt-0.5">฿{vatAmount.toLocaleString('th-TH', { minimumFractionDigits: 2 })}</p>
           </div>
         </div>
-        <p className="text-xs text-gray-400 mt-3">ยอดตามราคาสินค้า ก่อนหักส่วนลดท้ายบิล</p>
+        <p className="text-xs text-gray-400 mt-3">ยอดตามราคาสินค้า ก่อนหักส่วนลดท้ายบิล · ไม่รวมขายผ่านแพลตฟอร์ม (Shopee/TikTok/Lazada) ที่มีสรุปการเงินของตัวเอง</p>
         {!store?.vat_registered && (
           <p className="text-xs text-amber-600 mt-1">
             ร้านยังไม่ได้จดทะเบียน VAT — ตัวเลขนี้เป็นการประมาณไว้ดูเฉยๆ ยังไม่ได้เก็บเงินลูกค้าจริง
