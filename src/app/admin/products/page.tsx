@@ -1,7 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { fetchAll } from '@/lib/supabase/fetch-all'
 import Link from 'next/link'
-import { Plus } from 'lucide-react'
+import { Plus, Boxes } from 'lucide-react'
 import ProductsTable from './ProductsTable'
 import BulkImportButton from './BulkImportButton'
 import ShopeeButton from './ShopeeButton'
@@ -12,7 +12,8 @@ const COLUMNS = `
   id, name, sku, barcode, price, unit, min_stock, active,
   is_service, on_shopee, online_available, image_url, weight_grams, clinic_only, vat_applicable,
   categories(name, clinic_only, vat_applicable),
-  product_lots(id, lot_number, expiry_date, quantity)
+  product_lots(id, lot_number, expiry_date, quantity),
+  product_units(id, unit_name, factor, price, sellable_pos, active)
 `
 
 export default async function ProductsPage() {
@@ -25,6 +26,8 @@ export default async function ProductsPage() {
       supabase
         .from('products')
         .select(COLUMNS)
+        // ตัวที่ถูกยุบไปเป็นหน่วยของสินค้าอื่นแล้ว ไม่ต้องโผล่ในรายการสินค้า (ดูได้ที่หน้าหน่วยขาย)
+        .is('replaced_by_unit_id', null)
         .order('name')
         .order('id')   // ชื่อสินค้าซ้ำได้ ต้องมีคีย์ไม่ซ้ำปิดท้าย ไม่งั้นแถวซ้ำ/หายระหว่างหน้า
         .range(from, to)
@@ -46,6 +49,13 @@ export default async function ProductsPage() {
             suppliers={suppliers ?? []}
             userId={user?.id ?? ''}
           />
+          <Link
+            href="/admin/products/units"
+            className="flex items-center gap-2 bg-white border border-gray-200 hover:border-gray-300 text-gray-700 text-sm font-medium px-4 py-2 rounded-lg transition-colors"
+          >
+            <Boxes size={16} />
+            หน่วยขาย (กล่อง/ลัง)
+          </Link>
           <Link
             href="/admin/products/new"
             className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"

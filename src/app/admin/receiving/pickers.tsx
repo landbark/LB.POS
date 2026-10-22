@@ -2,6 +2,8 @@
 
 import { useState } from 'react'
 import { ListPlus, X, Search, Check } from 'lucide-react'
+import type { ProductUnit } from '@/lib/types'
+import { purchaseUnitChoices } from '@/lib/productUnits'
 
 export interface ProductOption {
   id: string
@@ -12,9 +14,21 @@ export interface ProductOption {
   cost: number | null
   supplier_id: string | null
   product_lots?: { quantity: number }[]
+  /** หน่วยใหญ่ที่สั่งได้ (ลัง/กล่อง) — สั่งเป็นลังแต่สต็อคเข้าเป็นหน่วยย่อย */
+  product_units?: ProductUnit[]
 }
 
 export const stockOf = (p: ProductOption) => (p.product_lots ?? []).reduce((s, l) => s + l.quantity, 0)
+
+/** หน่วยที่เลือกได้ตอนสั่งของ — ค้นด้วย id ของแถวหน่วย ('' = หน่วยฐาน) */
+export const unitChoicesOf = (p: ProductOption | undefined) => (p ? purchaseUnitChoices(p) : [])
+
+export const findUnitChoice = (p: ProductOption | undefined, unitId: string) =>
+  unitChoicesOf(p).find((c) => (c.unit?.id ?? '') === unitId)
+
+/** จำนวนหน่วยฐานที่จะเข้าสต็อคจริงจากแถวสั่งซื้อหนึ่งแถว */
+export const factorOfRow = (p: ProductOption | undefined, unitId: string) =>
+  findUnitChoice(p, unitId)?.factor ?? 1
 
 export function matchProduct(p: ProductOption, q: string) {
   if (!q) return true
@@ -37,12 +51,42 @@ export function StockBadge({ product }: { product: ProductOption }) {
 
 export interface ItemRow {
   product_id: string
+  /** id ของแถวหน่วยใหญ่ที่สั่ง ('' = สั่งเป็นหน่วยฐาน) */
+  product_unit_id: string
   quantity: string
   unit_cost: string
 }
 
 export function newItem(): ItemRow {
-  return { product_id: '', quantity: '', unit_cost: '' }
+  return { product_id: '', product_unit_id: '', quantity: '', unit_cost: '' }
+}
+
+/** ช่องเลือกหน่วยที่สั่ง — สินค้าที่ไม่มีหน่วยใหญ่จะโชว์แค่ชื่อหน่วยเฉยๆ */
+export function UnitSelect({
+  product,
+  value,
+  onChange,
+}: {
+  product: ProductOption | undefined
+  value: string
+  onChange: (unitId: string) => void
+}) {
+  const choices = unitChoicesOf(product)
+  if (!product) return null
+  if (choices.length <= 1) return <span className="shrink-0 text-xs text-gray-500">{product.unit}</span>
+  return (
+    <select
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      className="shrink-0 border border-gray-300 rounded-lg px-1.5 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+    >
+      {choices.map((c) => (
+        <option key={c.unit?.id ?? 'base'} value={c.unit?.id ?? ''}>
+          {c.name}{c.factor > 1 ? ` (${c.factor})` : ''}
+        </option>
+      ))}
+    </select>
+  )
 }
 
 export const inputClass = 'w-full border border-gray-300 rounded-lg px-2.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500'

@@ -8,7 +8,7 @@ import { Plus, Trash2, PackagePlus, Printer, PackageCheck, ListPlus, Pencil } fr
 import { confirmDialog } from '@/lib/confirm'
 import toast from 'react-hot-toast'
 import type { PurchaseStatus, Supplier } from '@/lib/types'
-import { ProductPicker, MultiPicker, StockBadge, newItem, inputClass, type ProductOption, type ItemRow } from './pickers'
+import { ProductPicker, MultiPicker, StockBadge, UnitSelect, newItem, inputClass, findUnitChoice, factorOfRow, type ProductOption, type ItemRow } from './pickers'
 
 interface PurchaseRow {
   id: string
@@ -48,10 +48,18 @@ export default function ReceivingClient({ suppliers, products, purchases }: Prop
     const next = [...items]
     next[index] = { ...next[index], [key]: value }
     if (key === 'product_id') {
+      // เปลี่ยนสินค้า = หน่วยเดิมใช้ไม่ได้แล้ว กลับไปเป็นหน่วยฐานก่อน
+      next[index].product_unit_id = ''
       const p = products.find((x) => x.id === value)
       if (p?.cost != null && !next[index].unit_cost) {
         next[index].unit_cost = p.cost.toString()
       }
+    }
+    if (key === 'product_id' || key === 'product_unit_id') {
+      // ทุนต่อหน่วยที่สั่ง — สั่งเป็นลังต้องเป็นทุนต่อลัง ไม่ใช่ต่อซอง
+      const p = products.find((x) => x.id === next[index].product_id)
+      const choice = findUnitChoice(p, next[index].product_unit_id)
+      if (choice?.cost != null) next[index].unit_cost = String(choice.cost)
     }
     setItems(next)
   }
@@ -65,7 +73,7 @@ export default function ReceivingClient({ suppliers, products, purchases }: Prop
     if (ids.length === 0) return
     const rows: ItemRow[] = ids.map((id) => {
       const p = products.find((x) => x.id === id)
-      return { product_id: id, quantity: '1', unit_cost: p?.cost != null ? String(p.cost) : '' }
+      return { product_id: id, product_unit_id: '', quantity: '1', unit_cost: p?.cost != null ? String(p.cost) : '' }
     })
     const kept = items.filter((it) => it.product_id)
     setItems([...kept, ...rows])
@@ -134,12 +142,20 @@ export default function ReceivingClient({ suppliers, products, purchases }: Prop
     }
 
     const { error: iErr } = await supabase.from('purchase_items').insert(
-      validItems.map((it) => ({
-        purchase_id: purchase.id,
-        product_id: it.product_id,
-        quantity: parseInt(it.quantity),
-        unit_cost: parseFloat(it.unit_cost) || 0,
-      }))
+      validItems.map((it) => {
+        const p = products.find((x) => x.id === it.product_id)
+        const choice = findUnitChoice(p, it.product_unit_id)
+        return {
+          purchase_id: purchase.id,
+          product_id: it.product_id,
+          // สั่งเป็นลัง = quantity นับเป็นลัง, ของเข้าสต็อคคิดจาก base_quantity ที่ DB คูณให้
+          product_unit_id: choice?.unit?.id ?? null,
+          unit_factor: choice?.factor ?? 1,
+          unit_name: choice?.unit?.unit_name ?? null,
+          quantity: parseInt(it.quantity),
+          unit_cost: parseFloat(it.unit_cost) || 0,
+        }
+      })
     )
 
     if (iErr) {
@@ -226,8 +242,8 @@ export default function ReceivingClient({ suppliers, products, purchases }: Prop
             <thead>
               <tr className="text-xs font-medium text-gray-500 uppercase">
                 <th className="text-left pb-2 pr-2 min-w-56">สินค้า</th>
-                <th className="text-left pb-2 pr-2 w-32">จำนวน</th>
-                <th className="text-left pb-2 pr-2 w-28">ทุน/หน่วย</th>
+                <th className="text-left pb-2 pr-2 w-44">จำนวน / หน่วย</th>
+                <th className="text-left pb-2 pr-2 w-28">ทุน/หน่วยที่สั่ง</th>
                 <th className="text-right pb-2 w-24">รวม</th>
                 <th className="pb-2 w-8"></th>
               </tr>
@@ -250,12 +266,24 @@ export default function ReceivingClient({ suppliers, products, purchases }: Prop
                       })()}
                     </td>
                     <td className="pr-2 py-1.5 align-top">
-                      <div className="flex items-center gap-1.5">
-                        <input type="number" min="1" value={it.quantity} onChange={(e) => setItem(i, 'quantity', e.target.value)} className={inputClass} placeholder="0" />
-                        <span className="shrink-0 text-xs text-gray-500">
-                          {products.find((x) => x.id === it.product_id)?.unit ?? ''}
-                        </span>
-                      </div>
+                      {(() => {
+                        const p = products.find((x) => x.id === it.product_id)
+                        const factor = factorOfRow(p, it.product_unit_id)
+                        const qty = parseInt(it.quantity) || 0
+                        return (
+                          <>
+                            <div className="flex items-center gap-1.5">
+                              <input type="number" min="1" value={it.quantity} onChange={(e) => setItem(i, 'quantity', e.target.value)} className={inputClass} placeholder="0" />
+                              <UnitSelect product={p} value={it.product_unit_id} onChange={(id) => setItem(i, 'product_unit_id', id)} />
+                            </div>
+                            {factor > 1 && qty > 0 && (
+                              <p className="mt-0.5 pl-1 text-[11px] text-gray-400">
+                                เข้าสต็อค {qty * factor} {p?.unit}
+                              </p>
+                            )}
+                          </>
+                        )
+                      })()}
                     </td>
                     <td className="pr-2 py-1.5 align-top">
                       <input type="number" min="0" step="0.01" value={it.unit_cost} onChange={(e) => setItem(i, 'unit_cost', e.target.value)} className={inputClass} placeholder="0.00" />

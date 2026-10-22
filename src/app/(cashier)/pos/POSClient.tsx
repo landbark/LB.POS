@@ -5,7 +5,8 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Search, X, Plus, Minus, ShoppingCart, User, MonitorPlay, Stethoscope, ScanBarcode, Store } from 'lucide-react'
 import toast from 'react-hot-toast'
-import type { Product, CartItem, Promotion, PointsConfig, Customer, PaymentMethod, ClinicQueueVisit, RoundingMode } from '@/lib/types'
+import type { Product, ProductUnit, CartItem, Promotion, PointsConfig, Customer, PaymentMethod, ClinicQueueVisit, RoundingMode } from '@/lib/types'
+import { baseQty, factorOf, findByBarcode, posUnitChoices, unitNameOf, unitPriceOf } from '@/lib/productUnits'
 import { POS_DISPLAY_CHANNEL, type PosDisplayMessage } from '@/lib/posDisplay'
 import PaymentModal from './PaymentModal'
 import { confirmDialog } from '@/lib/confirm'
@@ -41,11 +42,19 @@ const SCAN_MIN_LEN = 4
 
 const isScannable = (code: string | null | undefined) => /^\d{8,14}$/.test((code ?? '').trim())
 
+/** คีย์ของบรรทัดในตะกร้า — สินค้าตัวเดียวอยู่ได้หลายบรรทัดถ้าขายคนละหน่วย */
+const lineKey = (item: Pick<CartItem, 'product' | 'unit'>) => `${item.product.id}:${item.unit?.id ?? 'base'}`
+
 const matchesQuery = (p: Product, q: string) =>
   !q ||
   p.name.toLowerCase().includes(q) ||
   (p.sku != null && p.sku.toLowerCase().includes(q)) ||
-  (p.barcode != null && p.barcode.toLowerCase().includes(q))
+  (p.barcode != null && p.barcode.toLowerCase().includes(q)) ||
+  (p.product_units ?? []).some(
+    (u) =>
+      (u.sku != null && u.sku.toLowerCase().includes(q)) ||
+      (u.barcode != null && u.barcode.toLowerCase().includes(q)),
+  )
 
 // จำนวนสินค้าที่วาดบนกริด — วาดครบสองพันตัวทำให้ทุกตัวอักษรที่พิมพ์หน่วงเป็นสิบ ms
 const GRID_LIMIT = 60
@@ -227,7 +236,11 @@ export default function POSClient({ products: allProducts, booth, promotions, po
     return lots[0]?.id ?? null
   }
 
-  function applyPromotion(product: Product, quantity: number): number {
+  /**
+   * โปรโมชั่นคิดเป็นหน่วยฐานเสมอ — "ซื้อ 10 แถม 1" ต้องนับซองในกล่องด้วย
+   * ไม่งั้นซื้อ 1 กล่อง (12 ซอง) จะไม่เข้าเงื่อนไข
+   */
+  function applyPromotion(product: Product, baseQuantity: number, gross: number): number {
     let discount = 0
 
     for (const promo of promotions) {
@@ -239,14 +252,15 @@ export default function POSClient({ products: allProducts, booth, promotions, po
       if (!applies) continue
 
       if (promo.type === 'percent_discount' && promo.discount_percent) {
-        discount = (product.price * quantity * promo.discount_percent) / 100
+        // คิดจากยอดจริงของบรรทัด ไม่ใช่ราคาฐาน × จำนวน — บรรทัดที่ขายยกกล่องมีราคาของตัวเอง
+        discount = (gross * promo.discount_percent) / 100
       } else if (
         promo.type === 'buy_x_get_y' &&
         promo.buy_quantity &&
         promo.get_quantity
       ) {
-        const sets = Math.floor(quantity / promo.buy_quantity)
-        const freeQty = Math.min(sets * promo.get_quantity, quantity - sets * promo.buy_quantity)
+        const sets = Math.floor(baseQuantity / promo.buy_quantity)
+        const freeQty = Math.min(sets * promo.get_quantity, baseQuantity - sets * promo.buy_quantity)
         discount = freeQty * product.price
       }
     }
@@ -261,7 +275,8 @@ export default function POSClient({ products: allProducts, booth, promotions, po
     unitPrice: number,
     qty: number,
     mode: 'amount' | 'percent',
-    value: number
+    value: number,
+    unit: ProductUnit | null = null,
   ) {
     const gross = unitPrice * qty
     const manual = !value || value <= 0
@@ -269,35 +284,47 @@ export default function POSClient({ products: allProducts, booth, promotions, po
       : mode === 'percent'
         ? (gross * Math.min(value, 100)) / 100
         : Math.min(gross, value)
-    const discount = Math.min(gross, applyPromotion(product, qty) + manual)
+    const discount = Math.min(gross, applyPromotion(product, qty * factorOf(unit), gross) + manual)
     return { manual_discount: manual, discount, subtotal: gross - discount }
   }
 
-  function addToCart(product: Product) {
+  /** เตือนตอนจำนวนในตะกร้าเกินสต็อค — เทียบเป็นหน่วยฐานเสมอ (1 กล่อง = factor ซอง) */
+  function warnOverStock(product: Product, unit: ProductUnit | null, qty: number) {
     const maxStock = getProductStock(product)
-    const existing = cart.findIndex((c) => c.product.id === product.id)
+    const need = qty * factorOf(unit)
+    if (need > maxStock) {
+      toast(`ขายเกินสต็อค — คงเหลือในระบบ ${maxStock} ${product.unit}`, { icon: '⚠️' })
+    }
+  }
+
+  function addToCart(product: Product, unit: ProductUnit | null = null) {
+    // บรรทัดเดิมต้องเป็นหน่วยเดียวกันด้วย — ขายกล่องกับขายซองคนละราคา รวมบรรทัดกันไม่ได้
+    const existing = cart.findIndex((c) => c.product.id === product.id && (c.unit?.id ?? null) === (unit?.id ?? null))
     if (existing >= 0) {
       const newCart = [...cart]
       const item = newCart[existing]
       const newQty = item.quantity + 1
-      if (newQty > maxStock) toast(`ขายเกินสต็อค — คงเหลือในระบบ ${maxStock} ${product.unit}`, { icon: '⚠️' })
+      warnOverStock(product, unit, newQty)
       newCart[existing] = {
         ...item,
         quantity: newQty,
-        ...lineTotals(product, item.unit_price, newQty, item.discount_mode, item.discount_value),
+        ...lineTotals(product, item.unit_price, newQty, item.discount_mode, item.discount_value, unit),
       }
       setCart(newCart)
     } else {
       const lot_id = getBestLot(product)
+      const price = unitPriceOf(product, unit)
+      warnOverStock(product, unit, 1)
       setCart([
         ...cart,
         {
           product,
+          unit,
           quantity: 1,
-          unit_price: product.price,
+          unit_price: price,
           discount_mode: 'amount',
           discount_value: 0,
-          ...lineTotals(product, product.price, 1, 'amount', 0),
+          ...lineTotals(product, price, 1, 'amount', 0, unit),
           lot_id,
         },
       ])
@@ -333,6 +360,7 @@ export default function POSClient({ products: allProducts, booth, promotions, po
 
     const incoming = visit.items.map((i) => ({
       product: i.product,
+      unit: null,
       quantity: i.quantity,
       unit_price: i.unit_price,
       discount: 0,
@@ -348,7 +376,7 @@ export default function POSClient({ products: allProducts, booth, promotions, po
       const next = [...cart]
       for (const add of incoming) {
         const at = next.findIndex(
-          (c) => c.product.id === add.product.id && c.unit_price === add.unit_price && c.discount_value === 0,
+          (c) => c.product.id === add.product.id && c.unit == null && c.unit_price === add.unit_price && c.discount_value === 0,
         )
         if (at >= 0) {
           const qty = next[at].quantity + add.quantity
@@ -378,14 +406,11 @@ export default function POSClient({ products: allProducts, booth, promotions, po
       newCart.splice(index, 1)
     } else {
       // เตือนตอนเพิ่มเกินสต็อค แต่ไม่บล็อก — ร้านเลือกให้ขายได้แล้วค่อยไปนับสต็อคใหม่
-      if (delta > 0) {
-        const maxStock = getProductStock(item.product)
-        if (newQty > maxStock) toast(`ขายเกินสต็อค — คงเหลือในระบบ ${maxStock} ${item.product.unit}`, { icon: '⚠️' })
-      }
+      if (delta > 0) warnOverStock(item.product, item.unit, newQty)
       newCart[index] = {
         ...item,
         quantity: newQty,
-        ...lineTotals(item.product, item.unit_price, newQty, item.discount_mode, item.discount_value),
+        ...lineTotals(item.product, item.unit_price, newQty, item.discount_mode, item.discount_value, item.unit),
       }
     }
     setCart(newCart)
@@ -402,7 +427,7 @@ export default function POSClient({ products: allProducts, booth, promotions, po
     newCart[index] = {
       ...item,
       unit_price: price,
-      ...lineTotals(item.product, price, item.quantity, item.discount_mode, item.discount_value),
+      ...lineTotals(item.product, price, item.quantity, item.discount_mode, item.discount_value, item.unit),
     }
     setCart(newCart)
   }
@@ -412,14 +437,13 @@ export default function POSClient({ products: allProducts, booth, promotions, po
     let n = parseInt(raw)
     if (isNaN(n)) return
     const item = cart[index]
-    const maxStock = getProductStock(item.product)
-    if (n > maxStock) toast(`ขายเกินสต็อค — คงเหลือในระบบ ${maxStock} ${item.product.unit}`, { icon: '⚠️' })
+    warnOverStock(item.product, item.unit, n)
     if (n < 1) n = 1
     const newCart = [...cart]
     newCart[index] = {
       ...item,
       quantity: n,
-      ...lineTotals(item.product, item.unit_price, n, item.discount_mode, item.discount_value),
+      ...lineTotals(item.product, item.unit_price, n, item.discount_mode, item.discount_value, item.unit),
     }
     setCart(newCart)
   }
@@ -466,14 +490,22 @@ export default function POSClient({ products: allProducts, booth, promotions, po
     toast.success('เพิ่มลูกค้าใหม่แล้ว')
   }
 
-  function findExact(code: string) {
+  /** หาสินค้า+หน่วยจากรหัสที่ยิง/พิมพ์ — บาร์โค้ดและ SKU ของกล่อง/ลังคนละตัวกับของหน่วยย่อย */
+  function findExact(code: string): { product: Product; unit: ProductUnit | null } | null {
     const c = code.trim()
     if (!c) return null
-    return (
-      products.find((p) => p.barcode === c) ??
-      products.find((p) => p.sku?.toLowerCase() === c.toLowerCase()) ??
-      null
-    )
+    const byBarcode = findByBarcode(products, c)
+    if (byBarcode) return byBarcode
+
+    const lower = c.toLowerCase()
+    const bySku = products.find((p) => p.sku?.toLowerCase() === lower)
+    if (bySku) return { product: bySku, unit: null }
+    for (const p of products) {
+      const hit = (p.product_units ?? []).find((u) => u.active && u.sku?.toLowerCase() === lower)
+      // SKU ของลังยิงได้ด้วย แม้จะไม่โชว์เป็นตัวเลือกในหน้าขาย (บางทีลูกค้าขอยกลัง)
+      if (hit) return { product: p, unit: hit }
+    }
+    return null
   }
 
   // เครื่องยิงบาร์โค้ดพิมพ์ต่อท้ายข้อความที่ค้างอยู่ในช่อง ("catty" + "8858788700054")
@@ -492,18 +524,21 @@ export default function POSClient({ products: allProducts, booth, promotions, po
       if (/^\s/.test(code)) continue
       const spaced = start > 0 && /\s/.test(text[start - 1])
       if (spaced && !/^\d{8,}$/.test(code)) continue
-      const product = findExact(code)
-      if (product) return { product, before: text.slice(0, start) }
+      const found = findExact(code)
+      if (found) return { ...found, before: text.slice(0, start) }
     }
     return null
   }
 
   // ยิงจากกล้อง: รหัสที่ได้คือบาร์โค้ดเต็มๆ ตัวเดียว ไม่ต้องเดาหางข้อความเหมือนเครื่องยิงที่พิมพ์ทับช่องค้นหา
   function handleScannedCode(code: string): ScanFeedback {
-    const product = findExact(code)
-    if (!product) return { ok: false, message: `ไม่พบสินค้าที่ใช้บาร์โค้ด ${code}` }
-    addToCart(product)
-    return { ok: true, message: `+ ${product.name}` }
+    const found = findExact(code)
+    if (!found) return { ok: false, message: `ไม่พบสินค้าที่ใช้บาร์โค้ด ${code}` }
+    addToCart(found.product, found.unit)
+    return {
+      ok: true,
+      message: `+ ${found.product.name}${found.unit ? ` (1 ${found.unit.unit_name})` : ''}`,
+    }
   }
 
   // Enter ในช่องค้นหา: บาร์โค้ด/รหัสสินค้าตรง หรือผลค้นหาเหลือตัวเดียว → เข้าตะกร้าทันที
@@ -515,7 +550,7 @@ export default function POSClient({ products: allProducts, booth, promotions, po
 
     const scan = findScannedCode(text)
     if (scan) {
-      addToCart(scan.product)
+      addToCart(scan.product, scan.unit)
       // คืนคำค้นที่พิมพ์ค้างไว้ก่อนโดนยิงทับ — พิมพ์ต่อได้เลยไม่ต้องลบเอง
       setSearch(scan.before)
       searchRef.current?.focus()
@@ -555,7 +590,7 @@ export default function POSClient({ products: allProducts, booth, promotions, po
       ...item,
       discount_mode: mode,
       discount_value: value,
-      ...lineTotals(item.product, item.unit_price, item.quantity, mode, value),
+      ...lineTotals(item.product, item.unit_price, item.quantity, mode, value, item.unit),
     }
     setCart(newCart)
   }
@@ -581,7 +616,7 @@ export default function POSClient({ products: allProducts, booth, promotions, po
       stage: 'cart',
       items: cart.map((item) => ({
         name: item.product.name,
-        unit: item.product.unit,
+        unit: unitNameOf(item.product, item.unit),
         quantity: item.quantity,
         unitPrice: item.unit_price,
         subtotal: item.subtotal,
@@ -596,7 +631,7 @@ export default function POSClient({ products: allProducts, booth, promotions, po
     displayChannelRef.current?.postMessage(msg)
   }, [cart, customer, subtotal, totalDiscount, total, pointsConfig, showPayment])
 
-  const cartCount = cart.reduce((n, i) => n + i.quantity, 0)
+  const cartCount = cart.reduce((n, i) => n + baseQty(i), 0)
   const activeVisitIds = activeVisits.map((v) => v.id)
   const queue = clinicQueue.filter(
     (v) => !paidVisitIds.includes(v.id) && !activeVisitIds.includes(v.id),
@@ -696,9 +731,11 @@ export default function POSClient({ products: allProducts, booth, promotions, po
             {ordered.slice(0, GRID_LIMIT).map((product) => {
               const stock = getProductStock(product)
               const inCart = cart.find((c) => c.product.id === product.id)
+              // ตัวเลือกยกแพ็ก (ตัวแรกคือหน่วยฐาน = ปุ่มการ์ดอยู่แล้ว)
+              const packs = posUnitChoices(product).slice(1)
               return (
+                <div key={product.id} className="flex flex-col">
                 <button
-                  key={product.id}
                   onClick={() => addToCart(product)}
                   className={`bg-white rounded-xl p-3 text-left border-2 transition-all hover:shadow-md active:scale-95 ${
                     inCart ? 'border-blue-500' : 'border-transparent'
@@ -733,9 +770,30 @@ export default function POSClient({ products: allProducts, booth, promotions, po
                     ฿{product.price.toLocaleString('th-TH', { minimumFractionDigits: 2 })}
                   </p>
                   <p className={`text-xs mt-0.5 ${!product.is_service && stock <= 0 ? 'text-red-500 font-medium' : 'text-gray-400'}`}>
-                    {product.is_service ? 'บริการ' : stock <= 0 ? `สต็อคหมด (${stock})` : `คงเหลือ ${stock}`}
+                    {product.is_service ? 'บริการ' : stock <= 0 ? `สต็อคหมด (${stock})` : `คงเหลือ ${stock} ${product.unit}`}
                   </p>
                 </button>
+                {packs.length > 0 && (
+                  <div className="flex flex-wrap gap-1 mt-1">
+                    {packs.map((choice) => (
+                      <button
+                        key={choice.unit!.id}
+                        onClick={() => addToCart(product, choice.unit)}
+                        className="flex-1 bg-white border border-gray-200 hover:border-blue-400 hover:text-blue-600 text-gray-600 rounded-lg px-1.5 py-1 text-[11px] font-medium leading-tight active:scale-95 transition-all"
+                        title={`1 ${choice.name} = ${choice.factor} ${product.unit}`}
+                      >
+                        ยก{choice.name} ฿{choice.price.toLocaleString('th-TH')}
+                        <span className="block text-[10px] text-gray-400 font-normal">
+                          {choice.factor} {product.unit}
+                          {choice.price < product.price * choice.factor
+                            ? ` · ลด ${Math.round((1 - choice.price / (product.price * choice.factor)) * 100)}%`
+                            : ''}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+                </div>
               )
             })}
             {filtered.length === 0 && (
@@ -902,10 +960,15 @@ export default function POSClient({ products: allProducts, booth, promotions, po
           ) : (
             <div className="divide-y divide-gray-50">
               {cart.map((item, i) => (
-                <div key={item.product.id} className="px-3 py-2.5">
+                <div key={lineKey(item)} className="px-3 py-2.5">
                   <div className="flex justify-between items-start gap-2">
                     <p className="text-base font-medium text-gray-900 flex-1 leading-snug">
                       {item.product.name}
+                      {item.unit && (
+                        <span className="ml-1.5 text-xs font-semibold text-blue-600 whitespace-nowrap">
+                          ยก{item.unit.unit_name} ({item.unit.factor} {item.product.unit})
+                        </span>
+                      )}
                     </p>
                     <button
                       onClick={() => changeQty(i, -item.quantity)}
@@ -935,6 +998,10 @@ export default function POSClient({ products: allProducts, booth, promotions, po
                       >
                         <Plus size={12} />
                       </button>
+                      <span className="text-xs text-gray-400 ml-0.5">
+                        {unitNameOf(item.product, item.unit)}
+                        {item.unit ? ` = ${baseQty(item)} ${item.product.unit}` : ''}
+                      </span>
                     </div>
                     <div className="text-right">
                       {item.discount > 0 && (
@@ -958,11 +1025,11 @@ export default function POSClient({ products: allProducts, booth, promotions, po
                         onFocus={(e) => e.target.select()}
                         className="w-24 text-sm font-medium border border-gray-200 rounded px-2 py-0.5 focus:outline-none focus:ring-1 focus:ring-blue-400"
                       />
-                      <span className="text-xs text-gray-400">บาท/{item.product.unit}</span>
+                      <span className="text-xs text-gray-400">บาท/{unitNameOf(item.product, item.unit)}</span>
                     </div>
                   )}
 
-                  {discountRow === item.product.id ? (
+                  {discountRow === lineKey(item) ? (
                     <div className="mt-2 flex items-center gap-1.5">
                       <div className="flex bg-gray-100 rounded-lg p-0.5 shrink-0">
                         {(['amount', 'percent'] as const).map((m) => (
@@ -998,7 +1065,7 @@ export default function POSClient({ products: allProducts, booth, promotions, po
                   ) : (
                     <button
                       onClick={() => {
-                        setDiscountRow(item.product.id)
+                        setDiscountRow(lineKey(item))
                         setDiscountMode(item.discount_mode)
                         setDiscountInput(item.discount_value > 0 ? String(item.discount_value) : '')
                       }}

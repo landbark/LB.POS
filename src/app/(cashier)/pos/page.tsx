@@ -17,7 +17,8 @@ export default async function POSPage() {
         .select(`
           *,
           categories(name, vat_applicable, clinic_only),
-          product_lots(id, quantity, expiry_date, lot_number)
+          product_lots(id, quantity, expiry_date, lot_number),
+          product_units(id, product_id, unit_name, factor, sku, barcode, price, cost, sellable_pos, sellable_online, purchasable, sort_order, active, created_at)
         `)
         .eq('active', true)
         .order('name')

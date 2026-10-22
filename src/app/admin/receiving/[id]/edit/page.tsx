@@ -10,14 +10,14 @@ export default async function EditPurchasePage({ params }: { params: Promise<{ i
   const [{ data: purchase }, { data: suppliers }, products] = await Promise.all([
     supabase
       .from('purchases')
-      .select('id, purchase_number, supplier_id, notes, status, purchase_items(id, product_id, quantity, unit_cost)')
+      .select('id, purchase_number, supplier_id, notes, status, purchase_items(id, product_id, product_unit_id, quantity, unit_cost)')
       .eq('id', id)
       .maybeSingle(),
     supabase.from('suppliers').select('*').order('name'),
     fetchAll((from, to) =>
       supabase
         .from('products')
-        .select('id, name, sku, barcode, unit, cost, supplier_id, product_lots(quantity)')
+        .select('id, name, sku, barcode, unit, cost, supplier_id, product_lots(quantity), product_units(id, product_id, unit_name, factor, sku, barcode, price, cost, sellable_pos, sellable_online, purchasable, sort_order, active, created_at)')
         .eq('active', true)
         .order('name')
         .order('id')

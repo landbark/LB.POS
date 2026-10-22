@@ -208,6 +208,10 @@ CREATE TABLE products (
   is_service BOOLEAN NOT NULL DEFAULT false,
   image_url TEXT,
   active BOOLEAN NOT NULL DEFAULT true,
+  -- ตัวที่ถูกยุบไปเป็นหน่วยของสินค้าอื่นแล้ว (สินค้าแพ็กรุ่นเก่า SKU ลงท้าย b/c)
+  -- เก็บแถวไว้ไม่ลบ เพราะประวัติขาย/ซื้อยังอ้างถึง
+  -- FK ผูกทีหลัง (ALTER ใต้ตาราง product_units) เพราะสองตารางอ้างกันไปกลับ
+  replaced_by_unit_id UUID,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -222,6 +226,34 @@ CREATE TABLE product_lots (
   initial_quantity INT NOT NULL,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- หน่วยขายใหญ่ต่อสินค้า (กล่อง/ลัง) — สต็อคยังนับเป็นหน่วยฐานกองเดียว
+-- หน่วยฐาน (products.unit) ไม่มีแถวในตารางนี้ เพราะคือ factor 1 อยู่แล้ว
+-- ดู supabase-migration-product-units.sql (มี function merge_pack_product ด้วย)
+CREATE TABLE product_units (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  product_id UUID NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+  unit_name TEXT NOT NULL,
+  -- จำนวนหน่วยฐานต่อ 1 หน่วยนี้ (กล่องละ 12 ซอง = 12)
+  factor INT NOT NULL CHECK (factor > 1),
+  sku TEXT UNIQUE,
+  barcode TEXT UNIQUE,
+  -- NULL = factor × ราคา/ทุนฐาน (คือไม่ลดราคา)
+  price NUMERIC(10,2) CHECK (price >= 0),
+  cost NUMERIC(10,2) CHECK (cost >= 0),
+  -- ลัง/กระสอบมักปิด sellable_pos ไว้ ใช้แค่สั่งของ
+  sellable_pos BOOLEAN NOT NULL DEFAULT true,
+  sellable_online BOOLEAN NOT NULL DEFAULT false,
+  purchasable BOOLEAN NOT NULL DEFAULT true,
+  sort_order INT NOT NULL DEFAULT 0,
+  active BOOLEAN NOT NULL DEFAULT true,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE (product_id, unit_name)
+);
+
+ALTER TABLE products
+  ADD CONSTRAINT products_replaced_by_unit_id_fkey
+  FOREIGN KEY (replaced_by_unit_id) REFERENCES product_units(id) ON DELETE SET NULL;
 
 -- Customers
 CREATE TABLE customers (
@@ -492,7 +524,14 @@ CREATE TABLE purchase_items (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   purchase_id UUID NOT NULL REFERENCES purchases(id) ON DELETE CASCADE,
   product_id UUID REFERENCES products(id) ON DELETE SET NULL,
+  -- หน่วยที่สั่ง (NULL = หน่วยฐาน) — สั่งเป็นลัง quantity นับเป็นลัง
+  product_unit_id UUID REFERENCES product_units(id) ON DELETE SET NULL,
+  unit_factor INT NOT NULL DEFAULT 1 CHECK (unit_factor > 0),
+  unit_name TEXT,
   quantity INT NOT NULL CHECK (quantity > 0),
+  -- จำนวนหน่วยฐานที่เข้าสต็อคจริง (DB คูณให้)
+  base_quantity INT GENERATED ALWAYS AS (quantity * unit_factor) STORED,
+  received_base_quantity INT GENERATED ALWAYS AS (received_quantity * unit_factor) STORED,
   received_quantity INT,
   unit_cost NUMERIC(10,2) NOT NULL DEFAULT 0,
   lot_number TEXT,
@@ -519,7 +558,13 @@ CREATE TABLE transaction_items (
   transaction_id UUID NOT NULL REFERENCES transactions(id) ON DELETE CASCADE,
   product_id UUID REFERENCES products(id) ON DELETE SET NULL,
   product_lot_id UUID REFERENCES product_lots(id) ON DELETE SET NULL,
+  -- หน่วยที่ขาย (NULL = หน่วยฐาน) — ขาย 2 กล่อง: quantity = 2, base_quantity = 2 × factor
+  -- รายงาน/ยอดขายต่อชิ้นใช้ base_quantity, ใบเสร็จใช้ quantity + unit_name
+  product_unit_id UUID REFERENCES product_units(id) ON DELETE SET NULL,
+  unit_factor INT NOT NULL DEFAULT 1 CHECK (unit_factor > 0),
+  unit_name TEXT,
   quantity INT NOT NULL CHECK (quantity > 0),
+  base_quantity INT GENERATED ALWAYS AS (quantity * unit_factor) STORED,
   unit_price NUMERIC(10,2) NOT NULL,
   discount NUMERIC(10,2) NOT NULL DEFAULT 0,
   subtotal NUMERIC(12,2) NOT NULL,
@@ -537,6 +582,7 @@ ALTER TABLE purchases ENABLE ROW LEVEL SECURITY;
 ALTER TABLE purchase_items ENABLE ROW LEVEL SECURITY;
 ALTER TABLE products ENABLE ROW LEVEL SECURITY;
 ALTER TABLE product_lots ENABLE ROW LEVEL SECURITY;
+ALTER TABLE product_units ENABLE ROW LEVEL SECURITY;
 ALTER TABLE customers ENABLE ROW LEVEL SECURITY;
 ALTER TABLE store_settings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE points_config ENABLE ROW LEVEL SECURITY;
@@ -555,6 +601,7 @@ CREATE POLICY "auth manage purchases" ON purchases FOR ALL TO authenticated USIN
 CREATE POLICY "auth manage purchase_items" ON purchase_items FOR ALL TO authenticated USING (true);
 CREATE POLICY "auth read products" ON products FOR SELECT TO authenticated USING (true);
 CREATE POLICY "auth read product_lots" ON product_lots FOR SELECT TO authenticated USING (true);
+CREATE POLICY "auth read product_units" ON product_units FOR SELECT TO authenticated USING (true);
 CREATE POLICY "auth read customers" ON customers FOR ALL TO authenticated USING (true);
 CREATE POLICY "auth read store_settings" ON store_settings FOR SELECT TO authenticated USING (true);
 CREATE POLICY "auth read points_config" ON points_config FOR SELECT TO authenticated USING (true);
@@ -572,6 +619,9 @@ CREATE POLICY "auth manage categories" ON categories FOR ALL TO authenticated US
 CREATE POLICY "auth insert products" ON products FOR INSERT TO authenticated WITH CHECK (true);
 CREATE POLICY "auth update products" ON products FOR UPDATE TO authenticated USING (true);
 CREATE POLICY "auth insert lots" ON product_lots FOR INSERT TO authenticated WITH CHECK (true);
+CREATE POLICY "auth insert product_units" ON product_units FOR INSERT TO authenticated WITH CHECK (true);
+CREATE POLICY "auth update product_units" ON product_units FOR UPDATE TO authenticated USING (true);
+CREATE POLICY "auth delete product_units" ON product_units FOR DELETE TO authenticated USING (true);
 CREATE POLICY "auth delete lots" ON product_lots FOR DELETE TO authenticated USING (true);
 
 -- Admin-only writes (เรื่องเงิน/สิทธิ์)
@@ -631,6 +681,8 @@ END $$;
 -- Indexes
 CREATE INDEX idx_products_barcode ON products(barcode) WHERE barcode IS NOT NULL;
 CREATE INDEX idx_product_lots_product_id ON product_lots(product_id);
+CREATE INDEX idx_product_units_product_id ON product_units(product_id);
+CREATE INDEX idx_product_units_barcode ON product_units(barcode) WHERE barcode IS NOT NULL;
 CREATE INDEX idx_product_lots_expiry ON product_lots(expiry_date) WHERE expiry_date IS NOT NULL;
 CREATE INDEX idx_transactions_created_at ON transactions(created_at);
 CREATE INDEX idx_transactions_customer_id ON transactions(customer_id);

@@ -31,6 +31,10 @@ interface ReceiptTx {
     unit_price: number
     discount: number
     subtotal: number
+    /** ชื่อหน่วยที่ขาย (null = หน่วยฐานของสินค้า) */
+    unit_name: string | null
+    unit_factor: number
+    base_quantity: number
     products: { name: string; unit: string } | null
   }[]
 }
@@ -148,7 +152,11 @@ export default function ReceiptView({
                   <span>{money(item.subtotal)}</span>
                 </div>
                 <div className="flex justify-between text-gray-500" style={{ fontSize: '0.85em' }}>
-                  <span>{item.quantity} {item.products?.unit ?? ''} x {money(item.unit_price)}</span>
+                  <span>
+                    {item.quantity} {item.unit_name ?? item.products?.unit ?? ''} x {money(item.unit_price)}
+                    {/* ขายยกกล่อง/ยกลัง — กำกับไว้ว่าได้ของไปกี่หน่วยย่อย */}
+                    {item.unit_factor > 1 && ` (${item.base_quantity} ${item.products?.unit ?? ''})`}
+                  </span>
                   {item.discount > 0 && <span>ลด {money(item.discount)}</span>}
                 </div>
               </div>

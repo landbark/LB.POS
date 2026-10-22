@@ -15,10 +15,10 @@ export default async function BoothSheetPage({ params }: { params: Promise<{ id:
       .select('product_id, taken_quantity, returned_quantity, products(name, sku, unit)')
       .eq('trip_id', id)
       .order('created_at'),
-    fetchAll<{ product_id: string | null; quantity: number }>((from, to) =>
+    fetchAll<{ product_id: string | null; base_quantity: number }>((from, to) =>
       supabase
         .from('transaction_items')
-        .select('product_id, quantity, transactions!inner(booth_trip_id, status)')
+        .select('product_id, base_quantity, transactions!inner(booth_trip_id, status)')
         .eq('transactions.booth_trip_id', id)
         .eq('transactions.status', 'completed')
         .order('id')
@@ -31,7 +31,7 @@ export default async function BoothSheetPage({ params }: { params: Promise<{ id:
   const soldByProduct = new Map<string, number>()
   for (const row of soldRows) {
     if (!row.product_id) continue
-    soldByProduct.set(row.product_id, (soldByProduct.get(row.product_id) ?? 0) + row.quantity)
+    soldByProduct.set(row.product_id, (soldByProduct.get(row.product_id) ?? 0) + row.base_quantity)
   }
 
   const lines: BoothSheetLine[] = (items ?? []).map((it) => {

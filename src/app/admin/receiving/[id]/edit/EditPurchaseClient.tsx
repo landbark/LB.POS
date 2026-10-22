@@ -8,7 +8,8 @@ import { ArrowLeft, Plus, Trash2, ListPlus, Save } from 'lucide-react'
 import toast from 'react-hot-toast'
 import type { Supplier } from '@/lib/types'
 import {
-  ProductPicker, MultiPicker, StockBadge, newItem, inputClass,
+  ProductPicker, MultiPicker, StockBadge, UnitSelect, newItem, inputClass,
+  findUnitChoice, factorOfRow,
   type ProductOption, type ItemRow,
 } from '../../pickers'
 
@@ -17,7 +18,7 @@ interface Purchase {
   purchase_number: string
   supplier_id: string | null
   notes: string | null
-  purchase_items: { id: string; product_id: string | null; quantity: number; unit_cost: number }[]
+  purchase_items: { id: string; product_id: string | null; product_unit_id: string | null; quantity: number; unit_cost: number }[]
 }
 
 export default function EditPurchaseClient({
@@ -34,6 +35,7 @@ export default function EditPurchaseClient({
     purchase.purchase_items.length > 0
       ? purchase.purchase_items.map((it) => ({
           product_id: it.product_id ?? '',
+          product_unit_id: it.product_unit_id ?? '',
           quantity: String(it.quantity),
           unit_cost: String(it.unit_cost),
         }))
@@ -54,8 +56,14 @@ export default function EditPurchaseClient({
     const next = [...items]
     next[index] = { ...next[index], [key]: value }
     if (key === 'product_id') {
+      next[index].product_unit_id = ''
       const p = products.find((x) => x.id === value)
       if (p?.cost != null && !next[index].unit_cost) next[index].unit_cost = p.cost.toString()
+    }
+    if (key === 'product_id' || key === 'product_unit_id') {
+      const p = products.find((x) => x.id === next[index].product_id)
+      const choice = findUnitChoice(p, next[index].product_unit_id)
+      if (choice?.cost != null) next[index].unit_cost = String(choice.cost)
     }
     setItems(next)
   }
@@ -64,7 +72,7 @@ export default function EditPurchaseClient({
     if (ids.length === 0) return
     const rows: ItemRow[] = ids.map((id) => {
       const p = products.find((x) => x.id === id)
-      return { product_id: id, quantity: '1', unit_cost: p?.cost != null ? String(p.cost) : '' }
+      return { product_id: id, product_unit_id: '', quantity: '1', unit_cost: p?.cost != null ? String(p.cost) : '' }
     })
     setItems([...items.filter((it) => it.product_id), ...rows])
     toast.success(`เพิ่ม ${rows.length} รายการแล้ว`)
@@ -97,12 +105,19 @@ export default function EditPurchaseClient({
     }
 
     const { error: insErr } = await supabase.from('purchase_items').insert(
-      validItems.map((it) => ({
-        purchase_id: purchase.id,
-        product_id: it.product_id,
-        quantity: parseInt(it.quantity),
-        unit_cost: parseFloat(it.unit_cost) || 0,
-      })),
+      validItems.map((it) => {
+        const p = products.find((x) => x.id === it.product_id)
+        const choice = findUnitChoice(p, it.product_unit_id)
+        return {
+          purchase_id: purchase.id,
+          product_id: it.product_id,
+          product_unit_id: choice?.unit?.id ?? null,
+          unit_factor: choice?.factor ?? 1,
+          unit_name: choice?.unit?.unit_name ?? null,
+          quantity: parseInt(it.quantity),
+          unit_cost: parseFloat(it.unit_cost) || 0,
+        }
+      }),
     )
     if (insErr) {
       toast.error('บันทึกรายการไม่สำเร็จ: ' + insErr.message)
@@ -168,8 +183,8 @@ export default function EditPurchaseClient({
             <thead>
               <tr className="text-xs font-medium text-gray-500 uppercase">
                 <th className="text-left pb-2 pr-2 min-w-56">สินค้า</th>
-                <th className="text-left pb-2 pr-2 w-32">จำนวน</th>
-                <th className="text-left pb-2 pr-2 w-28">ทุน/หน่วย</th>
+                <th className="text-left pb-2 pr-2 w-44">จำนวน / หน่วย</th>
+                <th className="text-left pb-2 pr-2 w-28">ทุน/หน่วยที่สั่ง</th>
                 <th className="text-right pb-2 w-24">รวม</th>
                 <th className="pb-2 w-8"></th>
               </tr>
@@ -192,8 +207,13 @@ export default function EditPurchaseClient({
                     <td className="pr-2 py-1.5 align-top">
                       <div className="flex items-center gap-1.5">
                         <input type="number" min="1" value={it.quantity} onChange={(e) => setItem(i, 'quantity', e.target.value)} className={inputClass} placeholder="0" />
-                        <span className="shrink-0 text-xs text-gray-500">{p?.unit ?? ''}</span>
+                        <UnitSelect product={p} value={it.product_unit_id} onChange={(id) => setItem(i, 'product_unit_id', id)} />
                       </div>
+                      {factorOfRow(p, it.product_unit_id) > 1 && (parseInt(it.quantity) || 0) > 0 && (
+                        <p className="mt-0.5 pl-1 text-[11px] text-gray-400">
+                          เข้าสต็อค {(parseInt(it.quantity) || 0) * factorOfRow(p, it.product_unit_id)} {p?.unit}
+                        </p>
+                      )}
                     </td>
                     <td className="pr-2 py-1.5 align-top">
                       <input type="number" min="0" step="0.01" value={it.unit_cost} onChange={(e) => setItem(i, 'unit_cost', e.target.value)} className={inputClass} placeholder="0.00" />

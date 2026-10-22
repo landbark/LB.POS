@@ -61,6 +61,8 @@ export async function closeBoothTrip(
       if (!product) return []  // สินค้าถูกลบไปแล้ว — ข้าม ปิดรอบต่อได้
       return [{
         product,
+        // ของหายที่บูธนับเป็นหน่วยฐานตามใบเบิก
+        unit: null,
         quantity: m.quantity,
         unit_price: 0,
         discount: 0,

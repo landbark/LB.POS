@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { CartItem, StockMovementType } from '@/lib/types'
+import { baseQty } from '@/lib/productUnits'
 
 interface Lot {
   id: string
@@ -28,7 +29,8 @@ export async function deductStock(
   { transactionId, type, reason, createdBy }: DeductOptions
 ): Promise<void> {
   for (const item of cart) {
-    let remaining = item.quantity
+    // ขาย 2 กล่อง = ตัดสต็อค 2 × จำนวนต่อกล่อง — สต็อคเก็บเป็นหน่วยฐานกองเดียว
+    let remaining = baseQty(item)
     const lots = ((item.product.product_lots ?? []) as Lot[])
       .filter((l) => l.quantity > 0)
       .sort((a, b) => {

@@ -6,11 +6,14 @@ import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { PackageCheck, ArrowLeft, Plus, Trash2 } from 'lucide-react'
 import toast from 'react-hot-toast'
-import { ProductPicker, type ProductOption } from '../../pickers'
+import { ProductPicker, UnitSelect, findUnitChoice, type ProductOption } from '../../pickers'
 
 interface ReceiveItem {
   id: string
   product_id: string | null
+  product_unit_id: string | null
+  unit_factor: number | null
+  unit_name: string | null
   quantity: number
   unit_cost: number
   products: { name: string; sku: string | null; unit: string } | null
@@ -29,7 +32,14 @@ interface RowState {
   itemId: string | null
   productId: string | null
   productName: string
+  /** หน่วยฐานของสินค้า — สต็อคเข้าเป็นหน่วยนี้เสมอ */
   unit: string
+  /** หน่วยที่สั่งมา ('' = หน่วยฐาน) */
+  unitId: string
+  /** จำนวนหน่วยฐานต่อ 1 หน่วยที่สั่ง */
+  factor: number
+  /** ชื่อหน่วยที่สั่ง (ลัง/กล่อง) */
+  unitLabel: string
   orderedQty: number
   receivedQty: string
   unitCost: string
@@ -66,6 +76,9 @@ export default function ReceiveClient({
       productId: it.product_id,
       productName: it.products?.name ?? 'สินค้า (ถูกลบแล้ว)',
       unit: it.products?.unit ?? '',
+      unitId: it.product_unit_id ?? '',
+      factor: it.unit_factor ?? 1,
+      unitLabel: it.unit_name ?? it.products?.unit ?? '',
       orderedQty: it.quantity,
       receivedQty: it.quantity.toString(),
       unitCost: it.unit_cost.toString(),
@@ -88,6 +101,9 @@ export default function ReceiveClient({
       productId: null,
       productName: '',
       unit: '',
+      unitId: '',
+      factor: 1,
+      unitLabel: '',
       orderedQty: 0,
       receivedQty: '',
       unitCost: '',
@@ -105,7 +121,26 @@ export default function ReceiveClient({
       productId: id,
       productName: p?.name ?? '',
       unit: p?.unit ?? '',
+      unitId: '',
+      factor: 1,
+      unitLabel: p?.unit ?? '',
       unitCost: next[i].unitCost || (p?.cost != null ? String(p.cost) : ''),
+    }
+    setRows(next)
+  }
+
+  /** เปลี่ยนหน่วยที่รับ (ลัง/กล่อง) — ทุนต่อหน่วยกับตัวคูณเปลี่ยนตาม */
+  function pickUnit(i: number, unitId: string) {
+    const row = rows[i]
+    const p = products.find((x) => x.id === row.productId)
+    const choice = findUnitChoice(p, unitId)
+    const next = [...rows]
+    next[i] = {
+      ...row,
+      unitId,
+      factor: choice?.factor ?? 1,
+      unitLabel: choice?.name ?? row.unit,
+      unitCost: choice?.cost != null ? String(choice.cost) : row.unitCost,
     }
     setRows(next)
   }
@@ -116,7 +151,7 @@ export default function ReceiveClient({
     setRows(rows.filter((_, idx) => idx !== i))
   }
 
-  const totalReceived = rows.reduce((sum, r) => sum + (parseInt(r.receivedQty) || 0), 0)
+  const totalReceived = rows.reduce((sum, r) => sum + (parseInt(r.receivedQty) || 0) * (r.factor || 1), 0)
   const totalCost = rows.reduce(
     (sum, r) => sum + ((parseInt(r.receivedQty) || 0) * (parseFloat(r.unitCost) || 0)),
     0
@@ -149,6 +184,9 @@ export default function ReceiveClient({
         .insert(added.map((r) => ({
           purchase_id: purchase.id,
           product_id: r.productId,
+          product_unit_id: r.unitId || null,
+          unit_factor: r.factor || 1,
+          unit_name: r.unitId ? r.unitLabel : null,
           quantity: parseInt(r.receivedQty) || 1,
           unit_cost: parseFloat(r.unitCost) || 0,
         })))
@@ -177,7 +215,8 @@ export default function ReceiveClient({
         .from('product_lots')
         .insert(
           toReceive.map((r) => {
-            const qty = parseInt(r.receivedQty)
+            // รับมา 2 ลัง = เข้าสต็อค 2 × จำนวนต่อลัง เพราะสต็อคนับเป็นหน่วยย่อยกองเดียว
+            const qty = parseInt(r.receivedQty) * (r.factor || 1)
             return {
               product_id: r.productId,
               lot_number: r.lotNumber.trim() || null,
@@ -275,7 +314,7 @@ export default function ReceiveClient({
               <tr className="text-xs font-medium text-gray-500 uppercase">
                 <th className="text-left pb-2 pr-2 min-w-40">สินค้า</th>
                 <th className="text-right pb-2 pr-2 w-20">สั่ง</th>
-                <th className="text-left pb-2 pr-2 w-32">รับจริง</th>
+                <th className="text-left pb-2 pr-2 w-40">รับจริง</th>
                 <th className="text-left pb-2 pr-2 w-28">ทุน/หน่วย</th>
                 <th className="text-left pb-2 pr-2 w-32">LOT (ระบบ)</th>
                 <th className="text-left pb-2 pr-2 w-32">LOT บริษัท</th>
@@ -301,7 +340,7 @@ export default function ReceiveClient({
                       )}
                     </td>
                     <td className="pr-2 py-1.5 text-sm text-right text-gray-500">
-                      {r.itemId ? `${r.orderedQty} ${r.unit}` : <span className="text-amber-600">ไม่ได้สั่ง</span>}
+                      {r.itemId ? `${r.orderedQty} ${r.unitLabel || r.unit}` : <span className="text-amber-600">ไม่ได้สั่ง</span>}
                     </td>
                     <td className="pr-2 py-1.5">
                       <div className="flex items-center gap-1.5">
@@ -310,8 +349,21 @@ export default function ReceiveClient({
                           onChange={(e) => setRow(i, 'receivedQty', e.target.value)}
                           className={`${inputClass} ${short ? 'border-amber-400 bg-amber-50' : ''}`}
                         />
-                        <span className="shrink-0 text-xs text-gray-500">{r.unit}</span>
+                        {r.itemId ? (
+                          <span className="shrink-0 text-xs text-gray-500">{r.unitLabel || r.unit}</span>
+                        ) : (
+                          <UnitSelect
+                            product={products.find((x) => x.id === r.productId)}
+                            value={r.unitId}
+                            onChange={(id) => pickUnit(i, id)}
+                          />
+                        )}
                       </div>
+                      {r.factor > 1 && (parseInt(r.receivedQty) || 0) > 0 && (
+                        <p className="mt-0.5 pl-1 text-[11px] text-gray-400">
+                          เข้าสต็อค {(parseInt(r.receivedQty) || 0) * r.factor} {r.unit}
+                        </p>
+                      )}
                     </td>
                     <td className="pr-2 py-1.5">
                       <input

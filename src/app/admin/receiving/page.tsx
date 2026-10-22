@@ -10,7 +10,7 @@ export default async function ReceivingPage() {
     fetchAll((from, to) =>
       supabase
         .from('products')
-        .select('id, name, sku, barcode, unit, cost, supplier_id, product_lots(quantity)')
+        .select('id, name, sku, barcode, unit, cost, supplier_id, product_lots(quantity), product_units(id, product_id, unit_name, factor, sku, barcode, price, cost, sellable_pos, sellable_online, purchasable, sort_order, active, created_at)')
         .eq('active', true)
         .order('name')
         .order('id')

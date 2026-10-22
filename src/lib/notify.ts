@@ -583,7 +583,7 @@ export async function gatherDailySales(admin: ReturnType<typeof createAdminClien
       .lt('cancelled_at', endISO),
     admin
       .from('transaction_items')
-      .select('quantity, subtotal, product_id, products(name), transactions!inner(status, created_at)')
+      .select('base_quantity, subtotal, product_id, products(name), transactions!inner(status, created_at)')
       .eq('transactions.status', 'completed')
       .gte('transactions.created_at', startISO)
       .lt('transactions.created_at', endISO),
@@ -597,7 +597,7 @@ export async function gatherDailySales(admin: ReturnType<typeof createAdminClien
   // รวมตาม product_id ไม่ใช่ชื่อ — สินค้าคนละตัวที่ชื่อซ้ำกันต้องแยกแถว (ให้ตรงกับหน้า /admin/daily)
   const sellerMap: Record<string, { name: string; qty: number; revenue: number }> = {}
   for (const it of (items ?? []) as unknown as {
-    quantity: number
+    base_quantity: number
     subtotal: number
     product_id: string
     products: { name: string } | null
@@ -607,7 +607,7 @@ export async function gatherDailySales(admin: ReturnType<typeof createAdminClien
       qty: 0,
       revenue: 0,
     })
-    s.qty += it.quantity
+    s.qty += it.base_quantity
     s.revenue += it.subtotal
   }
 

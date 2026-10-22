@@ -7,6 +7,7 @@ import toast from 'react-hot-toast'
 import type { CartItem, Customer, PointsConfig, PaymentMethod, SalesChannel, RoundingMode } from '@/lib/types'
 import { roundTotal } from '@/lib/rounding'
 import { deductStock } from '@/lib/deductStock'
+import { baseQty } from '@/lib/productUnits'
 import { SALES_CHANNELS, isOnlineChannel } from '@/lib/salesChannel'
 import { POS_DISPLAY_CHANNEL, type PosDisplayMessage } from '@/lib/posDisplay'
 import { isVatApplicable } from '@/lib/vat'
@@ -300,6 +301,11 @@ export default function PaymentModal({
       transaction_id: tx.id,
       product_id: item.product.id,
       product_lot_id: item.lot_id,
+      // หน่วยที่ขาย — quantity คือจำนวน "หน่วยนั้น" (2 กล่อง) ส่วน base_quantity ที่ DB คิดให้
+      // คือจำนวนหน่วยฐานที่ตัดสต็อคจริง (24 ซอง) ชื่อหน่วยเก็บเป็น snapshot ไว้พิมพ์ใบเสร็จ
+      product_unit_id: item.unit?.id ?? null,
+      unit_factor: item.unit?.factor ?? 1,
+      unit_name: item.unit?.unit_name ?? null,
       quantity: item.quantity,
       unit_price: item.unit_price,
       discount: item.discount,
@@ -355,7 +361,7 @@ export default function PaymentModal({
   }
 
   if (writtenOff) {
-    const pieces = cart.reduce((n, i) => n + i.quantity, 0)
+    const pieces = cart.reduce((n, i) => n + baseQty(i), 0)
     return (
       <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
         <div className="bg-white rounded-2xl w-full max-w-sm shadow-2xl p-6 text-center">

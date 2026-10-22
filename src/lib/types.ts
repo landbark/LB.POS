@@ -49,6 +49,30 @@ export interface Unit {
   created_at: string
 }
 
+/**
+ * หน่วยขายใหญ่ของสินค้า (กล่อง/ลัง/กระสอบ) — สต็อคยังนับเป็นหน่วยฐานกองเดียว
+ * หน่วยฐาน (products.unit) ไม่มีแถวในตารางนี้ เพราะมันคือ factor 1 อยู่แล้ว
+ */
+export interface ProductUnit {
+  id: string
+  product_id: string
+  unit_name: string
+  /** จำนวนหน่วยฐานต่อ 1 หน่วยนี้ (กล่องละ 12 ซอง = 12) */
+  factor: number
+  sku: string | null
+  barcode: string | null
+  /** ราคายกแพ็ก (null = factor × ราคาฐาน คือไม่ลด) */
+  price: number | null
+  /** ทุนต่อแพ็ก (null = factor × ทุนฐาน) */
+  cost: number | null
+  sellable_pos: boolean
+  sellable_online: boolean
+  purchasable: boolean
+  sort_order: number
+  active: boolean
+  created_at: string
+}
+
 export interface Product {
   id: string
   name: string
@@ -94,10 +118,13 @@ export interface Product {
   online_description: string | null
   image_url: string | null
   active: boolean
+  /** ตัวนี้ถูกยุบไปเป็นหน่วยของสินค้าอื่นแล้ว (สินค้าแพ็กรุ่นเก่า) — เก็บไว้ให้ประวัติอ่านได้ */
+  replaced_by_unit_id: string | null
   created_at: string
   categories?: Category
   suppliers?: Supplier
   product_lots?: ProductLot[]
+  product_units?: ProductUnit[]
 }
 
 export interface Supplier {
@@ -131,6 +158,13 @@ export interface PurchaseItem {
   id: string
   purchase_id: string
   product_id: string | null
+  /** หน่วยที่สั่ง — null = หน่วยฐาน */
+  product_unit_id: string | null
+  unit_factor: number
+  unit_name: string | null
+  /** จำนวนหน่วยฐาน = quantity × unit_factor (DB คิดให้) */
+  base_quantity: number
+  received_base_quantity: number | null
   quantity: number
   received_quantity: number | null
   unit_cost: number
@@ -506,6 +540,14 @@ export interface TransactionItem {
   transaction_id: string
   product_id: string
   product_lot_id: string | null
+  /** หน่วยที่ขาย — null = หน่วยฐาน */
+  product_unit_id: string | null
+  unit_factor: number
+  /** ชื่อหน่วย ณ ตอนขาย (null = หน่วยฐานของสินค้า) */
+  unit_name: string | null
+  /** จำนวนหน่วยฐานที่ตัดสต็อคจริง = quantity × unit_factor (DB คิดให้) — ใช้ตัวนี้ในรายงาน */
+  base_quantity: number
+  /** จำนวน "หน่วยที่ขาย" — 2 กล่อง คือ 2 */
   quantity: number
   unit_price: number
   discount: number
@@ -714,6 +756,9 @@ export interface ShopProduct {
 // Cart types for POS
 export interface CartItem {
   product: Product
+  /** หน่วยที่ขาย — null = หน่วยฐานของสินค้า (products.unit) */
+  unit: ProductUnit | null
+  /** จำนวน "หน่วยที่เลือก" ไม่ใช่หน่วยฐาน — 2 กล่อง คือ 2 ตรงนี้ ส่วนสต็อคตัด 2 × factor */
   quantity: number
   unit_price: number
   /** ส่วนลดรวมของบรรทัดนี้ = โปรโมชั่น + ที่แคชเชียร์ลดเอง (ค่านี้คือที่บันทึกลง transaction_items) */

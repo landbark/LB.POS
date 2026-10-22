@@ -40,7 +40,7 @@ export async function POST(request: NextRequest) {
     .from('transactions')
     .select(`
       id, transaction_number, total, points_earned, points_used, created_at,
-      transaction_items(quantity, unit_price, subtotal, products(name, unit))
+      transaction_items(quantity, unit_price, subtotal, unit_name, products(name, unit))
     `)
     .eq('customer_id', customer.id)
     .order('created_at', { ascending: false })

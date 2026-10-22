@@ -14,6 +14,10 @@ interface PurchaseDoc {
   purchase_items: {
     quantity: number
     unit_cost: number
+    /** หน่วยที่สั่ง (null = หน่วยฐาน) — สั่งเป็นลังต้องขึ้นใบว่าลัง */
+    unit_name: string | null
+    unit_factor: number
+    base_quantity: number
     products: { name: string; sku: string | null; unit: string } | null
   }[]
 }
@@ -106,7 +110,14 @@ export default function PurchasePrintView({ purchase, store }: { purchase: Purch
                     {it.products?.name ?? 'สินค้า'}
                     {it.products?.sku && <span className="text-gray-400 font-mono"> ({it.products.sku})</span>}
                   </td>
-                  <td className="py-2 pr-2 text-right">{it.quantity} {it.products?.unit ?? ''}</td>
+                  <td className="py-2 pr-2 text-right">
+                    {it.quantity} {it.unit_name ?? it.products?.unit ?? ''}
+                    {it.unit_factor > 1 && (
+                      <span className="block text-[11px] text-gray-500">
+                        = {it.base_quantity} {it.products?.unit ?? ''}
+                      </span>
+                    )}
+                  </td>
                   <td className="py-2 pr-2 text-right">{money(it.unit_cost)}</td>
                   <td className="py-2 text-right">{money(it.quantity * it.unit_cost)}</td>
                 </tr>

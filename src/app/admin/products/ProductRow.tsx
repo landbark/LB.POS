@@ -97,6 +97,17 @@ export default function ProductRow({
               บูธ ฿{product.booth_price!.toLocaleString('th-TH', { minimumFractionDigits: 2 })}
             </span>
           )}
+          {/* หน่วยใหญ่ที่ผูกไว้ — ปิดโชว์หน้าขายจะขึ้นวงเล็บกำกับว่าใช้สั่งของเท่านั้น */}
+          {(product.product_units ?? [])
+            .filter((u) => u.active)
+            .sort((a, b) => a.factor - b.factor)
+            .map((u) => (
+              <span key={u.id} className="block text-xs font-normal text-gray-500">
+                {u.unit_name} ({u.factor}) ฿
+                {(u.price ?? product.price * u.factor).toLocaleString('th-TH', { minimumFractionDigits: 2 })}
+                {!u.sellable_pos && ' · สั่งของ'}
+              </span>
+            ))}
         </td>
         <td className="px-4 py-3 text-sm text-right">
           <span className={lowStock ? 'text-red-600 font-semibold' : 'text-gray-700'}>

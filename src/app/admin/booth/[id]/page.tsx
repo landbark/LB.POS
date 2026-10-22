@@ -7,7 +7,8 @@ import BoothTripClient, { type SoldLine, type PickerProduct } from './BoothTripC
 
 interface SoldRow {
   product_id: string | null
-  quantity: number
+  /** จำนวนหน่วยฐานที่ขายได้ (ขายยกกล่องถูกคูณมาแล้ว) — เทียบกับของที่เบิกไปซึ่งนับเป็นหน่วยฐาน */
+  base_quantity: number
   subtotal: number
   products: { name: string; unit: string; cost: number | null } | null
 }
@@ -42,7 +43,7 @@ export default async function BoothTripPage({ params }: { params: Promise<{ id: 
     fetchAll<SoldRow>((from, to) =>
       supabase
         .from('transaction_items')
-        .select('product_id, quantity, subtotal, products(name, unit, cost), transactions!inner(booth_trip_id, status)')
+        .select('product_id, base_quantity, subtotal, products(name, unit, cost), transactions!inner(booth_trip_id, status)')
         .eq('transactions.booth_trip_id', id)
         .eq('transactions.status', 'completed')
         .order('id')
@@ -79,7 +80,7 @@ export default async function BoothTripPage({ params }: { params: Promise<{ id: 
       unit: product?.unit ?? '',
       cost: product?.cost ?? null,
     }
-    at.quantity += row.quantity
+    at.quantity += row.base_quantity
     at.revenue += Number(row.subtotal)
     sold.set(row.product_id, at)
   }

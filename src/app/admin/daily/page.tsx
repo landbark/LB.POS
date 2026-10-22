@@ -29,7 +29,7 @@ export default async function DailySummaryPage({
       .lt('cancelled_at', endISO),
     supabase
       .from('transaction_items')
-      .select('quantity, subtotal, product_id, products(name, unit), transactions!inner(status, created_at)')
+      .select('base_quantity, subtotal, product_id, products(name, unit), transactions!inner(status, created_at)')
       .eq('transactions.status', 'completed')
       .gte('transactions.created_at', startISO)
       .lt('transactions.created_at', endISO),
@@ -74,14 +74,14 @@ export default async function DailySummaryPage({
     .sort((a, b) => b.amount - a.amount)
 
   const productMap: Record<string, { name: string; unit: string; qty: number; revenue: number }> = {}
-  for (const it of (items ?? []) as unknown as { quantity: number; subtotal: number; product_id: string; products: { name: string; unit: string } | null }[]) {
+  for (const it of (items ?? []) as unknown as { base_quantity: number; subtotal: number; product_id: string; products: { name: string; unit: string } | null }[]) {
     const p = (productMap[it.product_id] ??= {
       name: it.products?.name ?? 'สินค้าที่ถูกลบ',
       unit: it.products?.unit ?? '',
       qty: 0,
       revenue: 0,
     })
-    p.qty += it.quantity
+    p.qty += it.base_quantity
     p.revenue += it.subtotal
   }
   const bestSellers = Object.values(productMap).sort((a, b) => b.qty - a.qty || b.revenue - a.revenue)

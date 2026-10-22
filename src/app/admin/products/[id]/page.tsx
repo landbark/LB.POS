@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation'
 import { getMarketplaceChannels } from '@/lib/marketplace'
 import ProductForm from '../ProductForm'
 import LotManager from './LotManager'
+import UnitManager from './UnitManager'
 import StockHistory from './StockHistory'
 import ProductMarketplaceLinks from './ProductMarketplaceLinks'
 
@@ -18,7 +19,7 @@ export default async function EditProductPage({
   const [{ data: product }, { data: categories }, { data: units }, { data: suppliers }, { data: movements }, marketplaceChannels, { data: marketplaceLinks }] = await Promise.all([
     supabase
       .from('products')
-      .select('*, product_lots(*)')
+      .select('*, product_lots(*), product_units(*)')
       .eq('id', id)
       .single(),
     supabase.from('categories').select('*').order('name'),
@@ -42,6 +43,15 @@ export default async function EditProductPage({
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <ProductForm categories={categories ?? []} units={units ?? []} suppliers={suppliers ?? []} product={product} />
         <LotManager productId={id} lots={product.product_lots ?? []} unit={product.unit} userId={user?.id ?? ''} />
+      </div>
+      <div className="mt-6">
+        <UnitManager
+          productId={id}
+          baseUnit={product.unit}
+          basePrice={product.price}
+          baseCost={product.cost}
+          units={[...(product.product_units ?? [])].sort((a, b) => a.factor - b.factor)}
+        />
       </div>
       <div className="mt-6">
         <StockHistory movements={(movements as never[]) ?? []} unit={product.unit} />

@@ -16,6 +16,7 @@ interface CustomerData {
 
 interface TxItem {
   quantity: number
+  unit_name?: string | null
   unit_price: number
   subtotal: number
   products: { name: string; unit: string } | null
@@ -246,7 +247,7 @@ export default function MemberClient() {
                               {tx.transaction_items.map((item, i) => (
                                 <div key={i} className="flex items-center justify-between text-xs">
                                   <span className="text-gray-600">
-                                    {item.products?.name ?? 'สินค้า'} × {item.quantity} {item.products?.unit ?? ''}
+                                    {item.products?.name ?? 'สินค้า'} × {item.quantity} {item.unit_name ?? item.products?.unit ?? ''}
                                   </span>
                                   <span className="text-gray-900 font-medium shrink-0 ml-2">฿{money(item.subtotal)}</span>
                                 </div>
