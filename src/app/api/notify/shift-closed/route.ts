@@ -29,11 +29,13 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ sent: false, reason: 'below_threshold' })
   }
 
-  // ยอดขายที่เกิดในช่วงกะนี้
+  // ยอดขายที่เกิดในช่วงกะนี้ — เฉพาะหน้าร้าน ให้ตรงกับสรุปในหน้าปิดกะ
+  // (บูธมีสรุปของรอบเอง ส่วนแพลตฟอร์มไม่ใช่เงินที่รับที่ร้าน ยอดจริงดูที่สรุปของแพลตฟอร์ม)
   const { data: tx } = await admin
     .from('transactions')
     .select('total')
     .eq('status', 'completed')
+    .eq('sales_channel', 'store')
     .gte('created_at', shift.opened_at)
     .lt('created_at', shift.closed_at)
 

@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { fetchAll } from '@/lib/supabase/fetch-all'
 import { thaiDayRange, thaiMonthStart } from '@/lib/thaiDate'
 import { sumByMethod, type PaidTransaction } from '@/lib/payments'
+import { isOwnMoney } from '@/lib/salesChannel'
 
 export default async function ReportsPage() {
   const supabase = await createClient()
@@ -12,7 +13,7 @@ export default async function ReportsPage() {
   // ยอดทั้งเดือนอาจเกิน 1000 แถว — ต้องไล่ดึงทีละหน้า ไม่งั้นตัวเลขจะขาดแบบไม่มี error
   const [todayTx, monthTx, { data: recentTx }, monthItems, { data: store }] = await Promise.all([
     fetchAll((from, to) =>
-      supabase.from('transactions').select('total, payment_method, transaction_payments(method, amount)')
+      supabase.from('transactions').select('total, sales_channel, payment_method, transaction_payments(method, amount)')
         .gte('created_at', today).lt('created_at', tomorrow).order('id').range(from, to)
     ),
     fetchAll((from, to) =>
@@ -49,7 +50,9 @@ export default async function ReportsPage() {
   const todayTotal = todayTx?.reduce((s, t) => s + t.total, 0) ?? 0
   const monthTotal = monthTx?.reduce((s, t) => s + t.total, 0) ?? 0
 
-  const paymentBreakdown = sumByMethod((todayTx ?? []) as PaidTransaction[])
+  // ขายผ่านแพลตฟอร์มเงินเข้าทางแพลตฟอร์ม ไม่ใช่เงินที่ร้านรับเอง — ไม่นับเป็นเงินโอนในช่องนี้
+  const ownTodayTx = (todayTx ?? []).filter((t) => isOwnMoney(t.sales_channel))
+  const paymentBreakdown = sumByMethod(ownTodayTx as PaidTransaction[])
 
   const PAYMENT_TH: Record<string, string> = {
     cash: 'เงินสด',
@@ -78,7 +81,9 @@ export default async function ReportsPage() {
           <p className="text-xs text-gray-400 mt-0.5">{monthTx?.length ?? 0} รายการ</p>
         </div>
         <div className="bg-white rounded-xl p-5 shadow-sm border border-gray-100">
-          <p className="text-sm text-gray-500 mb-2">วิธีชำระวันนี้</p>
+          <p className="text-sm text-gray-500 mb-2">
+            วิธีชำระวันนี้ <span className="text-xs text-gray-400">· ไม่รวมแพลตฟอร์ม</span>
+          </p>
           <div className="space-y-1">
             {Object.entries(paymentBreakdown).map(([method, amount]) => (
               <div key={method} className="flex justify-between text-sm">

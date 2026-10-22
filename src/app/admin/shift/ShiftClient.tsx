@@ -97,7 +97,8 @@ export default function ShiftClient({
       const supabase = createClient()
       const [{ data: completed }, { data: refunds }, { data: moves }] = await Promise.all([
         // ยอดขายที่บูธไม่เข้าเก๊ะที่ร้าน — คนที่ไปงานถือเงินทอนแยกไปต่างหาก (ดูสรุปที่ /admin/booth)
-        supabase.from('transactions').select('total, payment_method, transaction_payments(method, amount)').eq('status', 'completed').neq('sales_channel', 'booth').gte('created_at', shift.opened_at),
+        // ขายผ่านแพลตฟอร์ม (Shopee/TikTok/Lazada) ก็ไม่ใช่เงินที่รับหน้าร้าน แพลตฟอร์มหักค่าธรรมเนียมแล้วโอนทีหลัง
+        supabase.from('transactions').select('total, payment_method, transaction_payments(method, amount)').eq('status', 'completed').eq('sales_channel', 'store').gte('created_at', shift.opened_at),
         supabase.from('transactions').select('total').eq('status', 'cancelled').eq('refund_method', 'cash').gte('cancelled_at', shift.opened_at),
         supabase.from('cash_movements').select('*, profiles(name)').eq('shift_id', shift.id).order('created_at'),
       ])

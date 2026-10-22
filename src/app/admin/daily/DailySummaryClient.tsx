@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { ChevronLeft, ChevronRight, Wallet, Trophy, AlertTriangle } from 'lucide-react'
 import type { SalesChannel } from '@/lib/types'
-import { CHANNEL_LABEL, CHANNEL_BADGE } from '@/lib/salesChannel'
+import { CHANNEL_LABEL, CHANNEL_BADGE, isOwnMoney } from '@/lib/salesChannel'
 
 const money = (n: number) => n.toLocaleString('th-TH', { minimumFractionDigits: 2 })
 const fmtTime = (d: string) =>
@@ -38,6 +38,9 @@ interface Props {
   discountTotal: number
   cancelledCount: number
   cancelledTotal: number
+  /** ยอดขายผ่านแพลตฟอร์มของวันนั้น — ไม่รวมในยอดสุทธิ/วิธีชำระ โชว์ไว้ดูเฉยๆ */
+  platformTotal: number
+  platformCount: number
   byMethod: { method: string; amount: number; count: number }[]
   byChannel: { channel: string; amount: number; count: number }[]
   bestSellers: { name: string; unit: string; qty: number; revenue: number }[]
@@ -59,7 +62,8 @@ const thaiDateLabel = (date: string) =>
   })
 
 export default function DailySummaryClient({
-  date, today, netTotal, txCount, discountTotal, cancelledCount, cancelledTotal, byMethod, byChannel, bestSellers, shifts,
+  date, today, netTotal, txCount, discountTotal, cancelledCount, cancelledTotal,
+  platformTotal, platformCount, byMethod, byChannel, bestSellers, shifts,
 }: Props) {
   const router = useRouter()
   const [showAll, setShowAll] = useState(false)
@@ -102,7 +106,7 @@ export default function DailySummaryClient({
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
         <div className="bg-white rounded-xl p-5 shadow-sm border border-gray-100">
-          <p className="text-sm text-gray-500">ยอดขายสุทธิ</p>
+          <p className="text-sm text-gray-500">ยอดขายสุทธิ (เงินที่ร้านรับเอง)</p>
           <p className="text-3xl font-bold text-gray-900 mt-1">฿{money(netTotal)}</p>
           <p className="text-xs text-gray-400 mt-1">
             {txCount} บิล
@@ -111,10 +115,18 @@ export default function DailySummaryClient({
           {cancelledCount > 0 && (
             <p className="text-xs text-red-500 mt-0.5">ยกเลิก {cancelledCount} ใบ (฿{money(cancelledTotal)}) — ไม่รวมในยอดข้างบน</p>
           )}
+          {platformCount > 0 && (
+            <p className="text-xs text-orange-600 mt-0.5">
+              ขายผ่านแพลตฟอร์มอีก {platformCount} บิล (฿{money(platformTotal)}) — ไม่รวมในยอดข้างบน เงินจริงดูที่สรุปของแพลตฟอร์ม
+            </p>
+          )}
         </div>
 
         <div className="bg-white rounded-xl p-5 shadow-sm border border-gray-100">
-          <p className="text-sm text-gray-500 mb-2">แยกตามวิธีชำระ</p>
+          <p className="text-sm text-gray-500 mb-2">
+            แยกตามวิธีชำระ
+            {platformCount > 0 && <span className="text-xs text-gray-400">· ไม่รวมแพลตฟอร์ม</span>}
+          </p>
           <div className="space-y-1.5">
             {byMethod.map(({ method, amount, count }) => (
               <div key={method} className="flex justify-between text-sm">
@@ -128,7 +140,9 @@ export default function DailySummaryClient({
       </div>
 
       <div className="bg-white rounded-xl p-5 shadow-sm border border-gray-100 mb-6">
-        <p className="text-sm text-gray-500 mb-2">แยกตามช่องทางขาย</p>
+        <p className="text-sm text-gray-500 mb-2">
+          แยกตามช่องทางขาย <span className="text-xs text-gray-400">· ยอดตามราคาที่ลงบิล รวมทุกช่องทาง</span>
+        </p>
         <div className="space-y-1.5">
           {byChannel.map(({ channel, amount, count }) => (
             <div key={channel} className="flex justify-between items-center text-sm">
@@ -137,8 +151,11 @@ export default function DailySummaryClient({
                   {CHANNEL_LABEL[channel as SalesChannel] ?? channel}
                 </span>
                 <span className="text-gray-400">({count} บิล)</span>
+                {!isOwnMoney(channel as SalesChannel) && (
+                  <span className="text-xs text-gray-400">ไม่รวมในยอดสุทธิ</span>
+                )}
               </span>
-              <span className="font-semibold text-gray-900 tabular-nums">฿{money(amount)}</span>
+              <span className={`font-semibold tabular-nums ${isOwnMoney(channel as SalesChannel) ? 'text-gray-900' : 'text-gray-400'}`}>฿{money(amount)}</span>
             </div>
           ))}
           {byChannel.length === 0 && <p className="text-sm text-gray-400">ยังไม่มีรายการขาย</p>}
@@ -150,7 +167,11 @@ export default function DailySummaryClient({
           <div className="px-4 py-3 border-b border-gray-100 flex items-center gap-2">
             <Trophy size={16} className="text-amber-500" />
             <h2 className="font-semibold text-gray-900">สินค้าขายดี</h2>
-            {bestSellers.length > 0 && <span className="text-xs text-gray-400">({bestSellers.length} รายการ)</span>}
+            {bestSellers.length > 0 && (
+              <span className="text-xs text-gray-400">
+                ({bestSellers.length} รายการ{platformCount > 0 ? ' · รวมแพลตฟอร์ม' : ''})
+              </span>
+            )}
           </div>
           <div className={showAll ? 'max-h-96 overflow-y-auto' : ''}>
             <div className="divide-y divide-gray-50">

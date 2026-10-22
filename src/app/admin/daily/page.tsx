@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { paymentLines, type PaidTransaction } from '@/lib/payments'
 import { thaiToday, thaiDayRange } from '@/lib/thaiDate'
+import { isOwnMoney } from '@/lib/salesChannel'
 import DailySummaryClient, { type ShiftSummary } from './DailySummaryClient'
 
 export default async function DailySummaryPage({
@@ -23,7 +24,7 @@ export default async function DailySummaryPage({
       .lt('created_at', endISO),
     supabase
       .from('transactions')
-      .select('total')
+      .select('total, sales_channel')
       .eq('status', 'cancelled')
       .gte('cancelled_at', startISO)
       .lt('cancelled_at', endISO),
@@ -47,12 +48,18 @@ export default async function DailySummaryPage({
       .order('opened_at', { ascending: true }),
   ])
 
-  const netTotal = completedTx?.reduce((s, t) => s + t.total, 0) ?? 0
-  const discountTotal = completedTx?.reduce((s, t) => s + (t.discount ?? 0), 0) ?? 0
+  // ยอดขายผ่านแพลตฟอร์มไม่ใช่เงินที่ร้านได้จริง (โดนหักค่าธรรมเนียม/ค่าส่ง) — แยกออกจากยอดสุทธิ
+  // และจากวิธีชำระ ไปโชว์เป็นบรรทัดข้อมูลต่างหาก ตัวเลขการเงินจริงดูที่สรุปของแพลตฟอร์มเอง
+  const ownTx = (completedTx ?? []).filter((t) => isOwnMoney(t.sales_channel))
+  const platformTx = (completedTx ?? []).filter((t) => !isOwnMoney(t.sales_channel))
+  const ownCancelled = (cancelledTx ?? []).filter((t) => isOwnMoney(t.sales_channel))
+
+  const netTotal = ownTx.reduce((s, t) => s + t.total, 0)
+  const discountTotal = ownTx.reduce((s, t) => s + (t.discount ?? 0), 0)
 
   // บิลที่แยกจ่ายนับยอดเข้าทุกช่องทางที่รับมา ส่วน count นับใบ (ใบเดียวโผล่ได้หลายช่องทาง)
   const byMethodMap: Record<string, { amount: number; count: number }> = {}
-  for (const t of completedTx ?? []) {
+  for (const t of ownTx) {
     for (const line of paymentLines(t as PaidTransaction)) {
       const m = (byMethodMap[line.method] ??= { amount: 0, count: 0 })
       m.amount += line.amount
@@ -63,6 +70,7 @@ export default async function DailySummaryPage({
     .map(([method, v]) => ({ method, ...v }))
     .sort((a, b) => b.amount - a.amount)
 
+  // ช่องทางขายยังโชว์ครบทุกช่องทาง รวมแพลตฟอร์มด้วย — ตรงนี้ดูว่าขายออกทางไหนบ้าง ไม่ใช่เงินเข้า
   const byChannelMap: Record<string, { amount: number; count: number }> = {}
   for (const t of completedTx ?? []) {
     const c = (byChannelMap[t.sales_channel ?? 'store'] ??= { amount: 0, count: 0 })
@@ -91,10 +99,12 @@ export default async function DailySummaryPage({
       date={date}
       today={thaiToday()}
       netTotal={netTotal}
-      txCount={completedTx?.length ?? 0}
+      txCount={ownTx.length}
       discountTotal={discountTotal}
-      cancelledCount={cancelledTx?.length ?? 0}
-      cancelledTotal={cancelledTx?.reduce((s, t) => s + t.total, 0) ?? 0}
+      cancelledCount={ownCancelled.length}
+      cancelledTotal={ownCancelled.reduce((s, t) => s + t.total, 0)}
+      platformTotal={platformTx.reduce((s, t) => s + t.total, 0)}
+      platformCount={platformTx.length}
       byMethod={byMethod}
       byChannel={byChannel}
       bestSellers={bestSellers}

@@ -2,6 +2,8 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { sumByMethod, type PaidTransaction } from '@/lib/payments'
 import { dueVaccinations, groupDueByPet } from '@/lib/vaccines'
 import { fetchAll } from '@/lib/supabase/fetch-all'
+import { isOwnMoney, CHANNEL_LABEL } from '@/lib/salesChannel'
+import type { SalesChannel } from '@/lib/types'
 
 const MAX_ITEMS_PER_SECTION = 15
 
@@ -571,13 +573,13 @@ export async function gatherDailySales(admin: ReturnType<typeof createAdminClien
   const [{ data: completed }, { data: cancelled }, { data: items }] = await Promise.all([
     admin
       .from('transactions')
-      .select('total, payment_method, transaction_payments(method, amount)')
+      .select('total, sales_channel, payment_method, transaction_payments(method, amount)')
       .eq('status', 'completed')
       .gte('created_at', startISO)
       .lt('created_at', endISO),
     admin
       .from('transactions')
-      .select('total')
+      .select('total, sales_channel')
       .eq('status', 'cancelled')
       .gte('cancelled_at', startISO)
       .lt('cancelled_at', endISO),
@@ -589,10 +591,21 @@ export async function gatherDailySales(admin: ReturnType<typeof createAdminClien
       .lt('transactions.created_at', endISO),
   ])
 
-  const tx = completed ?? []
+  // ขายผ่านแพลตฟอร์มไม่ใช่เงินที่ร้านได้จริง (โดนหักค่าธรรมเนียม/ค่าส่ง) — แยกไปอีกบรรทัด
+  // ไม่รวมในยอดขายรวม/วิธีชำระ ให้ตรงกับหน้า /admin/daily
+  const tx = (completed ?? []).filter((t) => isOwnMoney(t.sales_channel))
+  const platformTx = (completed ?? []).filter((t) => !isOwnMoney(t.sales_channel))
+  const cancelledOwn = (cancelled ?? []).filter((t) => isOwnMoney(t.sales_channel))
   const total = tx.reduce((s, t) => s + t.total, 0)
 
   const byMethodMap = sumByMethod(tx as PaidTransaction[])
+
+  const platformMap: Record<string, { amount: number; count: number }> = {}
+  for (const t of platformTx) {
+    const c = (platformMap[t.sales_channel] ??= { amount: 0, count: 0 })
+    c.amount += t.total
+    c.count += 1
+  }
 
   // รวมตาม product_id ไม่ใช่ชื่อ — สินค้าคนละตัวที่ชื่อซ้ำกันต้องแยกแถว (ให้ตรงกับหน้า /admin/daily)
   const sellerMap: Record<string, { name: string; qty: number; revenue: number }> = {}
@@ -621,8 +634,11 @@ export async function gatherDailySales(admin: ReturnType<typeof createAdminClien
     total,
     txCount: tx.length,
     byMethod: Object.entries(byMethodMap).map(([method, amount]) => ({ method, amount })),
-    cancelledCount: cancelled?.length ?? 0,
-    cancelledTotal: cancelled?.reduce((s, t) => s + t.total, 0) ?? 0,
+    platform: Object.entries(platformMap)
+      .map(([channel, v]) => ({ channel, ...v }))
+      .sort((a, b) => b.amount - a.amount),
+    cancelledCount: cancelledOwn.length,
+    cancelledTotal: cancelledOwn.reduce((s, t) => s + t.total, 0),
     bestSellers,
   }
 }
@@ -651,6 +667,13 @@ export function buildDailySalesMessage(s: Awaited<ReturnType<typeof gatherDailyS
     lines.push(...s.byMethod
       .sort((a, b) => b.amount - a.amount)
       .map((m) => `   • ${PAYMENT_TH[m.method] ?? m.method} ${baht(m.amount)}`))
+  }
+
+  // ยอดแพลตฟอร์มแยกไว้ล่างสุดของบล็อกยอด — POS ตัดสต็อกให้เท่านั้น เงินจริงดูสรุปของแพลตฟอร์ม
+  if (s.platform.length > 0) {
+    lines.push('', '🛒 ขายผ่านแพลตฟอร์ม (ไม่รวมยอดข้างบน)')
+    lines.push(...s.platform.map((p) =>
+      `   • ${CHANNEL_LABEL[p.channel as SalesChannel] ?? p.channel} ${baht(p.amount)} · ${p.count} บิล`))
   }
 
   if (s.cancelledCount > 0) {
