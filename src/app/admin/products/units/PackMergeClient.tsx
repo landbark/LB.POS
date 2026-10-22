@@ -3,11 +3,12 @@
 import { useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { Check, Search, Loader2, AlertTriangle, Boxes } from 'lucide-react'
+import { Check, Search, Loader2, AlertTriangle, Boxes, ArrowLeftRight, PackagePlus } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { confirmDialog } from '@/lib/confirm'
+import { suggestFactor, guessPackUnitName, packIsPosHidden, discountLooksOff } from '@/lib/packGuess'
 
-export interface BaseInfo {
+export interface Side {
   id: string
   sku: string
   name: string
@@ -15,19 +16,31 @@ export interface BaseInfo {
   price: number
   cost: number | null
   stock: number
+  /** จำนวนต่อแพ็กที่อ่านได้จากชื่อสินค้า เช่น (15Gx40) */
+  nameHint: number | null
+}
+
+export interface NewBaseSeed {
+  name: string
+  unit: string
+  categoryId: string | null
+  supplierId: string | null
+  vatApplicable: boolean | null
+  clinicOnly: boolean | null
 }
 
 export interface MergeCandidate {
-  packId: string
-  packSku: string
-  packName: string
-  packUnit: string
-  packPrice: number
-  packCost: number | null
-  packStock: number
-  base: BaseInfo | null
+  key: string
+  /** รหัส 6 ตัวหน้า — ใช้เป็น SKU ของสินค้าฐานที่สร้างใหม่ */
+  baseCode: string
+  /** ตัวที่จะถูกยุบ (หน่วยใหญ่) */
+  pack: Side
+  /** ตัวที่เป็นหน่วยย่อย (null = ไม่มีคู่ในระบบ) */
+  base: Side | null
   suggestedFactor: number
+  suggestedUnitName: string
   sellablePos: boolean
+  newBase: NewBaseSeed
 }
 
 export interface MergedRow {
@@ -52,34 +65,60 @@ interface Draft {
   cost: string
   sellablePos: boolean
   purchasable: boolean
-  base: BaseInfo | null
-  /** ช่องกรอก SKU ฐานเอง (เฉพาะแถวที่ระบบหาตัวฐานไม่เจอ) */
+  /** สลับว่าตัวไหนเป็นหน่วยย่อย */
+  swapped: boolean
+  /** ตัวฐานที่หามาเองด้วย SKU (แถวที่ไม่มีคู่) */
+  foundBase: Side | null
   baseSkuInput: string
+  /** เปิดฟอร์มสร้างสินค้าฐานใหม่ */
+  creating: boolean
+  newName: string
+  newUnit: string
+  newPrice: string
+  newCost: string
 }
 
 const money = (n: number) => n.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 const inputClass =
   'w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500'
 
-/** ทุนเริ่มต้นของแพ็ก — ข้อมูลเก่าบางตัวกรอกทุนต่อชิ้นไว้ในช่องทุนกล่อง ซึ่งใช้ต่อไม่ได้ */
-function initialCost(c: MergeCandidate, factor: number): string {
-  const base = c.base
-  if (c.packCost != null && (!base?.cost || c.packCost >= base.cost * 1.5)) return String(c.packCost)
-  if (base?.cost) return (base.cost * factor).toFixed(2)
-  return c.packCost != null ? String(c.packCost) : ''
+/**
+ * ราคาเริ่มต้นของแพ็ก — บางตัวในข้อมูลเก่าไม่เคยตั้งราคาแพ็กไว้ (ติดราคาหน่วยย่อยค้างอยู่
+ * เช่น NEZ011B กล่อง ฿15 เท่ากับราคาซอง) ตั้งต้นเป็น "ไม่ลด" ให้ แล้วให้คนแก้
+ */
+function initialPrice(pack: Side, base: Side | null, factor: number): string {
+  if (base && factor > 1 && pack.price <= base.price) return (base.price * factor).toFixed(2)
+  return String(pack.price)
 }
 
-function makeDraft(c: MergeCandidate): Draft {
-  const factor = c.suggestedFactor || 0
+/** ทุนเริ่มต้นของแพ็ก — ข้อมูลเก่าบางตัวกรอกทุนต่อชิ้นไว้ในช่องทุนกล่อง ซึ่งใช้ต่อไม่ได้ */
+function initialCost(pack: Side, base: Side | null, factor: number): string {
+  if (pack.cost != null && (!base?.cost || pack.cost >= base.cost * 1.5)) return String(pack.cost)
+  if (base?.cost) return (base.cost * factor).toFixed(2)
+  return pack.cost != null ? String(pack.cost) : ''
+}
+
+function makeDraft(c: MergeCandidate, swapped = false, foundBase: Side | null = null, keep?: Partial<Draft>): Draft {
+  const pack = swapped ? (c.base ?? foundBase ?? c.pack) : c.pack
+  const base = swapped ? c.pack : (c.base ?? foundBase)
+  const factor = base ? suggestFactor(pack, base, pack.nameHint) : 0
+  const unitName = guessPackUnitName(pack.unit, pack.sku)
   return {
-    unitName: c.packUnit,
+    unitName,
     factor: factor ? String(factor) : '',
-    price: String(c.packPrice),
-    cost: initialCost(c, factor),
-    sellablePos: c.sellablePos,
+    price: initialPrice(pack, base, factor),
+    cost: initialCost(pack, base, factor),
+    sellablePos: !packIsPosHidden(unitName),
     purchasable: true,
-    base: c.base,
+    swapped,
+    foundBase,
     baseSkuInput: '',
+    creating: false,
+    newName: c.newBase.name,
+    newUnit: c.newBase.unit,
+    newPrice: '',
+    newCost: '',
+    ...keep,
   }
 }
 
@@ -99,25 +138,34 @@ export default function PackMergeClient({
   const all = useMemo(() => [...candidates, ...orphans], [candidates, orphans])
 
   const [drafts, setDrafts] = useState<Record<string, Draft>>(() =>
-    Object.fromEntries(all.map((c) => [c.packId, makeDraft(c)])),
+    Object.fromEntries(all.map((c) => [c.key, makeDraft(c)])),
   )
   const [selected, setSelected] = useState<Record<string, boolean>>({})
   const [busy, setBusy] = useState<string | null>(null)
-  const [tab, setTab] = useState<'todo' | 'done'>(candidates.length > 0 ? 'todo' : 'done')
+  const [tab, setTab] = useState<'todo' | 'done'>(all.length > 0 ? 'todo' : 'done')
   const [search, setSearch] = useState('')
 
-  function setDraft(id: string, patch: Partial<Draft>) {
-    setDrafts((d) => ({ ...d, [id]: { ...d[id], ...patch } }))
+  function setDraft(key: string, patch: Partial<Draft>) {
+    setDrafts((d) => ({ ...d, [key]: { ...d[key], ...patch } }))
+  }
+
+  /** ด้านที่ถูกยุบ / ด้านที่อยู่ต่อ ตามสถานะสลับของแถวนั้น */
+  function sidesOf(c: MergeCandidate) {
+    const d = drafts[c.key]
+    const other = c.base ?? d.foundBase
+    return d.swapped && other
+      ? { pack: other, base: c.pack }
+      : { pack: c.pack, base: other }
   }
 
   const q = search.trim().toLowerCase()
   const visible = all.filter(
-    (c) => !q || c.packSku.toLowerCase().includes(q) || c.packName.toLowerCase().includes(q),
+    (c) => !q || c.pack.sku.toLowerCase().includes(q) || c.pack.name.toLowerCase().includes(q) || c.baseCode.toLowerCase().includes(q),
   )
   const selectedIds = Object.keys(selected).filter((id) => selected[id])
 
   async function resolveBase(c: MergeCandidate) {
-    const sku = drafts[c.packId].baseSkuInput.trim()
+    const sku = drafts[c.key].baseSkuInput.trim()
     if (!sku) return
     const { data, error } = await supabase
       .from('products')
@@ -132,7 +180,11 @@ export default function PackMergeClient({
       toast.error(`${sku} เป็นตัวที่ถูกยุบไปแล้ว เลือกตัวอื่น`)
       return
     }
-    const base: BaseInfo = {
+    if (data.id === c.pack.id) {
+      toast.error('เลือกตัวเดียวกับที่จะยุบไม่ได้')
+      return
+    }
+    const found: Side = {
       id: data.id,
       sku: data.sku ?? '',
       name: data.name,
@@ -140,30 +192,76 @@ export default function PackMergeClient({
       price: data.price,
       cost: data.cost,
       stock: ((data.product_lots ?? []) as { quantity: number }[]).reduce((s, l) => s + l.quantity, 0),
+      nameHint: null,
     }
-    setDraft(c.packId, { base })
-    toast.success(`ผูกกับ ${base.name}`)
+    setDrafts((d) => ({ ...d, [c.key]: makeDraft(c, false, found) }))
+    toast.success(`ผูกกับ ${found.name}`)
+  }
+
+  /** สร้างสินค้าหน่วยย่อยจากตัวแพ็ก (รายการที่ไม่เคยมีตัวฐานในระบบ) */
+  async function createBase(c: MergeCandidate): Promise<Side | null> {
+    const d = drafts[c.key]
+    const factor = parseInt(d.factor)
+    const price = parseFloat(d.newPrice)
+    if (!d.newName.trim() || !d.newUnit.trim()) {
+      toast.error('ใส่ชื่อกับหน่วยของสินค้าหน่วยย่อย')
+      return null
+    }
+    if (!factor || factor < 2) {
+      toast.error('ใส่ตัวคูณก่อน (1 แพ็กกี่หน่วยย่อย)')
+      return null
+    }
+    if (!price || price <= 0) {
+      toast.error('ใส่ราคาขายต่อหน่วยย่อย')
+      return null
+    }
+    const { data, error } = await supabase
+      .from('products')
+      .insert({
+        name: d.newName.trim(),
+        sku: c.baseCode,
+        category_id: c.newBase.categoryId,
+        supplier_id: c.newBase.supplierId,
+        vat_applicable: c.newBase.vatApplicable,
+        clinic_only: c.newBase.clinicOnly,
+        price,
+        cost: d.newCost === '' ? null : parseFloat(d.newCost),
+        unit: d.newUnit.trim(),
+      })
+      .select('id, sku, name, unit, price, cost')
+      .single()
+    if (error || !data) {
+      toast.error(
+        error?.code === '23505'
+          ? `SKU ${c.baseCode} ซ้ำกับสินค้าที่มีอยู่แล้ว`
+          : 'สร้างสินค้าไม่สำเร็จ: ' + (error?.message ?? ''),
+      )
+      return null
+    }
+    return { ...data, sku: data.sku ?? '', cost: data.cost, stock: 0, nameHint: null }
   }
 
   /** ยุบหนึ่งแถว — คืน true เมื่อสำเร็จ */
-  async function mergeOne(c: MergeCandidate): Promise<boolean> {
-    const d = drafts[c.packId]
+  async function mergeOne(c: MergeCandidate, baseOverride?: Side): Promise<boolean> {
+    const d = drafts[c.key]
+    const { pack, base: sideBase } = sidesOf(c)
+    const base = baseOverride ?? sideBase
     const factor = parseInt(d.factor)
-    if (!d.base) {
-      toast.error(`${c.packSku}: ยังไม่ได้เลือกสินค้าฐาน`)
+    if (!base) {
+      toast.error(`${pack.sku}: ยังไม่ได้เลือกสินค้าหน่วยย่อย`)
       return false
     }
     if (!factor || factor < 2) {
-      toast.error(`${c.packSku}: ตัวคูณต้องเป็นจำนวนเต็มตั้งแต่ 2 ขึ้นไป`)
+      toast.error(`${pack.sku}: ตัวคูณต้องเป็นจำนวนเต็มตั้งแต่ 2 ขึ้นไป`)
       return false
     }
     if (!d.unitName.trim()) {
-      toast.error(`${c.packSku}: ยังไม่ได้ตั้งชื่อหน่วย`)
+      toast.error(`${pack.sku}: ยังไม่ได้ตั้งชื่อหน่วย`)
       return false
     }
     const { error } = await supabase.rpc('merge_pack_product', {
-      p_pack_product_id: c.packId,
-      p_base_product_id: d.base.id,
+      p_pack_product_id: pack.id,
+      p_base_product_id: base.id,
       p_unit_name: d.unitName.trim(),
       p_factor: factor,
       p_price: d.price === '' ? null : parseFloat(d.price),
@@ -173,38 +271,55 @@ export default function PackMergeClient({
       p_created_by: userId || null,
     })
     if (error) {
-      toast.error(`${c.packSku}: ${error.message}`)
+      toast.error(`${pack.sku}: ${error.message}`)
       return false
     }
     return true
   }
 
   async function handleMerge(c: MergeCandidate) {
-    const d = drafts[c.packId]
+    const d = drafts[c.key]
+    const { pack, base } = sidesOf(c)
     const factor = parseInt(d.factor) || 0
-    const moved = c.packStock * factor
+    const creating = !base && d.creating
+
     const { confirmed } = await confirmDialog({
-      title: `ยุบ ${c.packSku} เป็น "${d.unitName}" ของ ${d.base?.sku ?? '—'}`,
+      title: creating
+        ? `สร้าง ${c.baseCode} แล้วยุบ ${pack.sku} เป็น "${d.unitName}"`
+        : `ยุบ ${pack.sku} เป็น "${d.unitName}" ของ ${base?.sku ?? '—'}`,
       message:
-        `1 ${d.unitName} = ${factor} ${d.base?.unit ?? ''}` +
-        (c.packStock !== 0
-          ? `\nสต็อค ${c.packStock} ${d.unitName} → ย้ายไปเป็น ${moved} ${d.base?.unit ?? ''} ของตัวฐาน`
+        (creating
+          ? `สร้างสินค้าใหม่ ${c.baseCode} · ${d.newName} · ฿${d.newPrice || '0'}/${d.newUnit}\n`
+          : '') +
+        `1 ${d.unitName} = ${factor} ${creating ? d.newUnit : base?.unit ?? ''}` +
+        (pack.stock !== 0
+          ? `\nสต็อค ${pack.stock} ${d.unitName} → ย้ายไปเป็น ${pack.stock * factor} ${creating ? d.newUnit : base?.unit ?? ''}`
           : '\nไม่มีสต็อคค้างให้ย้าย') +
-        `\n\nย้อนคืนเองไม่ได้ — ถ้าตัวคูณผิดต้องไปปรับสต็อคที่หน้าสต็อคทีหลัง`,
-      confirmLabel: 'ยุบรวม',
+        `\n\nย้อนคืนเองไม่ได้ — ถ้าตัวคูณผิดต้องไปปรับสต็อคที่หน้าสินค้าทีหลัง`,
+      confirmLabel: creating ? 'สร้าง + ยุบรวม' : 'ยุบรวม',
     })
     if (!confirmed) return
-    setBusy(c.packId)
-    const ok = await mergeOne(c)
+
+    setBusy(c.key)
+    let override: Side | undefined
+    if (creating) {
+      const made = await createBase(c)
+      if (!made) {
+        setBusy(null)
+        return
+      }
+      override = made
+    }
+    const ok = await mergeOne(c, override)
     setBusy(null)
     if (ok) {
-      toast.success(`ยุบ ${c.packSku} แล้ว`)
+      toast.success(`ยุบ ${pack.sku} แล้ว`)
       router.refresh()
     }
   }
 
   async function handleMergeSelected() {
-    const rows = all.filter((c) => selected[c.packId])
+    const rows = all.filter((c) => selected[c.key] && sidesOf(c).base)
     if (rows.length === 0) return
     const { confirmed } = await confirmDialog({
       title: `ยุบ ${rows.length} รายการที่เลือก`,
@@ -218,7 +333,7 @@ export default function PackMergeClient({
       // ทำทีละแถว ไม่ขนาน — ล้มแถวไหนก็รู้ว่าแถวไหน และยอดสต็อคไม่ชนกันเอง
       if (await mergeOne(c)) {
         done++
-        setSelected((s) => ({ ...s, [c.packId]: false }))
+        setSelected((s) => ({ ...s, [c.key]: false }))
       }
     }
     setBusy(null)
@@ -250,6 +365,11 @@ export default function PackMergeClient({
         >
           หน่วยที่ใช้อยู่ {merged.length}
         </button>
+        {orphans.length > 0 && (
+          <span className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1">
+            {orphans.length} รายการไม่มีสินค้าหน่วยย่อยในระบบ — สร้างให้ได้ในแถวนั้น
+          </span>
+        )}
       </div>
 
       {tab === 'todo' && (
@@ -283,55 +403,112 @@ export default function PackMergeClient({
 
           <div className="space-y-3">
             {visible.map((c) => {
-              const d = drafts[c.packId]
+              const d = drafts[c.key]
+              const { pack, base } = sidesOf(c)
               const factor = parseInt(d.factor) || 0
               const price = parseFloat(d.price) || 0
               const cost = d.cost === '' ? null : parseFloat(d.cost)
-              const base = d.base
-              const fullPrice = base ? base.price * factor : 0
+              const baseUnit = base?.unit ?? (d.creating ? d.newUnit : 'หน่วยฐาน')
+              const basePrice = base?.price ?? (d.creating ? parseFloat(d.newPrice) || 0 : 0)
+              const fullPrice = basePrice * factor
               const discountPct = fullPrice > 0 && price > 0 ? ((fullPrice - price) / fullPrice) * 100 : 0
               const costPerBase = cost != null && factor > 0 ? cost / factor : null
-              const costRatio = c.packCost && base?.cost ? c.packCost / base.cost : null
-              const priceRatio = base && base.price > 0 ? c.packPrice / base.price : null
+              const costRatio = pack.cost && base?.cost ? pack.cost / base.cost : null
+              const priceRatio = base && base.price > 0 ? pack.price / base.price : null
+              const canSwap = Boolean(c.base ?? d.foundBase)
 
               return (
-                <div key={c.packId} className="bg-white border border-gray-200 rounded-xl p-4">
+                <div key={c.key} className="bg-white border border-gray-200 rounded-xl p-4">
                   <div className="flex items-start gap-3 mb-3">
                     <input
                       type="checkbox"
-                      checked={Boolean(selected[c.packId])}
-                      onChange={(e) => setSelected((s) => ({ ...s, [c.packId]: e.target.checked }))}
+                      checked={Boolean(selected[c.key])}
+                      onChange={(e) => setSelected((s) => ({ ...s, [c.key]: e.target.checked }))}
                       className="mt-1 w-4 h-4"
                       disabled={!base}
                     />
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <span className="font-mono text-xs bg-gray-100 text-gray-700 px-1.5 py-0.5 rounded">{c.packSku}</span>
-                        <span className="text-sm font-medium text-gray-900 truncate">{c.packName}</span>
+                        <span className="text-[11px] text-gray-400">ยุบตัวนี้</span>
+                        <span className="font-mono text-xs bg-gray-100 text-gray-700 px-1.5 py-0.5 rounded">{pack.sku}</span>
+                        <span className="text-sm font-medium text-gray-900 truncate">{pack.name}</span>
                       </div>
                       <p className="text-xs text-gray-500 mt-0.5">
-                        ขาย ฿{money(c.packPrice)} · ทุน {c.packCost != null ? `฿${money(c.packCost)}` : '—'} ·
-                        สต็อคค้าง {c.packStock} {c.packUnit}
+                        ขาย ฿{money(pack.price)} · ทุน {pack.cost != null ? `฿${money(pack.cost)}` : '—'} ·
+                        สต็อคค้าง {pack.stock} {pack.unit}
+                        {pack.nameHint && <span className="text-blue-600"> · ชื่อบอก x{pack.nameHint}</span>}
                       </p>
                     </div>
+                    {canSwap && (
+                      <button
+                        onClick={() => setDrafts((s) => ({ ...s, [c.key]: makeDraft(c, !d.swapped, d.foundBase) }))}
+                        title="สลับว่าตัวไหนเป็นหน่วยย่อย"
+                        className="shrink-0 flex items-center gap-1 text-xs font-medium text-gray-500 hover:text-blue-600 border border-gray-200 rounded-lg px-2 py-1"
+                      >
+                        <ArrowLeftRight size={12} />
+                        สลับ
+                      </button>
+                    )}
                   </div>
 
                   {base ? (
                     <p className="text-xs text-gray-600 mb-3 bg-gray-50 rounded-lg px-3 py-2">
-                      ตัวฐาน <span className="font-mono">{base.sku}</span> · {base.name} ·
+                      หน่วยย่อย <span className="font-mono">{base.sku}</span> · {base.name} ·
                       ขาย ฿{money(base.price)}/{base.unit} ·
                       ทุน {base.cost != null ? `฿${money(base.cost)}` : '—'} ·
                       สต็อค {base.stock} {base.unit}
                     </p>
+                  ) : d.creating ? (
+                    <div className="mb-3 bg-amber-50 border border-amber-200 rounded-lg p-3">
+                      <p className="text-xs font-medium text-amber-800 mb-2">
+                        สร้างสินค้าหน่วยย่อยใหม่ (SKU <span className="font-mono">{c.baseCode}</span>)
+                      </p>
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                        <label className="block sm:col-span-2">
+                          <span className="text-xs text-gray-500">ชื่อสินค้า</span>
+                          <input value={d.newName} onChange={(e) => setDraft(c.key, { newName: e.target.value })} className={inputClass} />
+                        </label>
+                        <label className="block">
+                          <span className="text-xs text-gray-500">หน่วยย่อย</span>
+                          <input value={d.newUnit} onChange={(e) => setDraft(c.key, { newUnit: e.target.value })} className={inputClass} />
+                        </label>
+                        <label className="block">
+                          <span className="text-xs text-gray-500">ราคาขาย/{d.newUnit || 'หน่วย'}</span>
+                          <input
+                            type="number" min="0" step="0.01" value={d.newPrice}
+                            onChange={(e) => setDraft(c.key, { newPrice: e.target.value })}
+                            placeholder={factor ? (pack.price / factor).toFixed(2) : ''}
+                            className={inputClass}
+                          />
+                        </label>
+                        <label className="block">
+                          <span className="text-xs text-gray-500">ทุน/{d.newUnit || 'หน่วย'}</span>
+                          <input
+                            type="number" min="0" step="0.01" value={d.newCost}
+                            onChange={(e) => setDraft(c.key, { newCost: e.target.value })}
+                            placeholder={factor && pack.cost != null ? (pack.cost / factor).toFixed(2) : ''}
+                            className={inputClass}
+                          />
+                        </label>
+                      </div>
+                      <button
+                        onClick={() => setDraft(c.key, { creating: false })}
+                        className="mt-2 text-xs text-gray-500 hover:text-gray-700"
+                      >
+                        ยกเลิกการสร้างใหม่
+                      </button>
+                    </div>
                   ) : (
-                    <div className="flex items-center gap-2 mb-3">
+                    <div className="flex flex-wrap items-center gap-2 mb-3">
                       <AlertTriangle size={16} className="text-amber-500 shrink-0" />
-                      <span className="text-xs text-amber-700">ไม่พบตัวฐาน — กรอก SKU ของหน่วยย่อยเอง</span>
+                      <span className="text-xs text-amber-700">
+                        ไม่มีสินค้ารหัส {c.baseCode} ในระบบ — กรอก SKU หน่วยย่อยเอง หรือสร้างใหม่
+                      </span>
                       <input
                         value={d.baseSkuInput}
-                        onChange={(e) => setDraft(c.packId, { baseSkuInput: e.target.value })}
-                        placeholder="SKU ฐาน"
-                        className="border border-gray-300 rounded-lg px-2 py-1 text-sm w-32"
+                        onChange={(e) => setDraft(c.key, { baseSkuInput: e.target.value })}
+                        placeholder="SKU หน่วยย่อย"
+                        className="border border-gray-300 rounded-lg px-2 py-1 text-sm w-36"
                       />
                       <button
                         onClick={() => resolveBase(c)}
@@ -339,25 +516,36 @@ export default function PackMergeClient({
                       >
                         ค้นหา
                       </button>
+                      <button
+                        onClick={() => setDraft(c.key, { creating: true })}
+                        className="flex items-center gap-1 text-xs font-medium text-amber-700 hover:text-amber-800 border border-amber-300 rounded-lg px-2 py-1"
+                      >
+                        <PackagePlus size={12} />
+                        สร้างสินค้าหน่วยย่อย
+                      </button>
                     </div>
                   )}
 
                   <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
                     <label className="block">
                       <span className="text-xs text-gray-500">ชื่อหน่วย</span>
-                      <input value={d.unitName} onChange={(e) => setDraft(c.packId, { unitName: e.target.value })} className={inputClass} />
+                      <input value={d.unitName} onChange={(e) => setDraft(c.key, { unitName: e.target.value })} className={inputClass} />
                     </label>
                     <label className="block">
                       <span className="text-xs text-gray-500">
-                        1 {d.unitName || 'หน่วย'} = กี่ {base?.unit ?? 'หน่วยฐาน'}
+                        1 {d.unitName || 'หน่วย'} = กี่ {baseUnit}
                       </span>
                       <input
                         type="number" min="2" step="1" value={d.factor}
-                        onChange={(e) => setDraft(c.packId, { factor: e.target.value })}
+                        onChange={(e) => setDraft(c.key, { factor: e.target.value })}
                         className={inputClass}
                       />
                       <span className="text-[11px] text-gray-400 block mt-0.5">
-                        เดาจาก{costRatio && costRatio >= 1.5 ? `ทุน ${costRatio.toFixed(2)}` : 'ราคา'}
+                        {pack.nameHint
+                          ? `จากชื่อสินค้า x${pack.nameHint}`
+                          : costRatio && costRatio >= 1.5
+                            ? `จากทุน ${costRatio.toFixed(2)}`
+                            : 'จากราคา'}
                         {priceRatio ? ` · ราคา ${priceRatio.toFixed(2)}` : ''}
                       </span>
                     </label>
@@ -365,13 +553,23 @@ export default function PackMergeClient({
                       <span className="text-xs text-gray-500">ราคายก{d.unitName || 'แพ็ก'}</span>
                       <input
                         type="number" min="0" step="0.01" value={d.price}
-                        onChange={(e) => setDraft(c.packId, { price: e.target.value })}
+                        onChange={(e) => setDraft(c.key, { price: e.target.value })}
                         className={inputClass}
                       />
-                      <span className={`text-[11px] block mt-0.5 ${discountPct < 0 ? 'text-red-500' : 'text-gray-400'}`}>
-                        {factor > 0 && base
+                      <span
+                        className={`text-[11px] block mt-0.5 ${
+                          discountPct < 0
+                            ? 'text-red-500'
+                            : discountLooksOff(price, basePrice, factor)
+                              ? 'text-amber-600 font-medium'
+                              : 'text-gray-400'
+                        }`}
+                      >
+                        {factor > 0 && fullPrice > 0
                           ? discountPct >= 0
-                            ? `ลด ${discountPct.toFixed(1)}% จาก ฿${money(fullPrice)}`
+                            ? `ลด ${discountPct.toFixed(1)}% จาก ฿${money(fullPrice)}${
+                                discountLooksOff(price, basePrice, factor) ? ' — ลดลึกผิดปกติ เช็กตัวคูณ/ราคา' : ''
+                              }`
                             : `แพงกว่าซื้อแยก ${Math.abs(discountPct).toFixed(1)}%`
                           : ''}
                       </span>
@@ -380,18 +578,18 @@ export default function PackMergeClient({
                       <span className="text-xs text-gray-500">ทุนต่อ{d.unitName || 'แพ็ก'}</span>
                       <input
                         type="number" min="0" step="0.01" value={d.cost}
-                        onChange={(e) => setDraft(c.packId, { cost: e.target.value })}
+                        onChange={(e) => setDraft(c.key, { cost: e.target.value })}
                         className={inputClass}
                       />
                       <span className="text-[11px] text-gray-400 block mt-0.5">
-                        {costPerBase != null ? `= ฿${money(costPerBase)}/${base?.unit ?? ''}` : ''}
+                        {costPerBase != null ? `= ฿${money(costPerBase)}/${baseUnit}` : ''}
                       </span>
                     </label>
                     <div className="space-y-1.5 pt-4">
                       <label className="flex items-center gap-1.5 text-xs text-gray-600">
                         <input
                           type="checkbox" checked={d.sellablePos}
-                          onChange={(e) => setDraft(c.packId, { sellablePos: e.target.checked })}
+                          onChange={(e) => setDraft(c.key, { sellablePos: e.target.checked })}
                           className="w-4 h-4"
                         />
                         โชว์หน้าขาย
@@ -399,7 +597,7 @@ export default function PackMergeClient({
                       <label className="flex items-center gap-1.5 text-xs text-gray-600">
                         <input
                           type="checkbox" checked={d.purchasable}
-                          onChange={(e) => setDraft(c.packId, { purchasable: e.target.checked })}
+                          onChange={(e) => setDraft(c.key, { purchasable: e.target.checked })}
                           className="w-4 h-4"
                         />
                         ใช้สั่งของ
@@ -409,17 +607,17 @@ export default function PackMergeClient({
 
                   <div className="flex items-center justify-between mt-3 pt-3 border-t border-gray-100">
                     <span className="text-xs text-gray-500">
-                      {base && factor > 0 && c.packStock !== 0
-                        ? `ย้ายสต็อค ${c.packStock} × ${factor} = ${c.packStock * factor} ${base.unit} ไปรวมกับตัวฐาน`
+                      {factor > 0 && pack.stock !== 0
+                        ? `ย้ายสต็อค ${pack.stock} × ${factor} = ${pack.stock * factor} ${baseUnit} ไปรวมกับหน่วยย่อย`
                         : 'ไม่มีสต็อคค้างให้ย้าย'}
                     </span>
                     <button
                       onClick={() => handleMerge(c)}
-                      disabled={!base || busy !== null}
+                      disabled={(!base && !d.creating) || busy !== null}
                       className="flex items-center gap-1.5 bg-gray-900 hover:bg-gray-800 disabled:bg-gray-300 text-white text-sm font-medium px-3 py-1.5 rounded-lg"
                     >
-                      {busy === c.packId ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
-                      ยุบรวม
+                      {busy === c.key ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
+                      {!base && d.creating ? 'สร้าง + ยุบรวม' : 'ยุบรวม'}
                     </button>
                   </div>
                 </div>
