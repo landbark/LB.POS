@@ -65,7 +65,9 @@ export default function ShiftClient({
   const [openingCash, setOpeningCash] = useState('')
   const [counts, setCounts] = useState<Record<number, string>>({})
   const [ownerCounts, setOwnerCounts] = useState<Record<number, string>>({})
-  const [reopenNext, setReopenNext] = useState(true)
+  // ไม่ติ๊กไว้ให้ — เคยติ๊กค้างแล้วคนปิดกะไม่ทันสังเกตว่ามีกะใหม่เปิดต่อ เช้ามาเห็นกะค้างอยู่
+  // นึกว่าเมื่อวานลืมปิด เลยปิดแล้วเปิดใหม่อีกรอบ กลายเป็นกะเกินมาทุกวัน
+  const [reopenNext, setReopenNext] = useState(false)
   // กะที่ปิดไปแล้วแต่กรอกยอดผิด — เปิดกล่องแก้ไขจากตารางประวัติ
   const [editing, setEditing] = useState<ShiftRow | null>(null)
   const [editCounted, setEditCounted] = useState('')
@@ -290,7 +292,7 @@ export default function ShiftClient({
       }
       toast.success(`ปิดกะแล้ว และเปิดกะใหม่ด้วยเงินคงเหลือ ฿${money(leftover)}`)
     } else {
-      toast.success('ปิดกะแล้ว')
+      toast.success('ปิดกะแล้ว — เช้ามากดเปิดกะใหม่ได้เลย')
     }
     setLoading(false)
     setCounts({})
@@ -627,6 +629,9 @@ export default function ShiftClient({
             />
             เปิดกะใหม่ต่อเลยด้วยเงินคงเหลือ ฿{money(leftover)}
           </label>
+          <p className="ml-6 text-xs text-gray-400">
+            ไม่ติ๊ก = ปิดกะแล้วจบ เช้ามาค่อยกดเปิดกะใหม่
+          </p>
 
           <label className="block text-xs font-medium text-gray-600 mb-1 mt-3">หมายเหตุ (ถ้ามี)</label>
           <input
