@@ -114,7 +114,7 @@ export default async function ProductUnitsPage() {
   // ที่ยุบแล้ว — โชว์ว่าผูกเป็นหน่วยอะไรไว้ และเปิด/ปิดหน้าขาย-สั่งของได้จากตรงนี้
   const { data: merged } = await supabase
     .from('product_units')
-    .select('id, unit_name, factor, sku, price, cost, sellable_pos, purchasable, active, products!inner(id, name, unit, price)')
+    .select('id, unit_name, factor, sku, price, cost, sellable_pos, purchasable, active, products!product_units_product_id_fkey!inner(id, name, unit, price)')
     .order('sku')
 
   const mergedRows: MergedRow[] = ((merged ?? []) as never as {

@@ -19,7 +19,7 @@ export default async function EditProductPage({
   const [{ data: product }, { data: categories }, { data: units }, { data: suppliers }, { data: movements }, marketplaceChannels, { data: marketplaceLinks }] = await Promise.all([
     supabase
       .from('products')
-      .select('*, product_lots(*), product_units(*)')
+      .select('*, product_lots(*), product_units!product_units_product_id_fkey(*)')
       .eq('id', id)
       .single(),
     supabase.from('categories').select('*').order('name'),
