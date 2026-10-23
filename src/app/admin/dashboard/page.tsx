@@ -2,7 +2,7 @@ import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
 import { thaiToday, thaiDateIn, thaiDayRange } from '@/lib/thaiDate'
 import { Package, ShoppingBag, AlertTriangle, TrendingUp, Clock, CalendarClock, Syringe } from 'lucide-react'
-import { dueVaccinations } from '@/lib/vaccines'
+import { dueVaccinations, graceDaysFrom } from '@/lib/vaccines'
 import { fetchAll } from '@/lib/supabase/fetch-all'
 import { APPOINTMENT_TYPE_LABELS, type AppointmentType } from '@/lib/types'
 import StaffRequests, { type StaffRequest } from '../settings/StaffRequests'
@@ -32,6 +32,7 @@ export default async function DashboardPage() {
     { data: todayAppts },
     vaxRows,
     { data: openOrders },
+    { data: notifySettings },
   ] = await Promise.all([
     // ยิงพร้อมกันทั้งหมด — เดิมรอ profile เสร็จก่อนค่อยเริ่มชุดนี้ เสียเวลาไป-กลับ DB ฟรีๆ หนึ่งรอบ
     supabase.from('profiles').select('role').eq('id', user?.id ?? '').maybeSingle(),
@@ -70,6 +71,8 @@ export default async function DashboardPage() {
       .from('orders')
       .select('status')
       .in('status', ['pending_payment', 'awaiting_confirm', 'confirmed']),
+    // จำนวนวันที่ยอมให้เลยกำหนดก่อนเลิกเตือนวัคซีน — ตั้งไว้ที่หน้าแจ้งเตือน
+    supabase.from('notify_settings').select('*').eq('id', 1).maybeSingle(),
   ])
 
   // คำขอเข้าใช้งานที่รอเจ้าของร้านอนุมัติ (คนที่ล็อกอิน Google เข้ามาเอง) — เฉพาะแอดมินถึงจะดึง
@@ -88,7 +91,7 @@ export default async function DashboardPage() {
     unpaid: (openOrders ?? []).filter((o) => o.status === 'pending_payment').length,
   }
 
-  const vaxDue = dueVaccinations(vaxRows, todayThai, 30)
+  const vaxDue = dueVaccinations(vaxRows, todayThai, 30, graceDaysFrom(notifySettings))
 
   const todaySales = todayTx?.reduce((sum, t) => sum + t.total, 0) ?? 0
   const todayCount = todayTx?.length ?? 0

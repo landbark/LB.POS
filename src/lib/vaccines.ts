@@ -4,11 +4,21 @@
 // และวันนัดนั้นถึง/เลยกำหนดในกรอบเวลาที่กำหนด = ครบกำหนดกระตุ้น
 // (เข็มเก่ากว่าถูก superseded ด้วยเข็มใหม่ ไม่นับซ้ำ)
 //
-// เลยกำหนดเกิน OVERDUE_GRACE_DAYS แล้วเลิกเตือน — ตามไม่กลับแล้วก็ไม่ต้องรกรายการทุกวัน
+// เลยกำหนดเกินจำนวนวันที่ตั้งไว้แล้วเลิกเตือน — ตามไม่กลับแล้วก็ไม่ต้องรกรายการทุกวัน
 // วันนัดเดิมยังอยู่ใน pet_vaccinations เหมือนเดิม (หน้าโปรไฟล์สัตว์ยังโชว์ "นัดถัดไป")
+// ปรับจำนวนวันได้ที่หน้า /admin/notifications → notify_settings.vaccine_overdue_grace_days
 
-/** เลยกำหนดได้กี่วันก่อนเลิกเตือน (ยังเก็บวันนัดไว้ในระบบ) */
+/** เลยกำหนดได้กี่วันก่อนเลิกเตือน เมื่อยังไม่ได้ตั้งค่าไว้ (ยังเก็บวันนัดไว้ในระบบ) */
 export const OVERDUE_GRACE_DAYS = 30
+
+/**
+ * อ่านค่าจาก notify_settings — ก่อนรัน migration คอลัมน์ยังไม่มี (undefined) ให้ถอยไปใช้ค่าเริ่มต้น
+ * 0 = ไม่เลิกเตือน (เตือนต่อไปเรื่อย ๆ เหมือนก่อนมีการตั้งค่านี้)
+ */
+export function graceDaysFrom(settings: { vaccine_overdue_grace_days?: number | null } | null | undefined): number {
+  const v = settings?.vaccine_overdue_grace_days
+  return typeof v === 'number' && v >= 0 ? v : OVERDUE_GRACE_DAYS
+}
 
 export interface DueVaccinationRow {
   pet_id: string
@@ -24,7 +34,7 @@ export interface DueVaccination<T extends DueVaccinationRow> {
 
 /**
  * คืนเฉพาะเข็มล่าสุดต่อ (สัตว์+วัคซีน) ที่ถึงกำหนดกระตุ้นภายใน windowDays
- * (รวมที่เลยกำหนดแล้วไม่เกิน graceDays วัน — เลยกว่านั้นถือว่าเลิกเตือน)
+ * (รวมที่เลยกำหนดแล้วไม่เกิน graceDays วัน — เลยกว่านั้นถือว่าเลิกเตือน, graceDays = 0 คือเตือนตลอด)
  */
 export function dueVaccinations<T extends DueVaccinationRow>(
   rows: T[],
@@ -41,11 +51,11 @@ export function dueVaccinations<T extends DueVaccinationRow>(
   }
 
   const limit = addDaysISO(todayISO, windowDays)
-  const giveUpBefore = addDaysISO(todayISO, -graceDays)
+  const giveUpBefore = graceDays > 0 ? addDaysISO(todayISO, -graceDays) : null
   const due: DueVaccination<T>[] = []
   for (const r of latest.values()) {
     if (!r.next_due_date) continue
-    if (r.next_due_date <= limit && r.next_due_date >= giveUpBefore) {
+    if (r.next_due_date <= limit && (!giveUpBefore || r.next_due_date >= giveUpBefore)) {
       due.push({ row: r, overdue: r.next_due_date < todayISO })
     }
   }

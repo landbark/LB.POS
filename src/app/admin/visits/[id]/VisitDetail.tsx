@@ -69,6 +69,7 @@ export default function VisitDetail({
   role,
   vaccinations,
   vaccines,
+  vaccineGraceDays,
 }: {
   visit: Visit
   products: DispensableProduct[]
@@ -78,6 +79,8 @@ export default function VisitDetail({
   role: string
   vaccinations: PetVaccination[]
   vaccines: Vaccine[]
+  /** เลยกำหนดเกินกี่วันแล้วเลิกขึ้นแถบเตือนวัคซีน (ค่าจากหน้าแจ้งเตือน) */
+  vaccineGraceDays: number
 }) {
   const { refresh, push } = useProgress()
   const [saving, setSaving] = useState(false)
@@ -1031,6 +1034,7 @@ export default function VisitDetail({
             vaccines={vaccines}
             userId={userId}
             visitId={visit.id}
+            graceDays={vaccineGraceDays}
             readOnly={readOnly}
           />
         </div>

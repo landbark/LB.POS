@@ -6,7 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 import { Check, Plus, Syringe, Trash2, X } from 'lucide-react'
 import toast from 'react-hot-toast'
 import type { PetVaccination, Vaccine } from '@/lib/types'
-import { addDaysISO, dueVaccinations } from '@/lib/vaccines'
+import { addDaysISO, dueVaccinations, OVERDUE_GRACE_DAYS } from '@/lib/vaccines'
 import VaccineSelect from '@/components/VaccineSelect'
 import { confirmDialog } from '@/lib/confirm'
 
@@ -23,6 +23,7 @@ export default function VaccineSection({
   userId,
   visitId,
   readOnly = false,
+  graceDays = OVERDUE_GRACE_DAYS,
 }: {
   petId: string
   species: Vaccine['species']
@@ -33,6 +34,8 @@ export default function VaccineSection({
   visitId?: string
   /** ดูอย่างเดียว — ซ่อนปุ่มเพิ่ม/ลบ/แก้วันนัด */
   readOnly?: boolean
+  /** เลยกำหนดเกินกี่วันแล้วเลิกขึ้นแถบเตือน (ค่าจากหน้าแจ้งเตือน) */
+  graceDays?: number
 }) {
   const router = useRouter()
   const [adding, setAdding] = useState(false)
@@ -100,11 +103,12 @@ export default function VaccineSection({
     router.refresh()
   }
 
-  // เข็มที่ครบกำหนดกระตุ้น (ภายใน 30 วัน หรือเพิ่งเลยกำหนดไม่เกิน 30 วัน)
+  // เข็มที่ครบกำหนดกระตุ้น (ภายใน 30 วัน หรือเพิ่งเลยกำหนดมาไม่นานเกินค่าที่ตั้งไว้)
   const due = dueVaccinations(
     vaccinations.map((v) => ({ pet_id: v.pet_id, vaccine_name: v.vaccine_name, dose_date: v.dose_date, next_due_date: v.next_due_date })),
     todayISO(),
     30,
+    graceDays,
   )
 
   return (

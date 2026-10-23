@@ -1,6 +1,6 @@
 import { createAdminClient } from '@/lib/supabase/admin'
 import { sumByMethod, type PaidTransaction } from '@/lib/payments'
-import { dueVaccinations, groupDueByPet } from '@/lib/vaccines'
+import { dueVaccinations, graceDaysFrom, groupDueByPet } from '@/lib/vaccines'
 import { fetchAll } from '@/lib/supabase/fetch-all'
 import { isOwnMoney, CHANNEL_LABEL } from '@/lib/salesChannel'
 import type { SalesChannel } from '@/lib/types'
@@ -174,8 +174,8 @@ interface VaccineDueRow {
   pets: { name: string; active: boolean; customers: { name: string; phone: string } | null } | null
 }
 
-// วัคซีนที่ครบกำหนดกระตุ้นภายใน 7 วัน + ที่เพิ่งเลยกำหนด (เลยเกิน 30 วันแล้วเลิกเตือน)
-export async function gatherDueVaccines(admin: ReturnType<typeof createAdminClient>) {
+// วัคซีนที่ครบกำหนดกระตุ้นภายใน 7 วัน + ที่เพิ่งเลยกำหนด (เลยนานกว่า graceDays แล้วเลิกเตือน)
+export async function gatherDueVaccines(admin: ReturnType<typeof createAdminClient>, graceDays?: number) {
   // วัคซีนสะสมโตขึ้นทุกปี — .limit() ไม่ช่วย เซิร์ฟเวอร์ตัดที่ 1000 แถวอยู่ดี ต้องไล่ทีละหน้า
   const data = await fetchAll((from, to) =>
     admin
@@ -187,7 +187,7 @@ export async function gatherDueVaccines(admin: ReturnType<typeof createAdminClie
   )
 
   const rows = data as unknown as VaccineDueRow[]
-  return dueVaccinations(rows, todayThai(), 7)
+  return dueVaccinations(rows, todayThai(), 7, graceDays)
 }
 
 export function buildVaccineMessage(due: Awaited<ReturnType<typeof gatherDueVaccines>>): string | null {
@@ -321,7 +321,7 @@ export async function sendStockAlerts(
   const admin = createAdminClient()
 
   const [{ data: settings }, { data: recipients }] = await Promise.all([
-    admin.from('notify_settings').select('enabled, expiry_days').eq('id', 1).maybeSingle(),
+    admin.from('notify_settings').select('*').eq('id', 1).maybeSingle(),
     admin.from('telegram_recipients').select('chat_id').eq('approved', true),
   ])
 
@@ -339,7 +339,7 @@ export async function sendStockAlerts(
     gatherStockAlerts(admin, settings?.expiry_days ?? 30),
     gatherAppointmentsOn(admin, today),
     gatherAppointmentsOn(admin, tomorrow),
-    gatherDueVaccines(admin),
+    gatherDueVaccines(admin, graceDaysFrom(settings)),
   ])
   const counts = {
     lowStock: alerts.lowStock.length,

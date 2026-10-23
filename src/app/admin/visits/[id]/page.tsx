@@ -2,6 +2,7 @@ import { notFound } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { fetchAll } from '@/lib/supabase/fetch-all'
 import VisitDetail from './VisitDetail'
+import { graceDaysFrom } from '@/lib/vaccines'
 
 export default async function VisitPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
@@ -22,7 +23,7 @@ export default async function VisitPage({ params }: { params: Promise<{ id: stri
 
   if (!visit) notFound()
 
-  const [products, { data: history }, { data: vaccinations }, { data: vaccines }, { data: profile }] = await Promise.all([
+  const [products, { data: history }, { data: vaccinations }, { data: vaccines }, { data: profile }, { data: notifySettings }] = await Promise.all([
     // ไล่ดึงทีละหน้า — supabase ตัดที่ 1000 แถว ยาหลายตัวเรียงตามชื่อแล้วตกขอบหายไปจากช่องสั่งจ่าย
     fetchAll((from, to) =>
       supabase
@@ -44,6 +45,8 @@ export default async function VisitPage({ params }: { params: Promise<{ id: stri
     supabase.from('pet_vaccinations').select('*').eq('pet_id', visit.pet_id).order('dose_date', { ascending: false }),
     supabase.from('vaccines').select('*').order('name'),
     supabase.from('profiles').select('role').eq('id', user?.id ?? '').single(),
+    // เลยกำหนดเกินกี่วันแล้วเลิกขึ้นแถบเตือนวัคซีน — ตั้งไว้ที่หน้าแจ้งเตือน
+    supabase.from('notify_settings').select('*').eq('id', 1).maybeSingle(),
   ])
 
   // น้ำหนักครั้งก่อน — ไว้เทียบว่าขึ้นหรือลง
@@ -60,6 +63,7 @@ export default async function VisitPage({ params }: { params: Promise<{ id: stri
       role={profile?.role ?? 'cashier'}
       vaccinations={vaccinations ?? []}
       vaccines={vaccines ?? []}
+      vaccineGraceDays={graceDaysFrom(notifySettings)}
     />
   )
 }

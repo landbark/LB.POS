@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 import { Bell, Send, Trash2, Save, RefreshCw, ExternalLink, Check, X, Clock, Crown, Users } from 'lucide-react'
 import TelegramSetupGuide from './TelegramSetupGuide'
 import { DEFAULT_REMINDER_FOOTER } from '@/lib/types'
+import { OVERDUE_GRACE_DAYS } from '@/lib/vaccines'
 import toast from 'react-hot-toast'
 import { confirmDialog } from '@/lib/confirm'
 
@@ -24,6 +25,7 @@ interface NotifySettings {
   notify_customer_appointment?: boolean
   customer_reminder_footer?: string | null
   cash_diff_threshold?: number
+  vaccine_overdue_grace_days?: number
 }
 
 // เหตุการณ์ที่เด้งทันที (นอกเหนือจากสรุปรอบเช้า)
@@ -82,6 +84,9 @@ export default function NotificationsClient({
     Object.fromEntries(EVENTS.map((e) => [e.key, initialSettings[e.key] !== false])) as Record<EventKey, boolean>
   )
   const [cashThreshold, setCashThreshold] = useState(String(initialSettings.cash_diff_threshold ?? 0))
+  const [vaxGraceDays, setVaxGraceDays] = useState(
+    String(initialSettings.vaccine_overdue_grace_days ?? OVERDUE_GRACE_DAYS)
+  )
   const [customerAppt, setCustomerAppt] = useState(initialSettings.notify_customer_appointment !== false)
   const [footer, setFooter] = useState(initialSettings.customer_reminder_footer ?? DEFAULT_REMINDER_FOOTER)
   const [saving, setSaving] = useState(false)
@@ -135,6 +140,11 @@ export default function NotificationsClient({
       toast.error('เกณฑ์เงินขาด/เกินต้องเป็นตัวเลขไม่ติดลบ')
       return
     }
+    const graceDays = parseInt(vaxGraceDays, 10)
+    if (isNaN(graceDays) || graceDays < 0 || graceDays > 365) {
+      toast.error('จำนวนวันเลิกเตือนวัคซีนต้องอยู่ระหว่าง 0-365')
+      return
+    }
     setSaving(true)
     const supabase = createClient()
     const { error } = await supabase
@@ -146,6 +156,7 @@ export default function NotificationsClient({
         notify_customer_appointment: customerAppt,
         customer_reminder_footer: footer,
         cash_diff_threshold: threshold,
+        vaccine_overdue_grace_days: graceDays,
         updated_at: new Date().toISOString(),
       })
       .eq('id', 1)
@@ -271,6 +282,21 @@ export default function NotificationsClient({
               className={`${inputClass} w-28`}
             />
             <p className="text-xs text-gray-400 mt-1">ใส่ 0 = เตือนทุกครั้งที่ปิดกะ</p>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">
+              เลิกเตือนวัคซีนที่เลยกำหนดเกิน (วัน)
+            </label>
+            <input
+              type="number" min={0} max={365}
+              value={vaxGraceDays}
+              onChange={(e) => setVaxGraceDays(e.target.value)}
+              className={`${inputClass} w-28`}
+            />
+            <p className="text-xs text-gray-400 mt-1">
+              ตามไม่กลับแล้วก็ไม่ต้องเตือนทุกวัน — วันนัดเดิมยังอยู่ในประวัติสัตว์เหมือนเดิม
+              <span className="block">ใส่ 0 = เตือนไปเรื่อย ๆ จนกว่าจะฉีด</span>
+            </p>
           </div>
         </div>
 

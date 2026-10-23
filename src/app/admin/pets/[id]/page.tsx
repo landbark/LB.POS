@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/server'
 import { SPECIES_LABELS, VISIT_STATUS_LABELS, type Pet, type VisitStatus } from '@/lib/types'
 import { ageAt, petAge } from '@/lib/pets'
 import VaccineSection from './VaccineSection'
+import { graceDaysFrom } from '@/lib/vaccines'
 import TransferOwnerButton from './TransferOwnerButton'
 
 const fmtDate = (d: string) =>
@@ -19,7 +20,7 @@ export default async function PetDetailPage({ params }: { params: Promise<{ id: 
   if (!pet) notFound()
   const p = pet as Pet
 
-  const [{ data: visits }, { data: vaccinations }, { data: vaccines }, { data: customers }] = await Promise.all([
+  const [{ data: visits }, { data: vaccinations }, { data: vaccines }, { data: customers }, { data: notifySettings }] = await Promise.all([
     supabase
       .from('visits')
       .select('id, visit_number, visit_date, status, diagnosis, treatment, weight')
@@ -33,6 +34,8 @@ export default async function PetDetailPage({ params }: { params: Promise<{ id: 
       .order('dose_date', { ascending: false }),
     supabase.from('vaccines').select('*').order('name'),
     supabase.from('customers').select('id, name, phone').order('name'),
+    // เลยกำหนดเกินกี่วันแล้วเลิกขึ้นแถบเตือนวัคซีน — ตั้งไว้ที่หน้าแจ้งเตือน
+    supabase.from('notify_settings').select('*').eq('id', 1).maybeSingle(),
   ])
 
   const detail = [
@@ -125,6 +128,7 @@ export default async function PetDetailPage({ params }: { params: Promise<{ id: 
           vaccinations={vaccinations ?? []}
           vaccines={vaccines ?? []}
           userId={user?.id ?? ''}
+          graceDays={graceDaysFrom(notifySettings)}
         />
       </div>
 
