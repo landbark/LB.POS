@@ -228,6 +228,39 @@ export interface ProductLot {
   created_at: string
 }
 
+export type StockCountStatus = 'counting' | 'posted' | 'cancelled'
+
+/** รอบนับสต็อก — เปิดค้างไว้ได้ หลายคนช่วยกันนับรอบเดียวกันได้ */
+export interface StockCount {
+  id: string
+  count_number: string
+  name: string | null
+  /** null = นับทั้งร้าน, มีค่า = นับเฉพาะหมวดนั้น */
+  category_id: string | null
+  status: StockCountStatus
+  note: string | null
+  created_by: string | null
+  created_at: string
+  posted_by: string | null
+  posted_at: string | null
+  categories?: { name: string } | null
+}
+
+/** สินค้าหนึ่งตัวที่นับแล้วในรอบนั้น — จำนวนเป็นหน่วยฐานเสมอ */
+export interface StockCountItem {
+  id: string
+  count_id: string
+  product_id: string
+  counted_quantity: number
+  /** ยอดระบบ ณ ตอนบันทึกการนับ (ไม่ใช่ตอนกดยืนยัน) */
+  system_quantity: number
+  /** ส่วนต่างที่ปรับเข้าสต็อกจริงตอนยืนยัน — null = ยังไม่ยืนยัน */
+  applied_diff: number | null
+  note: string | null
+  counted_by: string | null
+  counted_at: string
+}
+
 export interface Customer {
   id: string
   name: string

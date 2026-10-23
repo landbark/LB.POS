@@ -47,7 +47,8 @@ const sortUnits = (units: ProductUnit[]) =>
   [...units].sort((a, b) => a.sort_order - b.sort_order || a.factor - b.factor)
 
 /** หน่วยที่ยังใช้งานอยู่ทั้งหมดของสินค้า (เรียงเล็ก→ใหญ่) */
-export const unitsOf = (product: Product) => sortUnits((product.product_units ?? []).filter((u) => u.active))
+export const unitsOf = (product: { product_units?: ProductUnit[] | null }) =>
+  sortUnits((product.product_units ?? []).filter((u) => u.active))
 
 /** ตัวเลือกหน่วยในหน้าขาย — หน่วยฐานมาก่อน แล้วค่อยแพ็กที่เปิดขายหน้าร้าน */
 export function posUnitChoices(product: Product): UnitChoice[] {
@@ -94,10 +95,10 @@ export const onlineUnitsOf = (product: Product) => unitsOf(product).filter((u) =
  * หาสินค้า+หน่วยจากบาร์โค้ดที่ยิงเข้ามา — บาร์โค้ดข้างกล่องคนละตัวกับข้างซอง
  * ยิงกล่องแล้วต้องได้ราคากล่องเลย ไม่ใช่ราคาซอง
  */
-export function findByBarcode(
-  products: Product[],
+export function findByBarcode<T extends { barcode: string | null; product_units?: ProductUnit[] | null }>(
+  products: T[],
   code: string,
-): { product: Product; unit: ProductUnit | null } | null {
+): { product: T; unit: ProductUnit | null } | null {
   const q = code.trim()
   if (!q) return null
   const direct = products.find((p) => p.barcode === q)

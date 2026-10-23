@@ -31,6 +31,7 @@ import {
   Megaphone,
   Globe,
   BookOpen,
+  ClipboardList,
 } from 'lucide-react'
 
 // vetHidden = หน้าที่หมอเข้าไม่ได้ (proxy.ts กันไว้แล้ว ตรงนี้แค่ไม่ให้เห็นเมนู)
@@ -44,6 +45,7 @@ const navItems = [
   { href: '/admin/pets', label: 'สัตว์เลี้ยง', icon: PawPrint, adminOnly: false },
   { href: '/admin/products', label: 'สินค้า', icon: Package, adminOnly: false },
   { href: '/admin/inventory', label: 'สต็อค', icon: Layers, adminOnly: false },
+  { href: '/admin/stock-count', label: 'นับสต็อก', icon: ClipboardList, adminOnly: false, vetHidden: true },
   { href: '/admin/receiving', label: 'นำเข้าสินค้า', icon: PackagePlus, adminOnly: false, vetHidden: true },
   { href: '/admin/suppliers', label: 'ซัพพลายเออร์', icon: Truck, adminOnly: false, vetHidden: true },
   { href: '/admin/customers', label: 'ลูกค้า / เจ้าของสัตว์', icon: Users, adminOnly: false },
