@@ -3,6 +3,7 @@ import { thaiToday, thaiDateIn } from '@/lib/thaiDate'
 import { AlertTriangle, History } from 'lucide-react'
 import Link from '@/components/ProgressLink'
 import SearchBox from '@/components/SearchBox'
+import ScanToProductButton from './ScanToProductButton'
 
 /** ล็อตสินค้าสะสมขึ้นทุกครั้งที่รับของ — แสดงทีละหน้า แล้วให้ค้นที่ server */
 const PAGE_SIZE = 200
@@ -35,7 +36,7 @@ export default async function InventoryPage({
     // จึงต้องยิงแยกแล้วรวมผลเอง
     const [byLot, byProduct] = await Promise.all([
       baseQuery().ilike('lot_number', like),
-      baseQuery().or(`name.ilike.${like},sku.ilike.${like}`, { referencedTable: 'products' }),
+      baseQuery().or(`name.ilike.${like},sku.ilike.${like},barcode.ilike.${like}`, { referencedTable: 'products' }),
     ])
     const seen = new Set<string>()
     lots = [...(byLot.data ?? []), ...(byProduct.data ?? [])]
@@ -91,17 +92,20 @@ export default async function InventoryPage({
 
   return (
     <div>
-      <div className="flex items-center justify-between gap-3 mb-4">
+      <div className="flex items-center justify-between gap-2 mb-4">
         <h1 className="text-2xl font-bold text-gray-900">สต็อคสินค้า</h1>
-        <Link
-          href="/admin/inventory/history"
-          className="flex items-center gap-1.5 border border-gray-300 hover:bg-gray-50 text-gray-700 text-sm font-medium px-3 py-2 rounded-lg shrink-0"
-        >
-          <History size={15} /> ประวัติสต็อค
-        </Link>
+        <div className="flex items-center gap-2 shrink-0">
+          <ScanToProductButton />
+          <Link
+            href="/admin/inventory/history"
+            className="flex items-center gap-1.5 border border-gray-300 hover:bg-gray-50 text-gray-700 text-sm font-medium px-3 py-2 rounded-lg"
+          >
+            <History size={15} /> ประวัติสต็อค
+          </Link>
+        </div>
       </div>
 
-      <SearchBox placeholder="ค้นหาสินค้า / SKU / เลขล็อต..." className="mb-4 max-w-xs" />
+      <SearchBox placeholder="ค้นหาสินค้า / SKU / บาร์โค้ด / เลขล็อต..." className="mb-4 max-w-sm" />
 
       {((expiredTotal ?? 0) > 0 || (expiringTotal ?? 0) > 0) && (
         <div className="bg-orange-50 border border-orange-200 rounded-xl p-4 mb-6 flex gap-3">
