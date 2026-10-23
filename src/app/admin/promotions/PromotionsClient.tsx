@@ -6,40 +6,52 @@ import { createClient } from '@/lib/supabase/client'
 import Link from 'next/link'
 import { Plus, Edit, Trash2, X, Check, Printer } from 'lucide-react'
 import toast from 'react-hot-toast'
-import type { Promotion, Category, PromotionType, ApplyTo } from '@/lib/types'
+import type { Promotion, Category, PromotionType, ApplyTo, AmountMode } from '@/lib/types'
+import { describeDiscount, describeCondition } from '@/lib/promotions'
 import { confirmDialog } from '@/lib/confirm'
+import MultiPicker from '@/components/MultiPicker'
 
 interface ProductOption {
   id: string
   name: string
+  category: string | null
 }
 
 const emptyForm = {
   name: '',
   type: 'percent_discount' as PromotionType,
   discount_percent: '',
+  discount_amount: '',
+  amount_mode: 'per_unit' as AmountMode,
   buy_quantity: '',
   get_quantity: '',
+  min_quantity: '',
+  min_amount: '',
+  max_discount: '',
   apply_to: 'all' as ApplyTo,
-  category_id: '',
-  product_id: '',
+  category_ids: [] as string[],
+  product_ids: [] as string[],
   start_date: new Date().toISOString().split('T')[0],
   end_date: new Date().toISOString().split('T')[0],
   active: true,
 }
 
 const todayStr = () => new Date().toISOString().split('T')[0]
+const numOrNull = (s: string) => (s.trim() === '' || parseFloat(s) <= 0 ? null : parseFloat(s))
+const intOrNull = (s: string) => (s.trim() === '' || parseInt(s, 10) <= 0 ? null : parseInt(s, 10))
 
-function describe(p: Promotion, categories: Category[], products: ProductOption[]) {
-  const detail = p.type === 'percent_discount'
-    ? `ลด ${p.discount_percent}%`
-    : `ซื้อ ${p.buy_quantity} แถม ${p.get_quantity}`
-  const scope = p.apply_to === 'all'
-    ? 'ทุกสินค้า'
-    : p.apply_to === 'category'
-      ? `หมวด: ${categories.find((c) => c.id === p.category_id)?.name ?? '—'}`
-      : `สินค้า: ${products.find((pr) => pr.id === p.product_id)?.name ?? '—'}`
-  return { detail, scope }
+function describeScope(p: Promotion, categories: Category[], products: ProductOption[]) {
+  if (p.apply_to === 'all') return 'ทุกสินค้า'
+
+  const names = p.apply_to === 'categories'
+    ? p.category_ids.map((id) => categories.find((c) => c.id === id)?.name).filter(Boolean)
+    : p.product_ids.map((id) => products.find((pr) => pr.id === id)?.name).filter(Boolean)
+
+  const label = p.apply_to === 'categories' ? 'หมวด' : 'สินค้า'
+  if (names.length === 0) return `${label}: —`
+  // ลิสต์ยาวๆ ในตารางอ่านไม่รู้เรื่อง เอาสองชื่อแรกพอ ที่เหลือบอกจำนวน
+  if (names.length <= 2) return `${label}: ${names.join(', ')}`
+  return `${label}: ${names.slice(0, 2).join(', ')} +${names.length - 2} รายการ`
 }
 
 export default function PromotionsClient({
@@ -68,11 +80,16 @@ export default function PromotionsClient({
       name: p.name,
       type: p.type,
       discount_percent: p.discount_percent?.toString() ?? '',
+      discount_amount: p.discount_amount?.toString() ?? '',
+      amount_mode: p.amount_mode ?? 'per_unit',
       buy_quantity: p.buy_quantity?.toString() ?? '',
       get_quantity: p.get_quantity?.toString() ?? '',
+      min_quantity: p.min_quantity?.toString() ?? '',
+      min_amount: p.min_amount?.toString() ?? '',
+      max_discount: p.max_discount?.toString() ?? '',
       apply_to: p.apply_to,
-      category_id: p.category_id ?? '',
-      product_id: p.product_id ?? '',
+      category_ids: p.category_ids,
+      product_ids: p.product_ids,
       start_date: p.start_date,
       end_date: p.end_date,
       active: p.active,
@@ -90,20 +107,24 @@ export default function PromotionsClient({
       toast.error('กรุณาใส่ชื่อโปรโมชั่น')
       return
     }
-    if (form.type === 'percent_discount' && (!form.discount_percent || parseFloat(form.discount_percent) <= 0)) {
+    if (form.type === 'percent_discount' && !numOrNull(form.discount_percent)) {
       toast.error('กรุณาใส่เปอร์เซ็นต์ส่วนลด')
       return
     }
-    if (form.type === 'buy_x_get_y' && (!form.buy_quantity || !form.get_quantity)) {
+    if (form.type === 'amount_discount' && !numOrNull(form.discount_amount)) {
+      toast.error('กรุณาใส่จำนวนเงินที่ลด')
+      return
+    }
+    if (form.type === 'buy_x_get_y' && (!intOrNull(form.buy_quantity) || !intOrNull(form.get_quantity))) {
       toast.error('กรุณาใส่จำนวนซื้อและแถม')
       return
     }
-    if (form.apply_to === 'category' && !form.category_id) {
-      toast.error('กรุณาเลือกหมวดหมู่')
+    if (form.apply_to === 'categories' && form.category_ids.length === 0) {
+      toast.error('กรุณาเลือกหมวดหมู่อย่างน้อย 1 หมวด')
       return
     }
-    if (form.apply_to === 'product' && !form.product_id) {
-      toast.error('กรุณาเลือกสินค้า')
+    if (form.apply_to === 'products' && form.product_ids.length === 0) {
+      toast.error('กรุณาเลือกสินค้าอย่างน้อย 1 รายการ')
       return
     }
     if (form.start_date > form.end_date) {
@@ -113,15 +134,23 @@ export default function PromotionsClient({
 
     setLoading(true)
     const supabase = createClient()
+    const isPercent = form.type === 'percent_discount'
+    const isAmount = form.type === 'amount_discount'
+    const isBuyGet = form.type === 'buy_x_get_y'
+
     const payload = {
       name: form.name.trim(),
       type: form.type,
-      discount_percent: form.type === 'percent_discount' ? parseFloat(form.discount_percent) : null,
-      buy_quantity: form.type === 'buy_x_get_y' ? parseInt(form.buy_quantity, 10) : null,
-      get_quantity: form.type === 'buy_x_get_y' ? parseInt(form.get_quantity, 10) : null,
+      discount_percent: isPercent ? numOrNull(form.discount_percent) : null,
+      discount_amount: isAmount ? numOrNull(form.discount_amount) : null,
+      amount_mode: isAmount ? form.amount_mode : 'per_unit',
+      buy_quantity: isBuyGet ? intOrNull(form.buy_quantity) : null,
+      get_quantity: isBuyGet ? intOrNull(form.get_quantity) : null,
+      // ซื้อ X แถม Y มีจำนวนในตัวเองอยู่แล้ว ไม่ต้องมีเงื่อนไขซ้อน
+      min_quantity: isBuyGet ? null : intOrNull(form.min_quantity),
+      min_amount: isBuyGet ? null : numOrNull(form.min_amount),
+      max_discount: isPercent ? numOrNull(form.max_discount) : null,
       apply_to: form.apply_to,
-      category_id: form.apply_to === 'category' ? form.category_id : null,
-      product_id: form.apply_to === 'product' ? form.product_id : null,
       start_date: form.start_date,
       end_date: form.end_date,
       active: form.active,
@@ -131,9 +160,17 @@ export default function PromotionsClient({
       ? await supabase.from('promotions').update(payload).eq('id', editingId).select('id').single()
       : await supabase.from('promotions').insert(payload).select('id').single()
 
+    if (error || !data) {
+      setLoading(false)
+      toast.error('เกิดข้อผิดพลาด: ' + (error?.message ?? 'บันทึกไม่สำเร็จ'))
+      return
+    }
+
+    // ขอบเขตเก็บในตารางเชื่อม — ล้างของเดิมแล้วใส่ชุดใหม่ ง่ายกว่าไล่เทียบว่าอะไรเพิ่ม/อะไรหาย
+    const scopeError = await replaceScope(supabase, data.id, form)
     setLoading(false)
-    if (error) {
-      toast.error('เกิดข้อผิดพลาด: ' + error.message)
+    if (scopeError) {
+      toast.error('บันทึกขอบเขตไม่สำเร็จ: ' + scopeError)
       return
     }
 
@@ -186,83 +223,168 @@ export default function PromotionsClient({
   }
 
   const inputClass = 'w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500'
+  const labelClass = 'block text-xs font-medium text-gray-600 mb-1'
   const today = todayStr()
 
   const formCard = (
     <div className="bg-gray-50 rounded-lg p-4 mb-4">
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div className="sm:col-span-2">
-          <label className="block text-xs font-medium text-gray-600 mb-1">ชื่อโปรโมชั่น *</label>
+          <label className={labelClass}>ชื่อโปรโมชั่น *</label>
           <input type="text" value={form.name} onChange={(e) => set('name', e.target.value)} className={inputClass} placeholder="เช่น ลดหน้าร้อน 10%" autoFocus />
         </div>
 
         <div>
-          <label className="block text-xs font-medium text-gray-600 mb-1">ประเภท *</label>
+          <label className={labelClass}>ประเภทส่วนลด *</label>
           <select value={form.type} onChange={(e) => set('type', e.target.value as PromotionType)} className={inputClass}>
-            <option value="percent_discount">ลดเปอร์เซ็นต์</option>
+            <option value="percent_discount">ลดเป็นเปอร์เซ็นต์</option>
+            <option value="amount_discount">ลดเป็นจำนวนเงิน</option>
             <option value="buy_x_get_y">ซื้อ X แถม Y</option>
           </select>
         </div>
 
-        {form.type === 'percent_discount' ? (
-          <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">ลดกี่เปอร์เซ็นต์ *</label>
-            <input
-              type="number" min={0.01} max={100} step="0.01"
-              value={form.discount_percent}
-              onChange={(e) => set('discount_percent', e.target.value)}
-              className={inputClass}
-              placeholder="เช่น 10"
-            />
-          </div>
-        ) : (
+        {form.type === 'percent_discount' && (
           <div className="grid grid-cols-2 gap-2">
             <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">ซื้อ *</label>
+              <label className={labelClass}>ลดกี่เปอร์เซ็นต์ *</label>
+              <input
+                type="number" min={0.01} max={100} step="0.01"
+                value={form.discount_percent}
+                onChange={(e) => set('discount_percent', e.target.value)}
+                className={inputClass}
+                placeholder="10"
+              />
+            </div>
+            <div>
+              <label className={labelClass}>ลดสูงสุด (บาท)</label>
+              <input
+                type="number" min={0} step="0.01"
+                value={form.max_discount}
+                onChange={(e) => set('max_discount', e.target.value)}
+                className={inputClass}
+                placeholder="ไม่จำกัด"
+              />
+            </div>
+          </div>
+        )}
+
+        {form.type === 'amount_discount' && (
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className={labelClass}>ลดกี่บาท *</label>
+              <input
+                type="number" min={0.01} step="0.01"
+                value={form.discount_amount}
+                onChange={(e) => set('discount_amount', e.target.value)}
+                className={inputClass}
+                placeholder="20"
+              />
+            </div>
+            <div>
+              <label className={labelClass}>ลดแบบ *</label>
+              <select value={form.amount_mode} onChange={(e) => set('amount_mode', e.target.value as AmountMode)} className={inputClass}>
+                <option value="per_unit">ต่อชิ้น</option>
+                <option value="per_line">ต่อรายการ</option>
+              </select>
+            </div>
+          </div>
+        )}
+
+        {form.type === 'buy_x_get_y' && (
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className={labelClass}>ซื้อ *</label>
               <input type="number" min={1} value={form.buy_quantity} onChange={(e) => set('buy_quantity', e.target.value)} className={inputClass} placeholder="2" />
             </div>
             <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">แถม *</label>
+              <label className={labelClass}>แถม *</label>
               <input type="number" min={1} value={form.get_quantity} onChange={(e) => set('get_quantity', e.target.value)} className={inputClass} placeholder="1" />
             </div>
           </div>
         )}
 
-        <div>
-          <label className="block text-xs font-medium text-gray-600 mb-1">ใช้กับ *</label>
+        {form.type === 'amount_discount' && (
+          <p className="sm:col-span-2 text-xs text-gray-500 -mt-1">
+            {form.amount_mode === 'per_unit'
+              ? 'ต่อชิ้น = ซื้อ 3 ชิ้นลด 3 เท่า (นับเป็นหน่วยย่อย ซื้อยกกล่องลดตามจำนวนชิ้นในกล่อง)'
+              : 'ต่อรายการ = ลดครั้งเดียวต่อสินค้าหนึ่งบรรทัดในบิล ไม่ว่าจะซื้อกี่ชิ้น'}
+          </p>
+        )}
+
+        {/* เงื่อนไข "ซื้อครบ" — ซื้อ X แถม Y มีจำนวนในตัวเองแล้ว */}
+        {form.type !== 'buy_x_get_y' && (
+          <div className="sm:col-span-2 border border-gray-200 bg-white rounded-lg p-3">
+            <p className="text-xs font-semibold text-gray-700 mb-2">เงื่อนไข — ลดเมื่อซื้อครบ (เว้นว่าง = ลดทันที)</p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <div>
+                <label className={labelClass}>ซื้อครบกี่ชิ้น</label>
+                <input
+                  type="number" min={1}
+                  value={form.min_quantity}
+                  onChange={(e) => set('min_quantity', e.target.value)}
+                  className={inputClass}
+                  placeholder="ไม่กำหนด"
+                />
+              </div>
+              <div>
+                <label className={labelClass}>ยอดรายการครบกี่บาท</label>
+                <input
+                  type="number" min={0} step="0.01"
+                  value={form.min_amount}
+                  onChange={(e) => set('min_amount', e.target.value)}
+                  className={inputClass}
+                  placeholder="ไม่กำหนด"
+                />
+              </div>
+            </div>
+            <p className="text-xs text-gray-500 mt-2">
+              นับต่อสินค้าหนึ่งบรรทัดในบิล (ชิ้นนับเป็นหน่วยย่อย — ซื้อยกกล่องนับซองในกล่องให้ด้วย)
+              {form.min_quantity && form.min_amount && ' · ใส่ทั้งสองช่อง = ต้องครบทั้งคู่'}
+            </p>
+          </div>
+        )}
+
+        <div className="sm:col-span-2">
+          <label className={labelClass}>ใช้กับ *</label>
           <select value={form.apply_to} onChange={(e) => set('apply_to', e.target.value as ApplyTo)} className={inputClass}>
             <option value="all">ทุกสินค้า</option>
-            <option value="category">เฉพาะหมวดหมู่</option>
-            <option value="product">เฉพาะสินค้า</option>
+            <option value="categories">เฉพาะหมวดหมู่ (เลือกได้หลายหมวด)</option>
+            <option value="products">เฉพาะสินค้า (เลือกได้หลายรายการ)</option>
           </select>
         </div>
 
-        {form.apply_to === 'category' && (
-          <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">หมวดหมู่ *</label>
-            <select value={form.category_id} onChange={(e) => set('category_id', e.target.value)} className={inputClass}>
-              <option value="">— เลือกหมวดหมู่ —</option>
-              {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-            </select>
+        {form.apply_to === 'categories' && (
+          <div className="sm:col-span-2">
+            <label className={labelClass}>หมวดหมู่ *</label>
+            <MultiPicker
+              options={categories.map((c) => ({ id: c.id, name: c.name }))}
+              selected={form.category_ids}
+              onChange={(ids) => set('category_ids', ids)}
+              placeholder="ค้นหาหมวดหมู่..."
+              emptyLabel="ยังไม่ได้เลือกหมวดหมู่"
+            />
           </div>
         )}
 
-        {form.apply_to === 'product' && (
-          <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">สินค้า *</label>
-            <select value={form.product_id} onChange={(e) => set('product_id', e.target.value)} className={inputClass}>
-              <option value="">— เลือกสินค้า —</option>
-              {products.map((pr) => <option key={pr.id} value={pr.id}>{pr.name}</option>)}
-            </select>
+        {form.apply_to === 'products' && (
+          <div className="sm:col-span-2">
+            <label className={labelClass}>สินค้า *</label>
+            <MultiPicker
+              options={products.map((p) => ({ id: p.id, name: p.name, hint: p.category }))}
+              selected={form.product_ids}
+              onChange={(ids) => set('product_ids', ids)}
+              placeholder="ค้นหาสินค้า..."
+              emptyLabel="ยังไม่ได้เลือกสินค้า"
+            />
           </div>
         )}
 
         <div>
-          <label className="block text-xs font-medium text-gray-600 mb-1">วันที่เริ่ม *</label>
+          <label className={labelClass}>วันที่เริ่ม *</label>
           <input type="date" value={form.start_date} onChange={(e) => set('start_date', e.target.value)} className={inputClass} />
         </div>
         <div>
-          <label className="block text-xs font-medium text-gray-600 mb-1">วันที่สิ้นสุด *</label>
+          <label className={labelClass}>วันที่สิ้นสุด *</label>
           <input type="date" value={form.end_date} onChange={(e) => set('end_date', e.target.value)} className={inputClass} />
         </div>
 
@@ -298,12 +420,17 @@ export default function PromotionsClient({
 
       {showAdd && formCard}
 
+      <p className="text-xs text-gray-500 mb-3">
+        สินค้าหนึ่งชิ้นเข้าหลายโปรพร้อมกัน = หน้าขายเลือกโปรที่ลดเยอะที่สุดให้ (ไม่ลดซ้อนกัน)
+      </p>
+
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-x-auto">
         <table className="w-full">
           <thead className="bg-gray-50 border-b border-gray-100">
             <tr>
               <th className="text-left text-xs font-medium text-gray-500 uppercase px-4 py-3">ชื่อ</th>
-              <th className="text-left text-xs font-medium text-gray-500 uppercase px-4 py-3">รายละเอียด</th>
+              <th className="text-left text-xs font-medium text-gray-500 uppercase px-4 py-3">ส่วนลด</th>
+              <th className="text-left text-xs font-medium text-gray-500 uppercase px-4 py-3">เงื่อนไข</th>
               <th className="text-left text-xs font-medium text-gray-500 uppercase px-4 py-3">ใช้กับ</th>
               <th className="text-left text-xs font-medium text-gray-500 uppercase px-4 py-3">ช่วงเวลา</th>
               <th className="text-center text-xs font-medium text-gray-500 uppercase px-4 py-3">สถานะ</th>
@@ -315,17 +442,20 @@ export default function PromotionsClient({
               if (editingId === p.id) {
                 return (
                   <tr key={p.id}>
-                    <td colSpan={6} className="px-4 py-3">{formCard}</td>
+                    <td colSpan={7} className="px-4 py-3">{formCard}</td>
                   </tr>
                 )
               }
-              const { detail, scope } = describe(p, categories, products)
+              const condition = describeCondition(p)
               const expired = p.end_date < today
               return (
                 <tr key={p.id} className="hover:bg-gray-50">
                   <td className="px-4 py-3 text-sm font-medium text-gray-900">{p.name}</td>
-                  <td className="px-4 py-3 text-sm text-gray-700">{detail}</td>
-                  <td className="px-4 py-3 text-sm text-gray-600">{scope}</td>
+                  <td className="px-4 py-3 text-sm text-gray-700">{describeDiscount(p)}</td>
+                  <td className="px-4 py-3 text-sm text-gray-600">
+                    {condition || <span className="text-gray-300">ลดทันที</span>}
+                  </td>
+                  <td className="px-4 py-3 text-sm text-gray-600">{describeScope(p, categories, products)}</td>
                   <td className="px-4 py-3 text-sm text-gray-500 whitespace-nowrap">
                     {p.start_date} - {p.end_date}
                   </td>
@@ -368,7 +498,7 @@ export default function PromotionsClient({
             })}
             {promotions.length === 0 && (
               <tr>
-                <td colSpan={6} className="px-4 py-10 text-center text-sm text-gray-400">
+                <td colSpan={7} className="px-4 py-10 text-center text-sm text-gray-400">
                   ยังไม่มีโปรโมชั่น — กด &quot;เพิ่มโปรโมชั่น&quot; เพื่อเริ่มต้น
                 </td>
               </tr>
@@ -378,4 +508,33 @@ export default function PromotionsClient({
       </div>
     </div>
   )
+}
+
+/** เขียนขอบเขตใหม่ทั้งชุด — คืน message ถ้าพลาด */
+async function replaceScope(
+  supabase: ReturnType<typeof createClient>,
+  promotionId: string,
+  form: typeof emptyForm,
+): Promise<string | null> {
+  const [{ error: delProducts }, { error: delCategories }] = await Promise.all([
+    supabase.from('promotion_products').delete().eq('promotion_id', promotionId),
+    supabase.from('promotion_categories').delete().eq('promotion_id', promotionId),
+  ])
+  if (delProducts || delCategories) return (delProducts ?? delCategories)!.message
+
+  if (form.apply_to === 'products' && form.product_ids.length > 0) {
+    const { error } = await supabase
+      .from('promotion_products')
+      .insert(form.product_ids.map((product_id) => ({ promotion_id: promotionId, product_id })))
+    if (error) return error.message
+  }
+
+  if (form.apply_to === 'categories' && form.category_ids.length > 0) {
+    const { error } = await supabase
+      .from('promotion_categories')
+      .insert(form.category_ids.map((category_id) => ({ promotion_id: promotionId, category_id })))
+    if (error) return error.message
+  }
+
+  return null
 }

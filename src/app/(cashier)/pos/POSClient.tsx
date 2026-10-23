@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 import { Search, X, Plus, Minus, ShoppingCart, User, MonitorPlay, Stethoscope, ScanBarcode, Store } from 'lucide-react'
 import toast from 'react-hot-toast'
 import type { Product, ProductUnit, CartItem, Promotion, PointsConfig, Customer, PaymentMethod, ClinicQueueVisit, RoundingMode } from '@/lib/types'
+import { bestPromotion } from '@/lib/promotions'
 import { baseQty, factorOf, findByBarcode, posUnitChoices, unitNameOf, unitPriceOf } from '@/lib/productUnits'
 import { POS_DISPLAY_CHANNEL, type PosDisplayMessage } from '@/lib/posDisplay'
 import PaymentModal from './PaymentModal'
@@ -239,33 +240,15 @@ export default function POSClient({ products: allProducts, booth, promotions, po
   /**
    * โปรโมชั่นคิดเป็นหน่วยฐานเสมอ — "ซื้อ 10 แถม 1" ต้องนับซองในกล่องด้วย
    * ไม่งั้นซื้อ 1 กล่อง (12 ซอง) จะไม่เข้าเงื่อนไข
+   * เข้าหลายโปรพร้อมกัน = เอาอันที่ลดเยอะสุด (ดูเหตุผลใน lib/promotions)
    */
-  function applyPromotion(product: Product, baseQuantity: number, gross: number): number {
-    let discount = 0
-
-    for (const promo of promotions) {
-      const applies =
-        promo.apply_to === 'all' ||
-        (promo.apply_to === 'product' && promo.product_id === product.id) ||
-        (promo.apply_to === 'category' && promo.category_id === (product as any).category_id)
-
-      if (!applies) continue
-
-      if (promo.type === 'percent_discount' && promo.discount_percent) {
-        // คิดจากยอดจริงของบรรทัด ไม่ใช่ราคาฐาน × จำนวน — บรรทัดที่ขายยกกล่องมีราคาของตัวเอง
-        discount = (gross * promo.discount_percent) / 100
-      } else if (
-        promo.type === 'buy_x_get_y' &&
-        promo.buy_quantity &&
-        promo.get_quantity
-      ) {
-        const sets = Math.floor(baseQuantity / promo.buy_quantity)
-        const freeQty = Math.min(sets * promo.get_quantity, baseQuantity - sets * promo.buy_quantity)
-        discount = freeQty * product.price
-      }
-    }
-
-    return discount
+  function applyPromotion(product: Product, baseQuantity: number, gross: number) {
+    return bestPromotion(
+      promotions,
+      { id: product.id, category_id: (product as any).category_id, price: product.price },
+      baseQuantity,
+      gross,
+    )
   }
 
   // ยอดของบรรทัดหนึ่งในตะกร้า — คิดส่วนลดที่ลดเองใหม่จาก mode/value ทุกครั้ง
@@ -284,8 +267,16 @@ export default function POSClient({ products: allProducts, booth, promotions, po
       : mode === 'percent'
         ? (gross * Math.min(value, 100)) / 100
         : Math.min(gross, value)
-    const discount = Math.min(gross, applyPromotion(product, qty * factorOf(unit), gross) + manual)
-    return { manual_discount: manual, discount, subtotal: gross - discount }
+    const promo = applyPromotion(product, qty * factorOf(unit), gross)
+    const discount = Math.min(gross, (promo?.discount ?? 0) + manual)
+    return {
+      manual_discount: manual,
+      discount,
+      subtotal: gross - discount,
+      // ไว้ขึ้นชื่อโปรในตะกร้า แคชเชียร์ตอบลูกค้าได้ว่าลดมาจากโปรอะไร
+      promo_name: promo?.promo.name ?? null,
+      promo_discount: promo?.discount ?? 0,
+    }
   }
 
   /** เตือนตอนจำนวนในตะกร้าเกินสต็อค — เทียบเป็นหน่วยฐานเสมอ (1 กล่อง = factor ซอง) */
@@ -1077,6 +1068,13 @@ export default function POSClient({ products: allProducts, booth, promotions, po
                           : `ลดเอง ฿${item.manual_discount.toFixed(2)} — แก้`
                         : '+ ลดราคารายการนี้'}
                     </button>
+                  )}
+
+                  {/* โปรที่เข้าเงื่อนไขของบรรทัดนี้ — แคชเชียร์ตอบลูกค้าได้ว่าลดมาจากอะไร */}
+                  {item.promo_name && (
+                    <p className="mt-0.5 text-xs text-green-600">
+                      🏷 {item.promo_name} (-฿{(item.promo_discount ?? 0).toFixed(2)})
+                    </p>
                   )}
                 </div>
               ))}

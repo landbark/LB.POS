@@ -473,18 +473,40 @@ VALUES (100, 1, 100, 1);
 CREATE TABLE promotions (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   name TEXT NOT NULL,
-  type TEXT NOT NULL CHECK (type IN ('percent_discount', 'buy_x_get_y')),
+  type TEXT NOT NULL CHECK (type IN ('percent_discount', 'amount_discount', 'buy_x_get_y')),
   discount_percent NUMERIC(5,2) CHECK (discount_percent > 0 AND discount_percent <= 100),
+  -- ลดเป็นบาท — per_unit = ลดต่อชิ้น, per_line = ลดครั้งเดียวต่อรายการในบิล
+  discount_amount NUMERIC(12,2) CHECK (discount_amount > 0),
+  amount_mode TEXT NOT NULL DEFAULT 'per_unit' CHECK (amount_mode IN ('per_unit', 'per_line')),
   buy_quantity INT CHECK (buy_quantity > 0),
   get_quantity INT CHECK (get_quantity > 0),
-  apply_to TEXT NOT NULL CHECK (apply_to IN ('all', 'category', 'product')),
-  category_id UUID REFERENCES categories(id) ON DELETE CASCADE,
-  product_id UUID REFERENCES products(id) ON DELETE CASCADE,
+  -- เงื่อนไข "ซื้อครบ" ของรายการนั้น — NULL = ไม่มีเงื่อนไข
+  min_quantity INT CHECK (min_quantity > 0),
+  min_amount NUMERIC(12,2) CHECK (min_amount > 0),
+  -- เพดานส่วนลดต่อรายการ กันลด % บานปลายกับของแพง
+  max_discount NUMERIC(12,2) CHECK (max_discount > 0),
+  apply_to TEXT NOT NULL CHECK (apply_to IN ('all', 'categories', 'products')),
   start_date DATE NOT NULL,
   end_date DATE NOT NULL,
   active BOOLEAN NOT NULL DEFAULT true,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- โปรโมชั่นหนึ่งอันคลุมได้หลายสินค้า/หลายหมวด
+CREATE TABLE promotion_products (
+  promotion_id UUID NOT NULL REFERENCES promotions(id) ON DELETE CASCADE,
+  product_id   UUID NOT NULL REFERENCES products(id)   ON DELETE CASCADE,
+  PRIMARY KEY (promotion_id, product_id)
+);
+
+CREATE TABLE promotion_categories (
+  promotion_id UUID NOT NULL REFERENCES promotions(id) ON DELETE CASCADE,
+  category_id  UUID NOT NULL REFERENCES categories(id) ON DELETE CASCADE,
+  PRIMARY KEY (promotion_id, category_id)
+);
+
+CREATE INDEX idx_promotion_products_promo   ON promotion_products(promotion_id);
+CREATE INDEX idx_promotion_categories_promo ON promotion_categories(promotion_id);
 
 -- Transactions
 CREATE TABLE transactions (
@@ -588,6 +610,8 @@ ALTER TABLE store_settings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE points_config ENABLE ROW LEVEL SECURITY;
 ALTER TABLE stock_movements ENABLE ROW LEVEL SECURITY;
 ALTER TABLE promotions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE promotion_products ENABLE ROW LEVEL SECURITY;
+ALTER TABLE promotion_categories ENABLE ROW LEVEL SECURITY;
 ALTER TABLE transactions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE transaction_items ENABLE ROW LEVEL SECURITY;
 
@@ -606,6 +630,8 @@ CREATE POLICY "auth read customers" ON customers FOR ALL TO authenticated USING 
 CREATE POLICY "auth read store_settings" ON store_settings FOR SELECT TO authenticated USING (true);
 CREATE POLICY "auth read points_config" ON points_config FOR SELECT TO authenticated USING (true);
 CREATE POLICY "auth read promotions" ON promotions FOR SELECT TO authenticated USING (true);
+CREATE POLICY "auth read promotion_products" ON promotion_products FOR SELECT TO authenticated USING (true);
+CREATE POLICY "auth read promotion_categories" ON promotion_categories FOR SELECT TO authenticated USING (true);
 CREATE POLICY "auth manage transactions" ON transactions FOR ALL TO authenticated USING (true);
 CREATE POLICY "auth manage transaction_items" ON transaction_items FOR ALL TO authenticated USING (true);
 -- ใบเสร็จลบไม่ได้ ยกเลิกได้เท่านั้น (FOR ALL ข้างบนเปิด DELETE ไว้ — ทับด้วย RESTRICTIVE)
@@ -626,6 +652,12 @@ CREATE POLICY "auth delete lots" ON product_lots FOR DELETE TO authenticated USI
 
 -- Admin-only writes (เรื่องเงิน/สิทธิ์)
 CREATE POLICY "admin manage promotions" ON promotions FOR ALL TO authenticated
+  USING (EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'admin'));
+
+CREATE POLICY "admin manage promotion_products" ON promotion_products FOR ALL TO authenticated
+  USING (EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'admin'));
+
+CREATE POLICY "admin manage promotion_categories" ON promotion_categories FOR ALL TO authenticated
   USING (EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'admin'));
 
 CREATE POLICY "admin manage points_config" ON points_config FOR ALL TO authenticated

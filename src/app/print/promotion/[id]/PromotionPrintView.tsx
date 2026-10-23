@@ -2,21 +2,11 @@
 
 import { useState } from 'react'
 import PrintToolbar from '@/components/PrintToolbar'
-import type { StoreSettings, PromotionType, ApplyTo } from '@/lib/types'
+import type { StoreSettings, Promotion } from '@/lib/types'
+import { describeCondition } from '@/lib/promotions'
 
-interface PromotionDoc {
-  id: string
-  name: string
-  type: PromotionType
-  discount_percent: number | null
-  buy_quantity: number | null
-  get_quantity: number | null
-  apply_to: ApplyTo
-  start_date: string
-  end_date: string
-  categories: { name: string } | null
-  products: { name: string; unit: string; price: number } | null
-}
+interface ProductRef { id: string; name: string; unit: string; price: number }
+interface CategoryRef { id: string; name: string }
 
 // ป้ายโปรโมชั่นพิมพ์แนวนอนอย่างเดียว (A5 = ป้ายตั้งโต๊ะ/ติดชั้น, A4 = ป้ายใหญ่หน้าร้าน)
 type PaperSize = 'a5' | 'a4'
@@ -31,23 +21,53 @@ const COPPER = '#C4865A'
 const CREAM = '#FDF6EE'
 
 const thaiDate = (d: string) => new Date(`${d}T00:00:00`).toLocaleDateString('th-TH', { day: 'numeric', month: 'long', year: 'numeric' })
+const money = (n: number) =>
+  n.toLocaleString('th-TH', { minimumFractionDigits: Number.isInteger(n) ? 0 : 2, maximumFractionDigits: 2 })
 
-export default function PromotionPrintView({ promotion: p, store }: { promotion: PromotionDoc; store: StoreSettings | null }) {
+export default function PromotionPrintView({
+  promotion: p,
+  products,
+  categories,
+  store,
+}: {
+  promotion: Promotion
+  products: ProductRef[]
+  categories: CategoryRef[]
+  store: StoreSettings | null
+}) {
   const [size, setSize] = useState<PaperSize>('a5')
   const cfg = PAPER_CONFIG[size]
   const em = (n: number) => `${(n * cfg.scale).toFixed(2)}rem`
 
-  const isPercent = p.type === 'percent_discount'
   const scope = p.apply_to === 'all'
     ? 'ทุกสินค้าในร้าน'
-    : p.apply_to === 'category'
-      ? `เฉพาะหมวด ${p.categories?.name ?? '—'}`
-      : `เฉพาะ ${p.products?.name ?? '—'}`
+    : p.apply_to === 'categories'
+      ? `เฉพาะหมวด ${categories.map((c) => c.name).join(' · ') || '—'}`
+      : `เฉพาะ ${products.map((pr) => pr.name).join(' · ') || '—'}`
 
-  // ลด % ของสินค้าชิ้นเดียว = คำนวณราคาหลังลดให้ลูกค้าเห็นบนป้ายได้เลย
-  const salePrice = isPercent && p.products && p.discount_percent
-    ? p.products.price * (1 - p.discount_percent / 100)
+  // พาดหัวต้องอ่านออกจากระยะไกล — ตัวเลขส่วนลดคือพระเอก
+  const headline = p.type === 'percent_discount'
+    ? { text: `ลด ${p.discount_percent}%`, fontSize: 5 }
+    : p.type === 'amount_discount'
+      ? { text: `ลด ${money(p.discount_amount ?? 0)}.-`, fontSize: 4.2 }
+      : { text: `ซื้อ ${p.buy_quantity} แถม ${p.get_quantity}`, fontSize: 3.4 }
+
+  const condition = describeCondition(p)
+  const perLabel = p.type === 'amount_discount'
+    ? p.amount_mode === 'per_unit' ? 'ต่อชิ้น' : 'ต่อรายการ'
     : null
+
+  // คลุมสินค้าตัวเดียว = คำนวณราคาหลังลดให้ลูกค้าเห็นบนป้ายได้เลย
+  const single = products.length === 1 && p.apply_to === 'products' ? products[0] : null
+  const savePerUnit = !single
+    ? null
+    : p.type === 'percent_discount' && p.discount_percent
+      ? Math.min(single.price * (p.discount_percent / 100), p.max_discount ?? Infinity)
+      : p.type === 'amount_discount' && p.discount_amount && p.amount_mode === 'per_unit'
+        ? Math.min(p.discount_amount, single.price)
+        : null
+  // ป้าย "เหลือ ฿x" ต้องไม่ขึ้นตอนมีเงื่อนไขซื้อครบ ไม่งั้นลูกค้าคิดว่าซื้อชิ้นเดียวก็ได้ราคานี้
+  const salePrice = savePerUnit !== null && !condition ? single!.price - savePerUnit : null
 
   return (
     <div className="min-h-screen bg-gray-100 print:bg-white">
@@ -93,30 +113,34 @@ export default function PromotionPrintView({ promotion: p, store }: { promotion:
           </div>
 
           {/* เนื้อป้าย — ตัวเลขส่วนลดต้องเด่นที่สุด อ่านออกจากระยะไกล */}
-          <div className="flex-1 flex flex-col items-center justify-center" style={{ gap: em(0.55) }}>
+          <div className="flex-1 flex flex-col items-center justify-center" style={{ gap: em(0.45) }}>
             {/* line-height เผื่อไว้เสมอ — ตัวไทยมีสระบน/วรรณยุกต์ ถ้า leading แน่นไปหัวจะโดนตัด */}
-            <p className="font-semibold" style={{ fontSize: em(1.35), color: BROWN, lineHeight: 1.35 }}>{p.name}</p>
+            <p className="font-semibold" style={{ fontSize: em(1.3), color: BROWN, lineHeight: 1.35 }}>{p.name}</p>
 
-            {isPercent ? (
-              <p className="font-black" style={{ fontSize: em(5), color: COPPER, lineHeight: 1.15 }}>
-                ลด {p.discount_percent}%
-              </p>
-            ) : (
-              <p className="font-black" style={{ fontSize: em(3.4), color: COPPER, lineHeight: 1.15 }}>
-                ซื้อ {p.buy_quantity} แถม {p.get_quantity}
+            {condition && (
+              <p className="font-semibold" style={{ fontSize: em(1.15), color: BROWN, lineHeight: 1.35 }}>
+                {condition}
               </p>
             )}
 
-            <p className="font-medium" style={{ fontSize: em(1.05), color: BROWN }}>{scope}</p>
+            <p className="font-black" style={{ fontSize: em(headline.fontSize), color: COPPER, lineHeight: 1.15 }}>
+              {headline.text}
+            </p>
 
-            {salePrice !== null && p.products && (
+            {perLabel && (
+              <p className="font-medium" style={{ fontSize: em(1), color: BROWN, marginTop: `-${em(0.25)}` }}>
+                {perLabel}
+              </p>
+            )}
+
+            <p className="font-medium" style={{ fontSize: em(1.05), color: BROWN, lineHeight: 1.4 }}>{scope}</p>
+
+            {salePrice !== null && single && (
               <p style={{ fontSize: em(1.15), color: BROWN }}>
-                จาก <span style={{ textDecoration: 'line-through', opacity: 0.6 }}>฿{p.products.price.toLocaleString('th-TH')}</span>
+                จาก <span style={{ textDecoration: 'line-through', opacity: 0.6 }}>฿{money(single.price)}</span>
                 {' '}เหลือ{' '}
-                <span className="font-bold" style={{ fontSize: em(1.5), color: COPPER }}>
-                  ฿{salePrice.toLocaleString('th-TH', { minimumFractionDigits: Number.isInteger(salePrice) ? 0 : 2, maximumFractionDigits: 2 })}
-                </span>
-                <span style={{ fontSize: em(0.85) }}> /{p.products.unit}</span>
+                <span className="font-bold" style={{ fontSize: em(1.5), color: COPPER }}>฿{money(salePrice)}</span>
+                <span style={{ fontSize: em(0.85) }}> /{single.unit}</span>
               </p>
             )}
           </div>

@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { thaiToday } from '@/lib/thaiDate'
 import { fetchAll } from '@/lib/supabase/fetch-all'
 import { isClinicOnly } from '@/lib/clinic'
+import { PROMOTION_SELECT, toPromotion } from '@/lib/promotions'
 import type { ClinicQueueItem, Customer } from '@/lib/types'
 import POSClient from './POSClient'
 
@@ -27,7 +28,7 @@ export default async function POSPage() {
     ),
     supabase
       .from('promotions')
-      .select('*')
+      .select(PROMOTION_SELECT)
       .eq('active', true)
       .lte('start_date', thaiToday())
       .gte('end_date', thaiToday()),
@@ -92,7 +93,7 @@ export default async function POSPage() {
     <POSClient
       products={shelfProducts}
       booth={booth}
-      promotions={promotions ?? []}
+      promotions={(promotions ?? []).map((p) => toPromotion(p as never))}
       pointsConfig={activePointsConfig}
       cashierId={user?.id ?? ''}
       promptpayId={storeSettings?.promptpay_id ?? null}

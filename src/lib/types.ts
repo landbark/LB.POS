@@ -492,19 +492,29 @@ export interface PointsConfig {
   updated_at: string
 }
 
-export type PromotionType = 'percent_discount' | 'buy_x_get_y'
-export type ApplyTo = 'all' | 'category' | 'product'
+export type PromotionType = 'percent_discount' | 'amount_discount' | 'buy_x_get_y'
+export type ApplyTo = 'all' | 'categories' | 'products'
+/** ลดเป็นบาท: per_unit = ลดต่อชิ้น, per_line = ลดครั้งเดียวต่อรายการในบิล */
+export type AmountMode = 'per_unit' | 'per_line'
 
 export interface Promotion {
   id: string
   name: string
   type: PromotionType
   discount_percent: number | null
+  discount_amount: number | null
+  amount_mode: AmountMode
   buy_quantity: number | null
   get_quantity: number | null
+  /** เงื่อนไข "ซื้อครบ" ของรายการนั้น — null = ไม่มีเงื่อนไข */
+  min_quantity: number | null
+  min_amount: number | null
+  /** เพดานส่วนลดต่อรายการ (บาท) — null = ไม่จำกัด */
+  max_discount: number | null
   apply_to: ApplyTo
-  category_id: string | null
-  product_id: string | null
+  /** สินค้า/หมวดที่โปรนี้คลุม — มาจากตารางเชื่อม promotion_products / promotion_categories */
+  product_ids: string[]
+  category_ids: string[]
   start_date: string
   end_date: string
   active: boolean
@@ -802,6 +812,9 @@ export interface CartItem {
   discount_mode: 'amount' | 'percent'
   discount_value: number
   subtotal: number
+  /** โปรที่ถูกเลือกให้บรรทัดนี้ (อันที่ลดเยอะสุด) — ไว้ขึ้นชื่อให้แคชเชียร์เห็น ไม่ได้บันทึกลงบิล */
+  promo_name?: string | null
+  promo_discount?: number
   lot_id: string | null
 }
 
