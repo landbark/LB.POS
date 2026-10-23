@@ -6,9 +6,14 @@ import { Search, X, Check } from 'lucide-react'
 export interface PickerOption {
   id: string
   name: string
-  /** บรรทัดเล็กใต้ชื่อ เช่น หมวดของสินค้า */
+  /** บรรทัดเล็กใต้ชื่อ เช่น SKU กับหมวดของสินค้า */
   hint?: string | null
+  /** ข้อความอื่นที่ค้นเจอได้ด้วย (SKU / บาร์โค้ด รวมของหน่วยย่อย) — ไม่ต้องโชว์ */
+  keywords?: string | null
 }
+
+/** จำนวนแถวที่วาดจริง — ที่เหลือให้พิมพ์ค้นหาเอา */
+const RENDER_LIMIT = 60
 
 interface Props {
   options: PickerOption[]
@@ -35,11 +40,24 @@ export default function MultiPicker({
 
   const matches = useMemo(() => {
     const q = query.trim().toLowerCase()
-    const list = q ? options.filter((o) => o.name.toLowerCase().includes(q)) : options
+    // ค้นได้ทั้งชื่อ SKU และบาร์โค้ด เหมือนช่องค้นหาที่หน้าขาย — ยิงบาร์โค้ดใส่ก็เจอ
+    const list = q
+      ? options.filter(
+          (o) =>
+            o.name.toLowerCase().includes(q) ||
+            (o.keywords != null && o.keywords.toLowerCase().includes(q)),
+        )
+      : options
     // เลือกไว้แล้วให้ลอยขึ้นบน เห็นว่าติ๊กอะไรไปแล้วโดยไม่ต้องเลื่อนหา
     const picked = new Set(selected)
     return [...list].sort((a, b) => Number(picked.has(b.id)) - Number(picked.has(a.id)))
   }, [options, query, selected])
+
+  // ร้านมีสินค้าเกินพันตัว — วาดครบทุกตัวทำให้ทุกตัวอักษรที่พิมพ์หน่วง วาดเท่าที่ดูไหวพอ
+  // (ที่เลือกไว้แล้วต้องอยู่ในลิสต์เสมอ จะได้กดติ๊กออกได้)
+  const limit = Math.max(RENDER_LIMIT, selected.length)
+  const visible = matches.slice(0, limit)
+  const hidden = matches.length - visible.length
 
   function toggle(id: string) {
     onChange(selected.includes(id) ? selected.filter((s) => s !== id) : [...selected, id])
@@ -86,7 +104,7 @@ export default function MultiPicker({
       </div>
 
       <div className="border border-gray-200 rounded-lg max-h-56 overflow-y-auto divide-y divide-gray-50 bg-white">
-        {matches.map((o) => {
+        {visible.map((o) => {
           const picked = selected.includes(o.id)
           return (
             <button
@@ -113,6 +131,11 @@ export default function MultiPicker({
         })}
         {matches.length === 0 && (
           <div className="px-3 py-6 text-center text-xs text-gray-400">ไม่พบรายการที่ค้นหา</div>
+        )}
+        {hidden > 0 && (
+          <div className="px-3 py-2 text-center text-xs text-gray-400">
+            ยังมีอีก {hidden} รายการ — พิมพ์ค้นหาเพื่อกรองให้แคบลง
+          </div>
         )}
       </div>
       <p className="text-xs text-gray-400 mt-1">เลือกแล้ว {selected.length} รายการ</p>

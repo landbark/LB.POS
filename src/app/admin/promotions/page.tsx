@@ -13,7 +13,8 @@ export default async function PromotionsPage() {
     fetchAll((from, to) =>
       supabase
         .from('products')
-        .select('id, name, categories(name)')
+        // ต้องชี้ fkey ให้ชัด — products กับ product_units มีความสัมพันธ์มากกว่าหนึ่งเส้น
+        .select('id, name, sku, barcode, categories(name), product_units!product_units_product_id_fkey(sku, barcode)')
         .eq('active', true)
         .order('name')
         .order('id')
@@ -28,7 +29,16 @@ export default async function PromotionsPage() {
       products={products.map((p) => ({
         id: p.id,
         name: p.name,
+        sku: p.sku,
         category: (p.categories as unknown as { name: string } | null)?.name ?? null,
+        // รวม SKU/บาร์โค้ดของหน่วยย่อยด้วย — ขายยกกล่องมีรหัสของตัวเอง ยิงบาร์โค้ดกล่องต้องเจอ
+        codes: [
+          p.sku,
+          p.barcode,
+          ...(p.product_units ?? []).flatMap((u: { sku: string | null; barcode: string | null }) => [u.sku, u.barcode]),
+        ]
+          .filter(Boolean)
+          .join(' '),
       }))}
     />
   )

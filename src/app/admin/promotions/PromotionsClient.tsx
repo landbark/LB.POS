@@ -14,7 +14,10 @@ import MultiPicker from '@/components/MultiPicker'
 interface ProductOption {
   id: string
   name: string
+  sku: string | null
   category: string | null
+  /** SKU + บาร์โค้ด (รวมของหน่วยย่อย) ไว้ให้ค้นหาเจอ */
+  codes: string
 }
 
 const emptyForm = {
@@ -370,10 +373,15 @@ export default function PromotionsClient({
           <div className="sm:col-span-2">
             <label className={labelClass}>สินค้า *</label>
             <MultiPicker
-              options={products.map((p) => ({ id: p.id, name: p.name, hint: p.category }))}
+              options={products.map((p) => ({
+                id: p.id,
+                name: p.name,
+                hint: [p.sku, p.category].filter(Boolean).join(' · ') || null,
+                keywords: p.codes,
+              }))}
               selected={form.product_ids}
               onChange={(ids) => set('product_ids', ids)}
-              placeholder="ค้นหาสินค้า..."
+              placeholder="ค้นหาชื่อ / SKU / บาร์โค้ด..."
               emptyLabel="ยังไม่ได้เลือกสินค้า"
             />
           </div>
