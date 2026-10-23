@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { thaiToday, thaiDateIn } from '@/lib/thaiDate'
-import { AlertTriangle } from 'lucide-react'
+import { AlertTriangle, History } from 'lucide-react'
+import Link from '@/components/ProgressLink'
 import SearchBox from '@/components/SearchBox'
 
 /** ล็อตสินค้าสะสมขึ้นทุกครั้งที่รับของ — แสดงทีละหน้า แล้วให้ค้นที่ server */
@@ -90,7 +91,15 @@ export default async function InventoryPage({
 
   return (
     <div>
-      <h1 className="text-2xl font-bold text-gray-900 mb-4">สต็อคสินค้า</h1>
+      <div className="flex items-center justify-between gap-3 mb-4">
+        <h1 className="text-2xl font-bold text-gray-900">สต็อคสินค้า</h1>
+        <Link
+          href="/admin/inventory/history"
+          className="flex items-center gap-1.5 border border-gray-300 hover:bg-gray-50 text-gray-700 text-sm font-medium px-3 py-2 rounded-lg shrink-0"
+        >
+          <History size={15} /> ประวัติสต็อค
+        </Link>
+      </div>
 
       <SearchBox placeholder="ค้นหาสินค้า / SKU / เลขล็อต..." className="mb-4 max-w-xs" />
 
