@@ -34,6 +34,9 @@ import {
   ClipboardList,
 } from 'lucide-react'
 
+/** ถามจำนวนออเดอร์ค้างซ้ำทุกกี่มิลลิวินาที (เฉพาะตอนแท็บถูกมองอยู่) */
+const POLL_MS = 300_000
+
 // vetHidden = หน้าที่หมอเข้าไม่ได้ (proxy.ts กันไว้แล้ว ตรงนี้แค่ไม่ให้เห็นเมนู)
 const navItems = [
   { href: '/admin/dashboard', label: 'ภาพรวม', icon: LayoutDashboard, cashierHidden: true },
@@ -87,10 +90,35 @@ export default function AdminNav({ userName, role }: { userName: string; role: s
       })
     }
 
-    loadCounts()
-    // เช็คซ้ำทุกนาที เผื่อเปิดหน้าค้างไว้แล้วมีออเดอร์เข้ามาใหม่
-    const timer = setInterval(loadCounts, 60_000)
-    return () => { cancelled = true; clearInterval(timer) }
+    // เช็คซ้ำเป็นระยะ เผื่อเปิดหน้าค้างไว้แล้วมีออเดอร์เข้ามาใหม่ — แต่หยุดถามตอนแท็บ
+    // ไม่ได้ถูกมองอยู่ พนักงานเปิดหน้าหลังร้านค้างทั้งวันเป็นเรื่องปกติ และ host คิดเงิน
+    // ตามเวลาที่ฟังก์ชันตื่น แท็บที่ถูกลืมไว้จึงเผาโควต้าทั้งวันโดยไม่มีใครได้ดูตัวเลข
+    // (ออเดอร์ใหม่มีแจ้งเตือน Telegram ทันทีอยู่แล้ว ตัวเลขข้างเมนูช้าไปหน่อยไม่เสียหาย)
+    let timer: ReturnType<typeof setInterval> | null = null
+
+    function startPolling() {
+      if (timer) return
+      loadCounts()
+      timer = setInterval(loadCounts, POLL_MS)
+    }
+
+    function stopPolling() {
+      if (!timer) return
+      clearInterval(timer)
+      timer = null
+    }
+
+    // กลับมาดูแท็บอีกครั้ง = เช็คทันทีหนึ่งรอบ ไม่ต้องรอครบรอบถัดไป
+    const onVisibilityChange = () =>
+      document.visibilityState === 'visible' ? startPolling() : stopPolling()
+
+    onVisibilityChange()
+    document.addEventListener('visibilitychange', onVisibilityChange)
+    return () => {
+      cancelled = true
+      stopPolling()
+      document.removeEventListener('visibilitychange', onVisibilityChange)
+    }
   }, [pathname, role])
 
   async function handleLogout() {
