@@ -174,7 +174,7 @@ interface VaccineDueRow {
   pets: { name: string; active: boolean; customers: { name: string; phone: string } | null } | null
 }
 
-// วัคซีนที่ครบกำหนดกระตุ้นภายใน 7 วัน + ที่เลยกำหนดแล้ว
+// วัคซีนที่ครบกำหนดกระตุ้นภายใน 7 วัน + ที่เพิ่งเลยกำหนด (เลยเกิน 30 วันแล้วเลิกเตือน)
 export async function gatherDueVaccines(admin: ReturnType<typeof createAdminClient>) {
   // วัคซีนสะสมโตขึ้นทุกปี — .limit() ไม่ช่วย เซิร์ฟเวอร์ตัดที่ 1000 แถวอยู่ดี ต้องไล่ทีละหน้า
   const data = await fetchAll((from, to) =>

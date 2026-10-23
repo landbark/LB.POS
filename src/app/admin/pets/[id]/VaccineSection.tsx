@@ -100,7 +100,7 @@ export default function VaccineSection({
     router.refresh()
   }
 
-  // เข็มที่ครบกำหนดกระตุ้น (ภายใน 30 วัน หรือเลยกำหนด)
+  // เข็มที่ครบกำหนดกระตุ้น (ภายใน 30 วัน หรือเพิ่งเลยกำหนดไม่เกิน 30 วัน)
   const due = dueVaccinations(
     vaccinations.map((v) => ({ pet_id: v.pet_id, vaccine_name: v.vaccine_name, dose_date: v.dose_date, next_due_date: v.next_due_date })),
     todayISO(),

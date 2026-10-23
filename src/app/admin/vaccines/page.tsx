@@ -25,7 +25,7 @@ export default async function VaccinesPage() {
     pets: { id: string; name: string; species: string; customers: { name: string; phone: string } | null } | null
   }
 
-  // ครบกำหนด/เกินกำหนด ในกรอบ 45 วัน (PostgREST infer relation เป็น array — cast ผ่าน unknown)
+  // ครบกำหนดใน 45 วันข้างหน้า + เกินกำหนดไม่เกิน 30 วัน (PostgREST infer relation เป็น array — cast ผ่าน unknown)
   const due = dueVaccinations((rows ?? []) as unknown as Row[], todayISO(), 45)
 
   // สัตว์ตัวเดียวมักครบหลายเข็มพร้อมกัน — รวมเป็นรายการเดียวแล้วไล่เข็มข้างใน

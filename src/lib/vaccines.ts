@@ -3,6 +3,12 @@
 // นิยาม: ต่อ 1 สัตว์ + 1 ชนิดวัคซีน ให้ดูเข็มล่าสุด ถ้าเข็มล่าสุดตั้งวันนัดถัดไปไว้
 // และวันนัดนั้นถึง/เลยกำหนดในกรอบเวลาที่กำหนด = ครบกำหนดกระตุ้น
 // (เข็มเก่ากว่าถูก superseded ด้วยเข็มใหม่ ไม่นับซ้ำ)
+//
+// เลยกำหนดเกิน OVERDUE_GRACE_DAYS แล้วเลิกเตือน — ตามไม่กลับแล้วก็ไม่ต้องรกรายการทุกวัน
+// วันนัดเดิมยังอยู่ใน pet_vaccinations เหมือนเดิม (หน้าโปรไฟล์สัตว์ยังโชว์ "นัดถัดไป")
+
+/** เลยกำหนดได้กี่วันก่อนเลิกเตือน (ยังเก็บวันนัดไว้ในระบบ) */
+export const OVERDUE_GRACE_DAYS = 30
 
 export interface DueVaccinationRow {
   pet_id: string
@@ -16,11 +22,15 @@ export interface DueVaccination<T extends DueVaccinationRow> {
   overdue: boolean
 }
 
-/** คืนเฉพาะเข็มล่าสุดต่อ (สัตว์+วัคซีน) ที่ถึงกำหนดกระตุ้นภายใน windowDays (รวมที่เลยกำหนดแล้ว) */
+/**
+ * คืนเฉพาะเข็มล่าสุดต่อ (สัตว์+วัคซีน) ที่ถึงกำหนดกระตุ้นภายใน windowDays
+ * (รวมที่เลยกำหนดแล้วไม่เกิน graceDays วัน — เลยกว่านั้นถือว่าเลิกเตือน)
+ */
 export function dueVaccinations<T extends DueVaccinationRow>(
   rows: T[],
   todayISO: string,
-  windowDays: number
+  windowDays: number,
+  graceDays: number = OVERDUE_GRACE_DAYS
 ): DueVaccination<T>[] {
   // เก็บเข็มล่าสุดต่อ pet+vaccine
   const latest = new Map<string, T>()
@@ -31,10 +41,11 @@ export function dueVaccinations<T extends DueVaccinationRow>(
   }
 
   const limit = addDaysISO(todayISO, windowDays)
+  const giveUpBefore = addDaysISO(todayISO, -graceDays)
   const due: DueVaccination<T>[] = []
   for (const r of latest.values()) {
     if (!r.next_due_date) continue
-    if (r.next_due_date <= limit) {
+    if (r.next_due_date <= limit && r.next_due_date >= giveUpBefore) {
       due.push({ row: r, overdue: r.next_due_date < todayISO })
     }
   }
