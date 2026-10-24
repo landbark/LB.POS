@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { X, CheckCircle2, Printer } from 'lucide-react'
+import { X, CheckCircle2, Printer, AlertTriangle } from 'lucide-react'
 import toast from 'react-hot-toast'
 import type { CartItem, Customer, PointsConfig, PaymentMethod, SalesChannel, RoundingMode } from '@/lib/types'
 import { roundTotal } from '@/lib/rounding'
@@ -26,6 +26,8 @@ interface Props {
   visitIds: string[]
   /** ขายอยู่ในโหมดบูธ — ล็อกช่องทางเป็น 'booth' แล้วผูกบิลเข้ารอบนั้น */
   boothTripId: string | null
+  /** มีกะเปิดอยู่ไหม — ไม่มีแล้วเก็บเงินหน้าร้านจะเตือนก่อนกดยืนยัน */
+  shiftOpen: boolean
   onClose: () => void
   onSuccess: (info?: { writeoff?: boolean }) => void
 }
@@ -45,7 +47,7 @@ const SPLIT_METHODS = Object.keys(PAYMENT_LABELS) as SplitMethod[]
 const STORE_CHANNELS = SALES_CHANNELS.filter((c) => c.value !== 'booth')
 
 export default function PaymentModal({
-  cart, subtotal, totalDiscount, total, customer, pointsConfig, cashierId, promptpayId, roundingMode, visitIds, boothTripId, onClose, onSuccess,
+  cart, subtotal, totalDiscount, total, customer, pointsConfig, cashierId, promptpayId, roundingMode, visitIds, boothTripId, shiftOpen, onClose, onSuccess,
 }: Props) {
   // writeoff = ตัดของออกจากสต็อกเฉยๆ ไม่ใช่การขาย (ของเสีย/ของแถม/ใช้ในร้าน) — ไม่สร้างใบเสร็จ
   const [mode, setMode] = useState<'sale' | 'writeoff'>('sale')
@@ -475,6 +477,16 @@ export default function PaymentModal({
               ตัดสต็อกออก (ไม่ใช่การขาย)
             </button>
           </div>
+
+          {/* เตือนตอนเก็บเงินหน้าร้านโดยไม่มีกะเปิด — แถบบนหน้าขายถูกโมดอลนี้ทับอยู่ */}
+          {!shiftOpen && !writeoff && channel === 'store' && (
+            <p className="flex items-start gap-1.5 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700">
+              <AlertTriangle size={14} className="mt-0.5 shrink-0" />
+              <span>
+                <b>ยังไม่ได้เปิดกะ</b> — บิลนี้บันทึกได้ปกติ แต่เงินจะไม่ถูกนับในกะไหน ปิดกะแล้วยอดจะไม่ตรงกับเงินในเก๊ะ
+              </span>
+            </p>
+          )}
 
           {online && (
             <div>

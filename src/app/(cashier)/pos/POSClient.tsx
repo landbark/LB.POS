@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo, useRef, useCallback, useDeferredValue } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { Search, X, Plus, Minus, ShoppingCart, User, MonitorPlay, Stethoscope, ScanBarcode, Store } from 'lucide-react'
+import { Search, X, Plus, Minus, ShoppingCart, User, MonitorPlay, Stethoscope, ScanBarcode, Store, AlertTriangle } from 'lucide-react'
 import toast from 'react-hot-toast'
 import type { Product, ProductUnit, CartItem, Promotion, PointsConfig, Customer, PaymentMethod, ClinicQueueVisit, RoundingMode } from '@/lib/types'
 import { bestPromotion } from '@/lib/promotions'
@@ -12,6 +12,7 @@ import { POS_DISPLAY_CHANNEL, type PosDisplayMessage } from '@/lib/posDisplay'
 import PaymentModal from './PaymentModal'
 import { confirmDialog } from '@/lib/confirm'
 import BarcodeScanner, { type ScanFeedback } from '@/components/BarcodeScanner'
+import ProgressLink from '@/components/ProgressLink'
 import { withBoothPrices } from '@/lib/booth'
 import { openCustomerDisplay } from '@/lib/posDisplayWindow'
 
@@ -29,6 +30,8 @@ export interface BoothContext {
 interface Props {
   products: Product[]
   booth: BoothContext | null
+  /** มีกะเปิดอยู่ไหม — ไม่มีแล้วขายหน้าร้านจะขึ้นแถบเตือน (โหมดบูธไม่เกี่ยว เงินบูธแยกจากเก๊ะร้าน) */
+  shiftOpen: boolean
   promotions: Promotion[]
   pointsConfig: PointsConfig | null
   cashierId: string
@@ -60,7 +63,7 @@ const matchesQuery = (p: Product, q: string) =>
 // จำนวนสินค้าที่วาดบนกริด — วาดครบสองพันตัวทำให้ทุกตัวอักษรที่พิมพ์หน่วงเป็นสิบ ms
 const GRID_LIMIT = 60
 
-export default function POSClient({ products: allProducts, booth, promotions, pointsConfig, cashierId, promptpayId, roundingMode, clinicQueue }: Props) {
+export default function POSClient({ products: allProducts, booth, shiftOpen, promotions, pointsConfig, cashierId, promptpayId, roundingMode, clinicQueue }: Props) {
   const router = useRouter()
   // เวชระเบียนที่กำลังเก็บเงินอยู่ — จ่ายเสร็จแล้วจะถูก mark เป็น paid พร้อมผูกเลขที่บิล
   // เจ้าของคนเดียวพาสัตว์มาหลายตัว (หรือตัวเดิมหลายใบ) รวมเก็บเงินทีเดียวได้ เลยเก็บเป็นรายการ
@@ -637,6 +640,27 @@ export default function POSClient({ products: allProducts, booth, promotions, po
     <div className="flex h-[calc(100dvh-56px)]">
       {/* Left: Product Grid */}
       <div className="flex-1 flex flex-col bg-gray-50 overflow-hidden">
+        {/* ยังไม่ได้เปิดกะ — เตือนคนขายหน้าร้าน (ที่บูธไม่เกี่ยว ไม่ได้ใช้เก๊ะร้าน) */}
+        {!shiftOpen && !boothMode && (
+          <div className="px-4 py-2.5 bg-red-50 border-b border-red-200">
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+              <span className="inline-flex items-center gap-1.5 text-sm font-bold text-red-800">
+                <AlertTriangle size={16} />
+                ยังไม่ได้เปิดกะ
+              </span>
+              <span className="text-xs text-red-700">
+                ขายได้ตามปกติ แต่เงินสดที่รับไว้ก่อนเปิดกะจะไม่ถูกนับในกะ — ตอนปิดกะยอดจะไม่ตรงกับเงินในเก๊ะ
+              </span>
+              <ProgressLink
+                href="/admin/shift"
+                className="ml-auto shrink-0 inline-flex items-center rounded-lg bg-red-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-red-700"
+              >
+                เปิดกะ
+              </ProgressLink>
+            </div>
+          </div>
+        )}
+
         {/* โหมดบูธ — โชว์เฉพาะตอนมีรอบออกบูธเปิดอยู่ */}
         {booth && (
           <div className={`px-4 py-2 border-b ${boothMode ? 'bg-amber-100 border-amber-300' : 'bg-white border-gray-200'}`}>
@@ -1139,6 +1163,7 @@ export default function POSClient({ products: allProducts, booth, promotions, po
           roundingMode={roundingMode}
           visitIds={activeVisitIds}
           boothTripId={boothMode && booth ? booth.id : null}
+          shiftOpen={shiftOpen}
           onClose={() => setShowPayment(false)}
           onSuccess={(info) => {
             // ตัดสต็อกออกก็ปิดใบเหมือนกัน — ของออกจากสต็อกไปแล้ว ไม่ต้องค้างในคิวให้เก็บเงินอีก

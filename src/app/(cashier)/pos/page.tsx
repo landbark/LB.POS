@@ -10,7 +10,7 @@ export default async function POSPage() {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
 
-  const [products, { data: promotions }, { data: pointsConfig }, { data: storeSettings }, { data: pendingVisits }, { data: boothTrip }] = await Promise.all([
+  const [products, { data: promotions }, { data: pointsConfig }, { data: storeSettings }, { data: pendingVisits }, { data: boothTrip }, { data: openShift }] = await Promise.all([
     // ไล่ดึงทีละหน้า — supabase ตัดที่ 1000 แถว ส่วนร้านมีสินค้าเกินนั้นแล้ว
     fetchAll((from, to) =>
       supabase
@@ -46,6 +46,8 @@ export default async function POSPage() {
       .select('id, trip_number, name, location, booth_trip_items(product_id, taken_quantity)')
       .eq('status', 'open')
       .maybeSingle(),
+    // กะที่เปิดอยู่ — ขายหน้าร้านตอนไม่มีกะเปิด เงินสดบิลนั้นจะไม่เข้าสูตร "เงินที่ควรมี" ของกะไหนเลย
+    supabase.from('shifts').select('id').is('closed_at', null).maybeSingle(),
   ])
 
   // ปิดระบบแต้ม = ส่ง null ลงไป หน้าขายจะไม่คิด/ไม่ให้ใช้แต้มเลย (แต้มเดิมของลูกค้ายังอยู่)
@@ -93,6 +95,7 @@ export default async function POSPage() {
     <POSClient
       products={shelfProducts}
       booth={booth}
+      shiftOpen={Boolean(openShift)}
       promotions={(promotions ?? []).map((p) => toPromotion(p as never))}
       pointsConfig={activePointsConfig}
       cashierId={user?.id ?? ''}
