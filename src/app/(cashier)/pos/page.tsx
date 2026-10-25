@@ -10,7 +10,7 @@ export default async function POSPage() {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
 
-  const [products, { data: promotions }, { data: pointsConfig }, { data: storeSettings }, { data: pendingVisits }, { data: boothTrip }, { data: openShift }] = await Promise.all([
+  const [products, { data: promotions }, { data: pointsConfig }, { data: storeSettings }, { data: pendingVisits }, { data: boothTrip }, { data: openShift }, { data: profile }] = await Promise.all([
     // ไล่ดึงทีละหน้า — supabase ตัดที่ 1000 แถว ส่วนร้านมีสินค้าเกินนั้นแล้ว
     fetchAll((from, to) =>
       supabase
@@ -48,6 +48,8 @@ export default async function POSPage() {
       .maybeSingle(),
     // กะที่เปิดอยู่ — ขายหน้าร้านตอนไม่มีกะเปิด เงินสดบิลนั้นจะไม่เข้าสูตร "เงินที่ควรมี" ของกะไหนเลย
     supabase.from('shifts').select('id').is('closed_at', null).maybeSingle(),
+    // ชื่อคนขาย — ใช้เขียน notes ของกะตอนเปิดกะจากหน้านี้
+    supabase.from('profiles').select('name').eq('id', user?.id ?? '').maybeSingle(),
   ])
 
   // ปิดระบบแต้ม = ส่ง null ลงไป หน้าขายจะไม่คิด/ไม่ให้ใช้แต้มเลย (แต้มเดิมของลูกค้ายังอยู่)
@@ -99,6 +101,7 @@ export default async function POSPage() {
       promotions={(promotions ?? []).map((p) => toPromotion(p as never))}
       pointsConfig={activePointsConfig}
       cashierId={user?.id ?? ''}
+      cashierName={profile?.name ?? ''}
       promptpayId={storeSettings?.promptpay_id ?? null}
       roundingMode={storeSettings?.rounding_mode ?? 'none'}
       clinicQueue={clinicQueue}

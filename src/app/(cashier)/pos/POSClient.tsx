@@ -12,7 +12,7 @@ import { POS_DISPLAY_CHANNEL, type PosDisplayMessage } from '@/lib/posDisplay'
 import PaymentModal from './PaymentModal'
 import { confirmDialog } from '@/lib/confirm'
 import BarcodeScanner, { type ScanFeedback } from '@/components/BarcodeScanner'
-import ProgressLink from '@/components/ProgressLink'
+import OpenShiftModal from '@/components/OpenShiftModal'
 import { withBoothPrices } from '@/lib/booth'
 import { openCustomerDisplay } from '@/lib/posDisplayWindow'
 
@@ -32,6 +32,8 @@ interface Props {
   booth: BoothContext | null
   /** มีกะเปิดอยู่ไหม — ไม่มีแล้วขายหน้าร้านจะขึ้นแถบเตือน (โหมดบูธไม่เกี่ยว เงินบูธแยกจากเก๊ะร้าน) */
   shiftOpen: boolean
+  /** ชื่อคนที่ล็อกอิน — เขียนลง notes ของกะตอนย้อนเวลาเปิดกะ */
+  cashierName: string
   promotions: Promotion[]
   pointsConfig: PointsConfig | null
   cashierId: string
@@ -63,7 +65,7 @@ const matchesQuery = (p: Product, q: string) =>
 // จำนวนสินค้าที่วาดบนกริด — วาดครบสองพันตัวทำให้ทุกตัวอักษรที่พิมพ์หน่วงเป็นสิบ ms
 const GRID_LIMIT = 60
 
-export default function POSClient({ products: allProducts, booth, shiftOpen, promotions, pointsConfig, cashierId, promptpayId, roundingMode, clinicQueue }: Props) {
+export default function POSClient({ products: allProducts, booth, shiftOpen, promotions, pointsConfig, cashierId, cashierName, promptpayId, roundingMode, clinicQueue }: Props) {
   const router = useRouter()
   // เวชระเบียนที่กำลังเก็บเงินอยู่ — จ่ายเสร็จแล้วจะถูก mark เป็น paid พร้อมผูกเลขที่บิล
   // เจ้าของคนเดียวพาสัตว์มาหลายตัว (หรือตัวเดิมหลายใบ) รวมเก็บเงินทีเดียวได้ เลยเก็บเป็นรายการ
@@ -90,6 +92,8 @@ export default function POSClient({ products: allProducts, booth, shiftOpen, pro
   const [boothMode, setBoothMode] = useState(false)
   // ในโหมดบูธปกติโชว์เฉพาะของในใบเบิก — ติ๊กอันนี้ถ้าต้องขายตัวที่ลืมลงใบ
   const [boothShowAll, setBoothShowAll] = useState(false)
+  // เปิดกะจากหน้าขายได้เลย — เดินไปหน้าปิดกะตอนลูกค้ายืนรอแล้วตะกร้าหาย คนก็เลยข้ามการเปิดกะ
+  const [showOpenShift, setShowOpenShift] = useState(false)
   const searchRef = useRef<HTMLInputElement>(null)
   const [showScanner, setShowScanner] = useState(false)
   // ปุ่มกล้องโชว์เฉพาะมือถือ/แท็บเล็ตที่เปิดกล้องได้ — เครื่องที่ใช้เมาส์ยิงด้วยเครื่องยิงอยู่แล้ว
@@ -651,12 +655,12 @@ export default function POSClient({ products: allProducts, booth, shiftOpen, pro
               <span className="text-xs text-red-700">
                 ขายได้ตามปกติ แต่เงินสดที่รับไว้ก่อนเปิดกะจะไม่ถูกนับในกะ — ตอนปิดกะยอดจะไม่ตรงกับเงินในเก๊ะ
               </span>
-              <ProgressLink
-                href="/admin/shift"
+              <button
+                onClick={() => setShowOpenShift(true)}
                 className="ml-auto shrink-0 inline-flex items-center rounded-lg bg-red-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-red-700"
               >
                 เปิดกะ
-              </ProgressLink>
+              </button>
             </div>
           </div>
         )}
@@ -1229,6 +1233,15 @@ export default function POSClient({ products: allProducts, booth, shiftOpen, pro
             </div>
           </div>
         </div>
+      )}
+
+      {showOpenShift && (
+        <OpenShiftModal
+          userId={cashierId}
+          userName={cashierName}
+          onClose={() => setShowOpenShift(false)}
+          onOpened={() => { setShowOpenShift(false); router.refresh() }}
+        />
       )}
 
       {showScanner && (

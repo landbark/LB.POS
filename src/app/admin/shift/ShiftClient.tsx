@@ -7,6 +7,7 @@ import { sumByMethod, type PaidTransaction } from '@/lib/payments'
 import { Wallet, Lock, Unlock, Pencil } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { confirmDialog } from '@/lib/confirm'
+import OpenShiftModal from '@/components/OpenShiftModal'
 import type { Shift, CashMovement } from '@/lib/types'
 
 const money = (n: number) => n.toLocaleString('th-TH', { minimumFractionDigits: 2 })
@@ -62,7 +63,7 @@ export default function ShiftClient({
   canEditClosed: boolean
 }) {
   const router = useRouter()
-  const [openingCash, setOpeningCash] = useState('')
+  const [showOpenShift, setShowOpenShift] = useState(false)
   const [counts, setCounts] = useState<Record<number, string>>({})
   const [ownerCounts, setOwnerCounts] = useState<Record<number, string>>({})
   // ไม่ติ๊กไว้ให้ — เคยติ๊กค้างแล้วคนปิดกะไม่ทันสังเกตว่ามีกะใหม่เปิดต่อ เช้ามาเห็นกะค้างอยู่
@@ -127,27 +128,6 @@ export default function ShiftClient({
   const ownerExceeds = BANKNOTES.filter((d) => qtyOf(ownerCounts, d.value) > qtyOf(counts, d.value))
   const leftover = counted - cashToOwner
   const difference = counted - expectedCash
-
-  async function openNewShift() {
-    const cash = parseFloat(openingCash || '0')
-    if (Number.isNaN(cash) || cash < 0) {
-      toast.error('กรุณาใส่เงินสดตั้งต้น')
-      return
-    }
-    setLoading(true)
-    const supabase = createClient()
-    const { error } = await supabase.from('shifts').insert({
-      opening_cash: cash,
-      opened_by: currentUserId,
-    })
-    setLoading(false)
-    if (error) {
-      toast.error(error.code === '23505' ? 'มีกะที่เปิดอยู่แล้ว' : 'เกิดข้อผิดพลาด: ' + error.message)
-      return
-    }
-    toast.success('เปิดกะแล้ว')
-    router.refresh()
-  }
 
   async function addMovement() {
     if (!openShift) return
@@ -371,20 +351,14 @@ export default function ShiftClient({
             <Unlock size={18} className="text-gray-400" />
             <h2 className="font-semibold text-gray-900">เปิดกะใหม่</h2>
           </div>
-          <label className="block text-xs font-medium text-gray-600 mb-1">เงินสดตั้งต้น</label>
-          <input
-            type="number" min={0} step="0.01"
-            value={openingCash}
-            onChange={(e) => setOpeningCash(e.target.value)}
-            className={inputClass}
-            placeholder="0.00"
-          />
+          <p className="text-xs text-gray-500 mb-3">
+            ใส่เงินทอนตั้งต้นในเก๊ะ · ถ้าวันนี้ขายไปแล้วตอนยังไม่เปิดกะ ระบบจะถามว่าจะรวมบิลพวกนั้นเข้ากะนี้ไหม
+          </p>
           <button
-            onClick={openNewShift}
-            disabled={loading}
-            className="mt-3 w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-sm font-medium px-4 py-2 rounded-lg"
+            onClick={() => setShowOpenShift(true)}
+            className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-4 py-2 rounded-lg"
           >
-            <Wallet size={15} /> {loading ? 'กำลังเปิดกะ...' : 'เปิดกะ'}
+            <Wallet size={15} /> เปิดกะ
           </button>
         </div>
       ) : (
@@ -805,6 +779,15 @@ export default function ShiftClient({
             </div>
           </div>
         </div>
+      )}
+
+      {showOpenShift && (
+        <OpenShiftModal
+          userId={currentUserId}
+          userName={currentUserName}
+          onClose={() => setShowOpenShift(false)}
+          onOpened={() => { setShowOpenShift(false); router.refresh() }}
+        />
       )}
     </div>
   )
