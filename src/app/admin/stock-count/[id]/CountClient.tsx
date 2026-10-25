@@ -8,15 +8,27 @@ import toast from 'react-hot-toast'
 import BarcodeScanner, { type ScanFeedback } from '@/components/BarcodeScanner'
 import { confirmDialog } from '@/lib/confirm'
 import { findByBarcode } from '@/lib/productUnits'
-import { countUnitChoices, stockOf, summarize, varianceOf, type CountableProduct } from '@/lib/stockCount'
+import {
+  canStampExpiry,
+  countUnitChoices,
+  lotsWithStock,
+  stockOf,
+  summarize,
+  varianceOf,
+  type CountableProduct,
+  type CountLot,
+} from '@/lib/stockCount'
 import type { StockCount } from '@/lib/types'
 
 interface ItemRow {
   id: string
   product_id: string
+  /** null = นับรวมทุก lot */
+  product_lot_id: string | null
   counted_quantity: number
   system_quantity: number
   applied_diff: number | null
+  expiry_date: string | null
   note: string | null
   counted_at: string
   counter: { name: string | null } | null
@@ -24,6 +36,17 @@ interface ItemRow {
 
 const inputClass = 'border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500'
 const fmtBaht = (n: number) => `${n < 0 ? '-' : ''}฿${Math.abs(n).toLocaleString('th-TH', { maximumFractionDigits: 2 })}`
+const fmtDate = (d: string) => new Date(d).toLocaleDateString('th-TH', { timeZone: 'Asia/Bangkok' })
+
+/** หนึ่งแถว = (สินค้า, lot) — ใช้เป็นคีย์ทั้งตอนหาแถวเดิมและตอนจำยอดที่กำลังบันทึก */
+const keyOf = (productId: string, lotId: string | null) => `${productId}|${lotId ?? ''}`
+
+const lotLabel = (lot: CountLot) =>
+  [
+    lot.lot_number || 'ไม่มีเลข lot',
+    lot.expiry_date ? `หมด ${fmtDate(lot.expiry_date)}` : 'ไม่มีวันหมดอายุ',
+    `มี ${lot.quantity}`,
+  ].join(' · ')
 
 export default function CountClient({
   count,
@@ -43,13 +66,27 @@ export default function CountClient({
   const [picked, setPicked] = useState<CountableProduct | null>(null)
   const [qty, setQty] = useState('')
   const [unitIdx, setUnitIdx] = useState(0)
+  const [lotId, setLotId] = useState<string | null>(null)
+  const [expiry, setExpiry] = useState('')
   const [note, setNote] = useState('')
   const [posting, setPosting] = useState(false)
   const [showRemaining, setShowRemaining] = useState(false)
   const qtyRef = useRef<HTMLInputElement>(null)
 
+  // ยิงบาร์โค้ดรัว ๆ เร็วกว่า setState จะ flush — เก็บสำเนาที่อัปเดตทันทีไว้ใช้หาแถวเดิม
+  // และจำยอดที่ "กำลังจะเป็น" ไว้ ไม่งั้นยิงสองครั้งติดกันจะอ่านยอดเก่าทั้งคู่แล้วนับหาย
+  const rowsRef = useRef<ItemRow[]>(initialItems)
+  const intendedRef = useRef(new Map<string, number>())
+  // บันทึกทีละคำสั่งเรียงกัน — ยิงรัว ๆ แล้วส่งพร้อมกันจะชน unique (รอบ, สินค้า, lot)
+  const chainRef = useRef<Promise<unknown>>(Promise.resolve())
+
   const locked = count.status !== 'counting'
   const byId = useMemo(() => new Map(products.map((p) => [p.id, p])), [products])
+  const lotById = useMemo(() => {
+    const m = new Map<string, CountLot>()
+    for (const p of products) for (const l of p.product_lots ?? []) m.set(l.id, l)
+    return m
+  }, [products])
 
   // สินค้าในขอบเขตของรอบนี้ — ไว้บอกว่ายังเหลืออะไรยังไม่นับ
   const inScope = useMemo(
@@ -62,8 +99,16 @@ export default function CountClient({
     [rows, byId]
   )
 
-  const countedIds = useMemo(() => new Set(rows.map((r) => r.product_id)), [rows])
-  const remaining = useMemo(() => inScope.filter((p) => !countedIds.has(p.id)), [inScope, countedIds])
+  /** สินค้าถือว่านับครบเมื่อนับรวมทุก lot ไว้ หรือนับแยกครบทุก lot ที่มีของ */
+  const remaining = useMemo(() => {
+    const whole = new Set(rows.filter((r) => !r.product_lot_id).map((r) => r.product_id))
+    const countedLots = new Set(rows.map((r) => r.product_lot_id).filter(Boolean) as string[])
+    return inScope.filter((p) => {
+      if (whole.has(p.id)) return false
+      const lots = lotsWithStock(p)
+      return lots.length === 0 || !lots.every((l) => countedLots.has(l.id))
+    })
+  }, [inScope, rows])
 
   const matches = useMemo(() => {
     const q = term.trim().toLowerCase()
@@ -77,51 +122,90 @@ export default function CountClient({
       .slice(0, 12)
   }, [term, products])
 
-  /** เขียนผลการนับของสินค้าหนึ่งตัว (นับซ้ำ = ทับของเดิม) */
-  async function saveCount(product: CountableProduct, counted: number, rowNote: string | null) {
-    const existing = rows.find((r) => r.product_id === product.id)
-    // ยอดระบบล็อกไว้ตั้งแต่ครั้งแรกที่นับตัวนี้ — นับซ้ำ/แก้ตัวเลขไม่ควรเลื่อนฐานเทียบตาม
-    const system = existing?.system_quantity ?? stockOf(product)
+  /** แถวเดิมของ (สินค้า, lot) นั้น อ่านจากสำเนาที่อัปเดตทันที ไม่ใช่ state ที่ยังไม่ flush */
+  const findRow = (productId: string, lot: string | null) =>
+    rowsRef.current.find((r) => r.product_id === productId && (r.product_lot_id ?? null) === lot)
+
+  function writeRows(next: ItemRow[]) {
+    rowsRef.current = next
+    setRows(next)
+  }
+
+  /**
+   * เขียนผลการนับของ (สินค้า, lot) หนึ่งคู่ — นับซ้ำ = ทับของเดิม
+   *
+   * นับรวมทุก lot กับนับแยก lot ของสินค้าตัวเดียวกันในรอบเดียวกันไม่ได้
+   * ไม่งั้นตอนยืนยันจะปรับสองรอบ ของที่ขาดอยู่ 2 ชิ้นจะถูกตัดไป 4
+   */
+  async function saveCount(
+    product: CountableProduct,
+    lot: string | null,
+    counted: number,
+    rowNote: string | null,
+    expiryDate: string | null
+  ) {
+    const mixed = lot
+      ? rowsRef.current.some((r) => r.product_id === product.id && !r.product_lot_id)
+      : rowsRef.current.some((r) => r.product_id === product.id && r.product_lot_id)
+    if (mixed) {
+      toast.error(
+        lot
+          ? 'สินค้านี้นับรวมทุก lot ไว้แล้ว — เอาแถวเดิมออกก่อนถ้าจะนับแยก lot'
+          : 'สินค้านี้นับแยก lot ไว้แล้ว — เอาแถวเดิมออกก่อนถ้าจะนับรวม'
+      )
+      return false
+    }
+
+    const existing = findRow(product.id, lot)
+    // ยอดระบบล็อกไว้ตั้งแต่ครั้งแรกที่นับคู่นี้ — นับซ้ำ/แก้ตัวเลขไม่ควรเลื่อนฐานเทียบตาม
+    const system = existing?.system_quantity ?? (lot ? lotById.get(lot)?.quantity ?? 0 : stockOf(product))
     const countedAt = new Date().toISOString()
 
     const supabase = createClient()
-    const { data, error } = await supabase
-      .from('stock_count_items')
-      .upsert(
-        {
-          count_id: count.id,
-          product_id: product.id,
-          counted_quantity: counted,
-          system_quantity: system,
-          note: rowNote,
-          counted_by: userId || null,
-          counted_at: countedAt,
-        },
-        { onConflict: 'count_id,product_id' }
-      )
-      .select('id')
-      .single()
+    const payload = {
+      count_id: count.id,
+      product_id: product.id,
+      product_lot_id: lot,
+      counted_quantity: counted,
+      system_quantity: system,
+      expiry_date: expiryDate,
+      note: rowNote,
+      counted_by: userId || null,
+      counted_at: countedAt,
+    }
+
+    const { data, error } = existing
+      ? await supabase.from('stock_count_items').update(payload).eq('id', existing.id).select('id').single()
+      : await supabase.from('stock_count_items').insert(payload).select('id').single()
 
     if (error || !data) {
       toast.error('บันทึกไม่สำเร็จ: ' + (error?.message ?? ''))
       return false
     }
 
-    setRows((prev) => {
-      const row: ItemRow = {
-        id: data.id,
-        product_id: product.id,
-        counted_quantity: counted,
-        system_quantity: system,
-        applied_diff: null,
-        note: rowNote,
-        counted_at: countedAt,
-        counter: existing?.counter ?? null,
-      }
-      const rest = prev.filter((r) => r.product_id !== product.id)
-      return [row, ...rest]
-    })
+    const row: ItemRow = {
+      id: data.id,
+      product_id: product.id,
+      product_lot_id: lot,
+      counted_quantity: counted,
+      system_quantity: system,
+      applied_diff: null,
+      expiry_date: expiryDate,
+      note: rowNote,
+      counted_at: countedAt,
+      counter: existing?.counter ?? null,
+    }
+    writeRows([row, ...rowsRef.current.filter((r) => r.id !== row.id && r !== existing)])
+    intendedRef.current.set(keyOf(product.id, lot), counted)
     return true
+  }
+
+  /** ต่อคิวการบันทึก — ยิงบาร์โค้ดรัว ๆ ต้องลงฐานข้อมูลเรียงกัน ไม่ใช่พร้อมกัน */
+  function queueSave(...args: Parameters<typeof saveCount>) {
+    const run = () => saveCount(...args)
+    const next = chainRef.current.then(run, run)
+    chainRef.current = next.catch(() => {})
+    return next
   }
 
   /** ยิงบาร์โค้ด = บวกทีละชิ้น (ยิงลัง = บวกทั้งลัง) นับของบนชั้นได้โดยไม่ต้องพิมพ์ */
@@ -138,21 +222,52 @@ export default function CountClient({
     if (!bySku) return { ok: false, message: `ไม่พบสินค้าจากรหัส ${code}` }
 
     const { product, unit } = bySku
-    const step = unit?.factor ?? 1
-    const current = rows.find((r) => r.product_id === product.id)?.counted_quantity ?? 0
-    const next = current + step
+    // บาร์โค้ดบอกไม่ได้ว่าของชิ้นนี้ lot ไหน — ถ้านับแยก lot ไว้แล้วก็บวกเข้า lot นั้น
+    // ได้เมื่อมีอยู่ lot เดียว มากกว่านั้นต้องให้คนเลือกเอง
+    const lotRows = rowsRef.current.filter((r) => r.product_id === product.id && r.product_lot_id)
+    if (lotRows.length > 1) {
+      return { ok: false, message: `${product.name} นับแยก lot ไว้หลาย lot — เลือก lot ในตารางเอง` }
+    }
+    const lot = lotRows[0]?.product_lot_id ?? null
 
-    void saveCount(product, next, null)
-    return { ok: true, message: `${product.name} — นับได้ ${next} ${product.unit}` }
+    const key = keyOf(product.id, lot)
+    const step = unit?.factor ?? 1
+    const current = intendedRef.current.get(key) ?? findRow(product.id, lot)?.counted_quantity ?? 0
+    const next = current + step
+    intendedRef.current.set(key, next)
+
+    void queueSave(product, lot, next, null, null)
+    const where = lot ? ` (lot ${lotById.get(lot)?.lot_number || '—'})` : ''
+    return { ok: true, message: `${product.name}${where} — นับได้ ${next} ${product.unit}` }
   }
 
   function pick(product: CountableProduct) {
+    const lots = lotsWithStock(product)
+    const wholeRow = rowsRef.current.find((r) => r.product_id === product.id && !r.product_lot_id)
+    const lotRow = rowsRef.current.find((r) => r.product_id === product.id && r.product_lot_id)
+    // นับแยก lot ไว้แล้วก็เปิดที่ lot นั้นต่อ ไม่งั้นเริ่มที่ "รวมทุก lot" ซึ่งเป็นทางที่เร็วกว่า
+    const startLot = wholeRow ? null : lotRow?.product_lot_id ?? null
+    const row = startLot ? lotRow : wholeRow
+
     setPicked(product)
     setUnitIdx(0)
-    setNote('')
-    const current = rows.find((r) => r.product_id === product.id)
-    setQty(current ? String(current.counted_quantity) : '')
+    setLotId(startLot)
+    setExpiry(row?.expiry_date ?? '')
+    setNote(row?.note ?? '')
+    setQty(row ? String(row.counted_quantity) : '')
     setTerm('')
+    // สินค้าหลาย lot ที่ยังไม่เคยนับ ให้คนเลือก lot ก่อน จะโฟกัสช่องจำนวนก็ได้อยู่
+    if (lots.length <= 1 || row) setTimeout(() => qtyRef.current?.focus(), 0)
+  }
+
+  function switchLot(value: string) {
+    if (!picked) return
+    const lot = value || null
+    const row = findRow(picked.id, lot)
+    setLotId(lot)
+    setQty(row ? String(row.counted_quantity) : '')
+    setExpiry(row?.expiry_date ?? '')
+    setNote(row?.note ?? '')
     setTimeout(() => qtyRef.current?.focus(), 0)
   }
 
@@ -164,12 +279,21 @@ export default function CountClient({
       return
     }
     const choice = countUnitChoices(picked)[unitIdx]
-    const ok = await saveCount(picked, n * (choice?.factor ?? 1), note.trim() || null)
+    const stampable = canStampExpiry(picked, lotId)
+    const ok = await queueSave(
+      picked,
+      lotId,
+      n * (choice?.factor ?? 1),
+      note.trim() || null,
+      stampable ? expiry || null : null
+    )
     if (!ok) return
     toast.success(`บันทึก ${picked.name} แล้ว`)
     setPicked(null)
     setQty('')
     setNote('')
+    setExpiry('')
+    setLotId(null)
   }
 
   async function editCounted(row: ItemRow, value: string) {
@@ -177,26 +301,31 @@ export default function CountClient({
     if (isNaN(n) || n < 0 || n === row.counted_quantity) return
     const product = byId.get(row.product_id)
     if (!product) return
-    await saveCount(product, n, row.note)
+    await queueSave(product, row.product_lot_id, n, row.note, row.expiry_date)
   }
 
   async function removeRow(row: ItemRow) {
     const name = byId.get(row.product_id)?.name ?? 'รายการนี้'
-    if (!(await confirmDialog({ message: `เอา "${name}" ออกจากรอบนับ?` })).confirmed) return
+    const lot = row.product_lot_id ? lotById.get(row.product_lot_id) : null
+    const what = lot ? `${name} (lot ${lot.lot_number || '—'})` : name
+    if (!(await confirmDialog({ message: `เอา "${what}" ออกจากรอบนับ?` })).confirmed) return
     const supabase = createClient()
     const { error } = await supabase.from('stock_count_items').delete().eq('id', row.id)
     if (error) {
       toast.error('ลบไม่สำเร็จ: ' + error.message)
       return
     }
-    setRows((prev) => prev.filter((r) => r.id !== row.id))
+    intendedRef.current.delete(keyOf(row.product_id, row.product_lot_id))
+    writeRows(rowsRef.current.filter((r) => r.id !== row.id))
   }
 
   async function post() {
+    const withExpiry = rows.filter((r) => r.expiry_date).length
     const { confirmed } = await confirmDialog({
       message:
         `ยืนยันปรับสต็อกตามผลนับ ${summary.items} รายการ?\n` +
         `ขาด ${summary.short} · เกิน ${summary.over} · มูลค่าส่วนต่าง ${fmtBaht(summary.netValue)}\n` +
+        (withExpiry > 0 ? `เขียนวันหมดอายุทับของเดิม ${withExpiry} รายการ\n` : '') +
         'สินค้าที่ไม่ได้นับในรอบนี้จะไม่ถูกแตะ',
     })
     if (!confirmed) return
@@ -212,6 +341,9 @@ export default function CountClient({
       if (!res.ok) throw new Error(data.error ?? 'ปรับสต็อกไม่สำเร็จ')
 
       toast.success(`ปรับสต็อกแล้ว ${data.adjusted} รายการ`)
+      if (data.expiryStamped > 0) {
+        toast.success(`เขียนวันหมดอายุให้ ${data.expiryStamped} lot`, { icon: '📅' })
+      }
       if (data.shortfalls?.length > 0) {
         toast(
           `${data.shortfalls.length} รายการลดได้ไม่ครบ เพราะยอดในระบบเหลือน้อยกว่าส่วนต่าง (ขายไประหว่างนับ) — ปรับเป็น 0 ให้แล้ว`,
@@ -237,6 +369,12 @@ export default function CountClient({
     toast.success('ยกเลิกรอบนับแล้ว')
     router.refresh()
   }
+
+  const pickedLots = picked ? lotsWithStock(picked) : []
+  const pickedLot = lotId ? lotById.get(lotId) : null
+  // lot ที่วันหมดอายุจะไปลง — ไว้โชว์ว่าในระบบมีค่าอะไรอยู่ ไม่ได้ prefill ให้
+  // เพราะช่องว่าง = ไม่แตะของเดิม ถ้า prefill ไว้ทุกแถวจะกลายเป็นเขียนทับค่าเดิมทุกครั้ง
+  const expiryTarget = pickedLot ?? (pickedLots.length === 1 ? pickedLots[0] : null)
 
   return (
     <div className="max-w-4xl">
@@ -289,6 +427,7 @@ export default function CountClient({
                     <span className="text-sm text-gray-900 truncate">{p.name}</span>
                     <span className="text-xs text-gray-400 shrink-0">
                       ระบบ {stockOf(p)} {p.unit}
+                      {lotsWithStock(p).length > 1 ? ` · ${lotsWithStock(p).length} lot` : ''}
                     </span>
                   </button>
                 </li>
@@ -301,12 +440,25 @@ export default function CountClient({
               <div className="flex items-center justify-between gap-2 mb-2">
                 <div className="min-w-0">
                   <p className="text-sm font-medium text-gray-900 truncate">{picked.name}</p>
-                  <p className="text-xs text-gray-500">ยอดระบบ {stockOf(picked)} {picked.unit}</p>
+                  <p className="text-xs text-gray-500">
+                    ยอดระบบ {pickedLot ? `${pickedLot.quantity} (lot นี้)` : stockOf(picked)} {picked.unit}
+                  </p>
                 </div>
                 <button onClick={() => setPicked(null)} className="text-gray-400 hover:text-gray-600 p-1 shrink-0">
                   <X size={16} />
                 </button>
               </div>
+
+              {/* ตัวเลือก lot โผล่เฉพาะตอนมีของมากกว่าหนึ่ง lot — สินค้าเกือบทั้งร้านมี lot เดียว */}
+              {pickedLots.length > 1 && (
+                <select value={lotId ?? ''} onChange={(e) => switchLot(e.target.value)} className={`${inputClass} w-full mb-2`}>
+                  <option value="">นับรวมทุก lot — {pickedLots.length} lot รวม {stockOf(picked)} {picked.unit}</option>
+                  {pickedLots.map((l) => (
+                    <option key={l.id} value={l.id}>{lotLabel(l)}</option>
+                  ))}
+                </select>
+              )}
+
               <div className="flex flex-wrap gap-2">
                 <input
                   ref={qtyRef}
@@ -325,6 +477,13 @@ export default function CountClient({
                     </option>
                   ))}
                 </select>
+                {/* วันหมดอายุจากกล่องจริง — ไม่กรอกก็ได้ แต่ของเดิมในระบบว่างอยู่เกือบทั้งร้าน */}
+                {canStampExpiry(picked, lotId) && (
+                  <label className="flex items-center gap-1.5 text-xs text-gray-500 shrink-0">
+                    หมดอายุ
+                    <input type="date" value={expiry} onChange={(e) => setExpiry(e.target.value)} className={inputClass} />
+                  </label>
+                )}
                 <input
                   value={note}
                   onChange={(e) => setNote(e.target.value)}
@@ -338,6 +497,18 @@ export default function CountClient({
                   <Check size={15} /> บันทึก
                 </button>
               </div>
+
+              {!canStampExpiry(picked, lotId) ? (
+                <p className="text-xs text-gray-400 mt-2">
+                  มีหลาย lot — เลือก lot ก่อนถ้าจะกรอกวันหมดอายุจากกล่อง
+                </p>
+              ) : (
+                <p className="text-xs text-gray-400 mt-2">
+                  {expiryTarget?.expiry_date
+                    ? `วันหมดอายุในระบบตอนนี้ ${fmtDate(expiryTarget.expiry_date)} — กรอกเฉพาะตอนที่บนกล่องไม่ตรง`
+                    : 'ยังไม่มีวันหมดอายุในระบบ — กรอกจากกล่องได้เลย ไม่กรอกก็ได้'}
+                </p>
+              )}
             </div>
           )}
         </div>
@@ -379,15 +550,22 @@ export default function CountClient({
             )}
             {rows.map((r) => {
               const p = byId.get(r.product_id)
+              const lot = r.product_lot_id ? lotById.get(r.product_lot_id) : null
               const diff = varianceOf(r)
               const value = diff * (p?.cost ?? 0)
               return (
                 <tr key={r.id} className="hover:bg-gray-50">
                   <td className="px-4 py-3">
-                    <p className="text-sm text-gray-900">{p?.name ?? '— สินค้าถูกปิดการขาย —'}</p>
+                    <p className="text-sm text-gray-900">
+                      {p?.name ?? '— สินค้าถูกปิดการขาย —'}
+                      {r.product_lot_id && (
+                        <span className="ml-2 text-xs text-blue-600">lot {lot?.lot_number || '—'}</span>
+                      )}
+                    </p>
                     <p className="text-xs text-gray-400">
                       {r.counter?.name ? `${r.counter.name} · ` : ''}
                       {new Date(r.counted_at).toLocaleString('th-TH', { timeZone: 'Asia/Bangkok', dateStyle: 'short', timeStyle: 'short' })}
+                      {r.expiry_date ? ` · หมดอายุ ${fmtDate(r.expiry_date)}` : ''}
                       {r.note ? ` · ${r.note}` : ''}
                     </p>
                   </td>
@@ -441,14 +619,21 @@ export default function CountClient({
             </button>
             {showRemaining && (
               <ul className="border-t border-gray-100 divide-y divide-gray-50 max-h-80 overflow-y-auto">
-                {remaining.slice(0, 200).map((p) => (
-                  <li key={p.id}>
-                    <button onClick={() => pick(p)} className="w-full text-left px-5 py-2 hover:bg-gray-50 flex items-center justify-between gap-2">
-                      <span className="text-sm text-gray-700 truncate">{p.name}</span>
-                      <span className="text-xs text-gray-400 shrink-0">ระบบ {stockOf(p)} {p.unit}</span>
-                    </button>
-                  </li>
-                ))}
+                {remaining.slice(0, 200).map((p) => {
+                  const lots = lotsWithStock(p)
+                  const done = rows.filter((r) => r.product_id === p.id && r.product_lot_id).length
+                  return (
+                    <li key={p.id}>
+                      <button onClick={() => pick(p)} className="w-full text-left px-5 py-2 hover:bg-gray-50 flex items-center justify-between gap-2">
+                        <span className="text-sm text-gray-700 truncate">{p.name}</span>
+                        <span className="text-xs text-gray-400 shrink-0">
+                          ระบบ {stockOf(p)} {p.unit}
+                          {done > 0 ? ` · นับไปแล้ว ${done}/${lots.length} lot` : ''}
+                        </span>
+                      </button>
+                    </li>
+                  )
+                })}
                 {remaining.length > 200 && (
                   <li className="px-5 py-2 text-xs text-gray-400">และอีก {remaining.length - 200} รายการ — ใช้ช่องค้นหาด้านบน</li>
                 )}

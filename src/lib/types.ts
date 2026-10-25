@@ -251,11 +251,15 @@ export interface StockCountItem {
   id: string
   count_id: string
   product_id: string
+  /** lot ที่นับ — null = นับรวมทุก lot แล้วปรับส่วนต่างแบบ FEFO */
+  product_lot_id: string | null
   counted_quantity: number
   /** ยอดระบบ ณ ตอนบันทึกการนับ (ไม่ใช่ตอนกดยืนยัน) */
   system_quantity: number
   /** ส่วนต่างที่ปรับเข้าสต็อกจริงตอนยืนยัน — null = ยังไม่ยืนยัน */
   applied_diff: number | null
+  /** วันหมดอายุที่อ่านจากกล่องตอนนับ — null = ไม่ได้กรอก */
+  expiry_date: string | null
   note: string | null
   counted_by: string | null
   counted_at: string

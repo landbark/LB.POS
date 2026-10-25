@@ -26,7 +26,7 @@ export default async function StockCountDetailPage({ params }: { params: Promise
     fetchAll((from, to) =>
       supabase
         .from('products')
-        .select('id, name, sku, barcode, unit, cost, price, category_id, product_lots(quantity), product_units!product_units_product_id_fkey(id, product_id, unit_name, factor, sku, barcode, price, cost, sellable_pos, sellable_online, purchasable, sort_order, active, created_at)')
+        .select('id, name, sku, barcode, unit, cost, price, category_id, product_lots(id, lot_number, expiry_date, quantity), product_units!product_units_product_id_fkey(id, product_id, unit_name, factor, sku, barcode, price, cost, sellable_pos, sellable_online, purchasable, sort_order, active, created_at)')
         .eq('active', true)
         // ค่าบริการไม่มีของให้นับ
         .eq('is_service', false)

@@ -10,7 +10,7 @@ import { createClient } from '@supabase/supabase-js'
 import { readFileSync } from 'node:fs'
 import { resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { applyCountDiff, stockOf, summarize, varianceOf } from '../src/lib/stockCount'
+import { applyCountDiff, canStampExpiry, lotsWithStock, stockOf, summarize, varianceOf } from '../src/lib/stockCount'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 for (const line of readFileSync(resolve(ROOT, '.env.local'), 'utf8').split('\n')) {
@@ -49,6 +49,13 @@ async function makeProduct(name: string, lots: { qty: number; expiry: string | n
     })
   }
   return data.id
+}
+
+const lotIdsOf = async (productId: string) => {
+  const { data } = await supabase
+    .from('product_lots').select('id, expiry_date').eq('product_id', productId)
+    .order('expiry_date', { ascending: true, nullsFirst: false })
+  return (data ?? []).map((l) => l.id)
 }
 
 const lotsOf = async (productId: string) => {
@@ -110,6 +117,10 @@ async function main() {
 
   console.log('\n— รอบนับ: บันทึก/นับซ้ำ/สรุป —')
 
+  // ของจริงในร้านมีรอบนับที่ใช้งานแล้ว — จดไว้ก่อนเพื่อเช็กตอนจบว่าสคริปต์ไม่ไปแตะ
+  const { count: baselineItems } = await supabase
+    .from('stock_count_items').select('id', { count: 'exact', head: true })
+
   const { data: round, error: rErr } = await supabase
     .from('stock_counts')
     .insert({ count_number: `SC-TEST-${Date.now()}`, name: `${TAG} รอบทดสอบ` })
@@ -119,16 +130,19 @@ async function main() {
   made.counts.push(round.id)
   check('เปิดรอบนับได้ สถานะเริ่มต้น counting', round.status === 'counting', round.status)
 
-  // นับครั้งแรก แล้วยิงซ้ำตัวเดิม — ต้องทับแถวเดิม ไม่เกิดแถวซ้ำ (ทดสอบ UNIQUE + onConflict ที่หน้าเว็บใช้)
-  const upsert = (counted: number) =>
-    supabase.from('stock_count_items').upsert(
-      { count_id: round.id, product_id: short, counted_quantity: counted, system_quantity: 12, counted_by: null },
-      { onConflict: 'count_id,product_id' }
-    ).select('id').single()
+  // นับครั้งแรกแล้วยิงซ้ำตัวเดิม — หน้าเว็บหาแถวเดิมแล้ว update ไม่ใช่ insert ใหม่
+  const addItem = (counted: number, lot: string | null = null) =>
+    supabase.from('stock_count_items')
+      .insert({ count_id: round.id, product_id: short, product_lot_id: lot, counted_quantity: counted, system_quantity: 12, counted_by: null })
+      .select('id').single()
 
-  const first = await upsert(1)
-  const again = await upsert(9)
+  const first = await addItem(1)
+  const again = await supabase.from('stock_count_items')
+    .update({ counted_quantity: 9 }).eq('id', first.data!.id).select('id').single()
   check('ยิงซ้ำสินค้าเดิม = แก้แถวเดิม', !again.error && first.data?.id === again.data?.id, again.error?.message ?? '')
+
+  const dup = await addItem(5)
+  check('แถว "นับรวมทุก lot" ซ้ำของสินค้าเดิม ถูก DB ปฏิเสธ', !!dup.error, dup.error?.message ?? 'ไม่ error')
 
   const { count: itemCount } = await supabase
     .from('stock_count_items').select('id', { count: 'exact', head: true }).eq('count_id', round.id)
@@ -142,6 +156,116 @@ async function main() {
   ])
   check('สรุปรอบ: ขาด 1 · เกิน 1 · ตรง 1 · มูลค่าสุทธิ ฿0',
     sum.short === 1 && sum.over === 1 && sum.matched === 1 && sum.netValue === 0, JSON.stringify(sum))
+
+  console.log('\n— นับแยก lot —')
+
+  const twoLots = await makeProduct('สองล็อต', [
+    { qty: 5, expiry: '2026-12-31' },
+    { qty: 9, expiry: '2027-12-31' },
+  ])
+  const [lotNear, lotFar] = await lotIdsOf(twoLots)
+
+  // นับแยก lot ที่ไกลหมดอายุ ขาด 2 → lot ใกล้หมดอายุต้องไม่ถูกแตะ (ต่างจาก FEFO)
+  const rl1 = await applyCountDiff(supabase, { productId: twoLots, lotId: lotFar, diff: -2, reason: 'นับสต็อก TEST', createdBy: null })
+  const ll1 = await lotsOf(twoLots)
+  check('นับแยก lot → ส่วนต่างลงที่ lot นั้น ไม่ไล่ FEFO',
+    ll1[0]?.quantity === 5 && ll1[1]?.quantity === 7, JSON.stringify(ll1))
+  check('applied = -2 ไม่มี shortfall', rl1.applied === -2 && rl1.shortfall === 0, JSON.stringify(rl1))
+
+  // ของใน lot ไม่พอให้ตัด — หยุดที่ 0 ไม่ไปกิน lot อื่น
+  const rl2 = await applyCountDiff(supabase, { productId: twoLots, lotId: lotNear, diff: -8, reason: 'นับสต็อก TEST', createdBy: null })
+  const ll2 = await lotsOf(twoLots)
+  check('lot ไม่พอตัด → หยุดที่ 0 ไม่ไปกิน lot อื่น',
+    ll2[0]?.quantity === 0 && ll2[1]?.quantity === 7, JSON.stringify(ll2))
+  check('รายงาน shortfall = 3', rl2.applied === -5 && rl2.shortfall === 3, JSON.stringify(rl2))
+
+  // lot ถูกลบหลังนับแต่ก่อนกดยืนยัน
+  const ghost = await applyCountDiff(supabase, {
+    productId: twoLots, lotId: '00000000-0000-0000-0000-000000000001', diff: -3, reason: 'นับสต็อก TEST', createdBy: null,
+  })
+  check('lot หายไปก่อนกดยืนยัน → ไม่ปรับอะไร', ghost.applied === 0 && ghost.shortfall === 0, JSON.stringify(ghost))
+
+  const roundLots = await supabase.from('stock_count_items').insert([
+    { count_id: round.id, product_id: twoLots, product_lot_id: lotNear, counted_quantity: 0, system_quantity: 5, counted_by: null },
+    { count_id: round.id, product_id: twoLots, product_lot_id: lotFar, counted_quantity: 7, system_quantity: 9, counted_by: null },
+  ]).select('id')
+  check('สินค้าเดียวนับได้หลาย lot ในรอบเดียว', !roundLots.error && roundLots.data?.length === 2, roundLots.error?.message ?? '')
+
+  const dupLot = await supabase.from('stock_count_items')
+    .insert({ count_id: round.id, product_id: twoLots, product_lot_id: lotNear, counted_quantity: 1, system_quantity: 5, counted_by: null })
+  check('lot เดิมซ้ำในรอบเดิม ถูก DB ปฏิเสธ', !!dupLot.error, dupLot.error?.message ?? 'ไม่ error')
+
+  console.log('\n— วันหมดอายุที่อ่านจากกล่องตอนนับ —')
+
+  // lot เดียว ไม่มีวันหมดอายุ — นับตรง (diff 0) แต่กรอกวันหมดอายุมา
+  const stamp = await makeProduct('เขียนวันหมดอายุ', [{ qty: 6, expiry: null }])
+  const rs1 = await applyCountDiff(supabase, {
+    productId: stamp, diff: 0, expiryDate: '2027-03-15', reason: 'นับสต็อก TEST', createdBy: null,
+  })
+  const ls1 = await lotsOf(stamp)
+  check('นับตรงแต่กรอกวันหมดอายุ → เขียนลง lot ให้', ls1[0]?.expiry_date === '2027-03-15', JSON.stringify(ls1))
+  check('รายงานว่าเขียนวันหมดอายุแล้ว', rs1.stamped === true && rs1.applied === 0, JSON.stringify(rs1))
+
+  // วันที่บนกล่องเชื่อได้กว่าที่คีย์ไว้ตอนรับเข้า — ทับของเดิม
+  await applyCountDiff(supabase, {
+    productId: stamp, diff: -1, expiryDate: '2027-04-20', reason: 'นับสต็อก TEST', createdBy: null,
+  })
+  const ls2 = await lotsOf(stamp)
+  check('กรอกวันหมดอายุใหม่ → ทับของเดิม', ls2[0]?.expiry_date === '2027-04-20', JSON.stringify(ls2))
+
+  // มีหลาย lot แต่ของเหลืออยู่ lot เดียว (lot อื่นตัดหมดไปแล้ว) → เขียนได้
+  // เงื่อนไขนี้ต้องตรงกับ canStampExpiry ที่หน้าจอใช้ ไม่งั้นช่องโผล่แต่เขียนไม่ลง (หรือกลับกัน)
+  const rs3 = await applyCountDiff(supabase, {
+    productId: twoLots, diff: 0, expiryDate: '2030-01-01', reason: 'นับสต็อก TEST', createdBy: null,
+  })
+  const ls3 = await lotsOf(twoLots)
+  check('ของเหลือ lot เดียว (lot อื่นหมด) → เขียนวันหมดอายุลง lot ที่มีของ',
+    rs3.stamped === true && ls3.find((l) => l.quantity > 0)?.expiry_date === '2030-01-01', JSON.stringify(ls3))
+
+  // ของจริงอยู่สอง lot — บอกไม่ได้ว่าวันที่บนกล่องเป็นของ lot ไหน ต้องไม่เขียนอะไรเลย
+  const ambig = await makeProduct('หลายล็อตกรอกวันหมดอายุ', [
+    { qty: 4, expiry: null },
+    { qty: 6, expiry: null },
+  ])
+  const rs4 = await applyCountDiff(supabase, {
+    productId: ambig, diff: 0, expiryDate: '2030-02-02', reason: 'นับสต็อก TEST', createdBy: null,
+  })
+  const ls4 = await lotsOf(ambig)
+  check('ของอยู่หลาย lot + นับรวม → ไม่เขียนวันหมดอายุทับ lot ไหนเลย',
+    rs4.stamped === false && !ls4.some((l) => l.expiry_date === '2030-02-02'), JSON.stringify(ls4))
+
+  // เลือก lot แล้วกรอก — ลงที่ lot นั้น lot เดียว อีก lot ต้องยังว่าง
+  const [ambigLot] = await lotIdsOf(ambig)
+  const rs5 = await applyCountDiff(supabase, {
+    productId: ambig, lotId: ambigLot, diff: 0, expiryDate: '2030-02-02', reason: 'นับสต็อก TEST', createdBy: null,
+  })
+  const ls5 = await lotsOf(ambig)
+  check('เลือก lot แล้วกรอก → เขียนลง lot นั้น lot เดียว',
+    rs5.stamped === true && ls5.filter((l) => l.expiry_date === '2030-02-02').length === 1, JSON.stringify(ls5))
+
+  // สินค้าไม่มี lot เลย — lot ที่ระบบสร้างให้ต้องรับวันหมดอายุไปด้วย
+  const fresh = await makeProduct('ไม่มีล็อตแต่กรอกวันหมดอายุ', [])
+  const rs6 = await applyCountDiff(supabase, {
+    productId: fresh, diff: 3, expiryDate: '2028-08-08', reason: 'นับสต็อก TEST', createdBy: null,
+  })
+  const ls6 = await lotsOf(fresh)
+  check('ไม่มี lot → lot ที่สร้างให้ได้วันหมดอายุไปด้วย',
+    rs6.stamped === true && ls6[0]?.quantity === 3 && ls6[0]?.expiry_date === '2028-08-08', JSON.stringify(ls6))
+
+  console.log('\n— เงื่อนไขที่หน้าจอใช้ตัดสินใจ —')
+
+  const oneStocked = { id: 'x', name: '', sku: null, barcode: null, unit: 'ซอง', price: 0, cost: null, category_id: null,
+    product_lots: [{ id: 'a', lot_number: null, expiry_date: null, quantity: 4 }, { id: 'b', lot_number: null, expiry_date: null, quantity: 0 }] }
+  check('lot ที่ของหมดแล้วไม่โผล่ตัวเลือก lot', lotsWithStock(oneStocked).length === 1)
+  check('มีของ lot เดียว (ที่เหลือหมด) → กรอกวันหมดอายุได้', canStampExpiry(oneStocked, null) === true)
+
+  const twoStocked = { ...oneStocked, product_lots: [
+    { id: 'a', lot_number: null, expiry_date: '2027-01-01', quantity: 4 },
+    { id: 'b', lot_number: null, expiry_date: '2026-01-01', quantity: 2 },
+  ] }
+  check('มีของหลาย lot + นับรวม → ยังกรอกวันหมดอายุไม่ได้', canStampExpiry(twoStocked, null) === false)
+  check('มีของหลาย lot + เลือก lot แล้ว → กรอกได้', canStampExpiry(twoStocked, 'b') === true)
+  check('ตัวเลือก lot เรียงใกล้หมดอายุก่อน', lotsWithStock(twoStocked)[0].id === 'b')
 
   console.log('\n— คำสั่ง select ที่สองหน้านี้ใช้ —')
 
@@ -168,9 +292,10 @@ async function main() {
   check('สถานะนอกเหนือจากที่กำหนด ถูก DB ปฏิเสธ', !!badStatus.error)
 
   console.log('\n— ของจริงในร้านยังไม่ถูกแตะ —')
-  const { count: realItems } = await supabase
+  const { count: otherItems } = await supabase
     .from('stock_count_items').select('id', { count: 'exact', head: true }).neq('count_id', round.id)
-  check('ไม่มีรายการนับของรอบอื่นเกิดขึ้น', realItems === 0, `(ได้ ${realItems})`)
+  check('จำนวนรายการนับของรอบอื่นไม่เปลี่ยน', otherItems === baselineItems,
+    `(ก่อน ${baselineItems} หลัง ${otherItems})`)
   check('stockOf รวมยอดทุก lot', stockOf({ product_lots: [{ quantity: 3 }, { quantity: 4 }] }) === 7)
 }
 
