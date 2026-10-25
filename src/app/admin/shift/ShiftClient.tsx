@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { sumByMethod, type PaidTransaction } from '@/lib/payments'
+import { expectedCash as computeExpectedCash, splitShiftBills, type ShiftBill } from '@/lib/shiftCash'
 import { Wallet, Lock, Unlock, Pencil } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { confirmDialog } from '@/lib/confirm'
@@ -79,6 +79,9 @@ export default function ShiftClient({
   const [loadingSummary, setLoadingSummary] = useState(true)
   const [breakdown, setBreakdown] = useState<Record<string, number>>({})
   const [cashRefunds, setCashRefunds] = useState(0)
+  // เงินสดจากบิลในกะนี้ที่ถูกยกเลิกทีหลัง — รับไว้แล้วตอนขาย ต้องนับเป็นเงินเข้าเก๊ะ (ดู lib/shiftCash)
+  const [cashFromCancelled, setCashFromCancelled] = useState(0)
+  const [cancelledBills, setCancelledBills] = useState(0)
   // เงินเข้า-ออกเก๊ะระหว่างกะ (เจ้าของมารับ / เอาเงินทอนมาเติม / จ่ายค่าส่งของ)
   const [movements, setMovements] = useState<CashMovement[]>([])
   const [moveDir, setMoveDir] = useState<'in' | 'out'>('out')
@@ -96,16 +99,20 @@ export default function ShiftClient({
 
     async function loadSummary(shift: Shift) {
       const supabase = createClient()
-      const [{ data: completed }, { data: refunds }, { data: moves }] = await Promise.all([
+      const [{ data: sold }, { data: refunds }, { data: moves }] = await Promise.all([
         // ยอดขายที่บูธไม่เข้าเก๊ะที่ร้าน — คนที่ไปงานถือเงินทอนแยกไปต่างหาก (ดูสรุปที่ /admin/booth)
         // ขายผ่านแพลตฟอร์ม (Shopee/TikTok/Lazada) ก็ไม่ใช่เงินที่รับหน้าร้าน แพลตฟอร์มหักค่าธรรมเนียมแล้วโอนทีหลัง
-        supabase.from('transactions').select('total, payment_method, transaction_payments(method, amount)').eq('status', 'completed').eq('sales_channel', 'store').gte('created_at', shift.opened_at),
+        // ไม่กรอง status — บิลที่ยกเลิกทีหลังก็เคยรับเงินสดเข้าเก๊ะตอนขาย ต้องเอามาคิดด้วย
+        supabase.from('transactions').select('status, total, payment_method, transaction_payments(method, amount)').eq('sales_channel', 'store').gte('created_at', shift.opened_at),
         supabase.from('transactions').select('total').eq('status', 'cancelled').eq('refund_method', 'cash').gte('cancelled_at', shift.opened_at),
         supabase.from('cash_movements').select('*, profiles(name)').eq('shift_id', shift.id).order('created_at'),
       ])
       if (cancelled) return
       setMovements((moves as unknown as CashMovement[]) ?? [])
-      setBreakdown(sumByMethod((completed ?? []) as PaidTransaction[]))
+      const split = splitShiftBills((sold ?? []) as unknown as ShiftBill[])
+      setBreakdown(split.byMethod)
+      setCashFromCancelled(split.cashFromCancelled)
+      setCancelledBills(split.cancelledBills)
       setCashRefunds((refunds ?? []).reduce((s, t) => s + t.total, 0))
       setLoadingSummary(false)
     }
@@ -118,8 +125,13 @@ export default function ShiftClient({
   const cashSales = breakdown.cash ?? 0
   const cashIn = movements.filter((m) => m.direction === 'in').reduce((s, m) => s + Number(m.amount), 0)
   const cashOut = movements.filter((m) => m.direction === 'out').reduce((s, m) => s + Number(m.amount), 0)
-  // เงินที่ควรมีในลิ้นชัก = ตั้งต้น + ขายเงินสด − คืนเงินสด + เติมเข้า − หยิบออก
-  const expectedCash = openShift ? openShift.opening_cash + cashSales - cashRefunds + cashIn - cashOut : 0
+  // เงินที่ควรมีในลิ้นชัก = ตั้งต้น + ขายเงินสด + เงินสดจากบิลที่ยกเลิกทีหลัง − คืนเงินสด + เติมเข้า − หยิบออก
+  const expectedCash = openShift
+    ? computeExpectedCash({
+        openingCash: openShift.opening_cash,
+        cashSales, cashFromCancelled, cashRefunds, cashIn, cashOut,
+      })
+    : 0
   const hasCount = DENOMS.some((d) => (counts[d.value] ?? '') !== '')
   const counted = DENOMS.reduce((s, d) => s + d.value * (parseInt(counts[d.value] || '0', 10) || 0), 0)
   const qtyOf = (c: Record<number, string>, v: number) => parseInt(c[v] || '0', 10) || 0
@@ -236,9 +248,14 @@ export default function ShiftClient({
         owner_denominations: ownerDenominations,
         // สรุปเงินเข้า-ออกลงหมายเหตุด้วย เปิดดูประวัติกะย้อนหลังจะได้รู้ว่าทำไมยอดที่ควรมีไม่เท่ากับขายเงินสด
         notes: [
+          // audit line ที่เขียนไว้ตอนเปิดกะ/แก้เงินตั้งต้น ต้องไม่หายไปตอนปิดกะ
+          openShift.notes?.trim(),
           notes.trim(),
           movements.length > 0
             ? `เงินเข้าเก๊ะ ฿${money(cashIn)} · ออกจากเก๊ะ ฿${money(cashOut)} (${movements.length} รายการ)`
+            : '',
+          cashFromCancelled > 0 || cashRefunds > 0
+            ? `บิลที่ยกเลิก: เงินสดที่รับไว้ ฿${money(cashFromCancelled)} · คืนเงินสด ฿${money(cashRefunds)}`
             : '',
         ].filter(Boolean).join('\n') || null,
       })
@@ -415,6 +432,11 @@ export default function ShiftClient({
                       <span>ขาย{label}</span><span>฿{money(breakdown[key])}</span>
                     </div>
                   ) : null
+                )}
+                {cashFromCancelled > 0 && (
+                  <div className="flex justify-between text-gray-500" title="บิลที่ขายในกะนี้แล้วยกเลิกทีหลัง — เงินสดเข้าเก๊ะไปแล้วตอนขาย ถ้าคืนเงินสดไปแล้วจะมีบรรทัดคืนเงินหักกลบด้านล่าง">
+                    <span>เงินสดจากบิลที่ยกเลิกภายหลัง ({cancelledBills} ใบ)</span><span>+฿{money(cashFromCancelled)}</span>
+                  </div>
                 )}
                 {cashRefunds > 0 && (
                   <div className="flex justify-between text-red-500">
