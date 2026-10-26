@@ -1,0 +1,6 @@
+# HTTPS ขอใบจาก Let's Encrypt ให้อัตโนมัติ และต่ออายุเองด้วย
+{$DOMAIN} {
+	# Next บีบอัด response ให้อยู่แล้ว ไม่ต้อง encode ซ้ำตรงนี้
+	# reverse_proxy แนบ X-Forwarded-For ให้เอง — lib/rate-limit.ts อ่านค่านี้หา ip ผู้เรียก
+	reverse_proxy app:3000
+}

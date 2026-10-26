@@ -1,0 +1,55 @@
+# LANDBARK POS — รันบน VPS
+#
+#   docker compose up -d --build
+#
+# Caddy ขอใบ HTTPS จาก Let's Encrypt ให้เองตอนขึ้นครั้งแรก ไม่ต้องตั้งอะไรเพิ่ม
+# ขอแค่ DNS ของโดเมนชี้มาที่ IP เครื่องนี้แล้ว และพอร์ต 80/443 เปิดอยู่
+
+services:
+  app:
+    build:
+      context: .
+      args:
+        # ต้องส่งตอน build เพราะค่าพวกนี้ถูกฝังลงบันเดิลฝั่งเบราว์เซอร์ (ดู Dockerfile)
+        NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL}
+        NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY}
+        NEXT_PUBLIC_SITE_URL: ${NEXT_PUBLIC_SITE_URL}
+        NEXT_PUBLIC_LIFF_ID: ${NEXT_PUBLIC_LIFF_ID}
+        NEXT_PUBLIC_TELEGRAM_BOT_USERNAME: ${NEXT_PUBLIC_TELEGRAM_BOT_USERNAME}
+        # /api/favicon ถูก prerender ตอน build และต้องอ่านโลโก้ร้านจาก Supabase
+        SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY}
+    # ส่วนที่อ่านตอนรัน (service role key, secret ต่าง ๆ) มาจากไฟล์ .env
+    env_file: .env
+    restart: unless-stopped
+    expose:
+      - "3000"
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - fetch('http://127.0.0.1:3000/login').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))
+      interval: 30s
+      timeout: 10s
+      start_period: 40s
+      retries: 3
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # ใบรับรองอยู่ใน volume — ไม่งั้นรีสตาร์ททีขอใหม่ที แล้วโดน Let's Encrypt จำกัดจำนวน
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - app
+
+volumes:
+  caddy_data:
+  caddy_config:

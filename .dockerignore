@@ -1,0 +1,26 @@
+# ของที่ไม่ต้องส่งเข้า build context — ยิ่งเล็ก build ยิ่งไว
+node_modules
+.next
+.git
+.github
+.vercel
+
+# ความลับ ห้ามหลุดเข้า image เด็ดขาด
+.env
+.env.*
+!.env.example
+
+# ข้อมูลสำรอง มีข้อมูลลูกค้าทั้งหมด
+backups
+
+# คู่มือ/ไฟล์ที่ build ออกมาทีหลัง ไม่ได้ใช้ตอนรัน
+docs
+*.pdf
+
+# migration รันมือที่ Supabase ไม่เกี่ยวกับ image
+*.sql
+
+Dockerfile
+.dockerignore
+docker-compose.yml
+Caddyfile
