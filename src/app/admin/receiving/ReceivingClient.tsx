@@ -10,6 +10,9 @@ import toast from 'react-hot-toast'
 import type { PurchaseStatus, Supplier } from '@/lib/types'
 import { ProductPicker, MultiPicker, StockBadge, UnitSelect, newItem, inputClass, findUnitChoice, factorOfRow, type ProductOption, type ItemRow } from './pickers'
 
+// เลขที่ใบรับของอิงเวลาที่กดบันทึก — อยู่นอกคอมโพเนนต์ให้ชัดว่าไม่ใช่ค่าที่คิดตอน render
+const newPurchaseNumber = () => `PO${Date.now()}`
+
 interface PurchaseRow {
   id: string
   purchase_number: string
@@ -127,7 +130,7 @@ export default function ReceivingClient({ suppliers, products, purchases }: Prop
     const { data: purchase, error: pErr } = await supabase
       .from('purchases')
       .insert({
-        purchase_number: `PO${Date.now()}`,
+        purchase_number: newPurchaseNumber(),
         supplier_id: supplierId || null,
         total_cost: totalCost,
         notes: notes.trim() || null,

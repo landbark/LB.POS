@@ -2,8 +2,27 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { X, Flashlight, FlashlightOff, Loader2, SwitchCamera, Check } from 'lucide-react'
+import type { DecodeHintType } from '@zxing/library'
 
 export type ScanFeedback = { ok: boolean; message: string }
+
+// focusMode / zoom / torch ใช้ได้จริงบนมือถือ แต่ยังไม่อยู่ใน lib.dom — ประกาศเพิ่มเอง
+type AdvancedConstraint = MediaTrackConstraintSet & {
+  focusMode?: string
+  zoom?: number
+  torch?: boolean
+}
+
+type CameraCapabilities = MediaTrackCapabilities & {
+  torch?: boolean
+  zoom?: { min?: number }
+}
+
+// Chrome บน Android อ่านบาร์โค้ดได้เองในตัว แต่ TS ยังไม่มี type ของ BarcodeDetector ให้
+interface BarcodeDetectorCtor {
+  new (options: { formats: string[] }): { detect(source: HTMLVideoElement): Promise<{ rawValue: string }[]> }
+  getSupportedFormats?: () => Promise<string[]>
+}
 
 interface Props {
   // คืนข้อความไปโชว์ใต้กล้อง — ยิงรัวได้ไม่ต้องปิดเปิดใหม่ทีละชิ้น
@@ -26,7 +45,9 @@ const BACK_LENS = /back|rear|environment|หลัง/i
 
 function beep() {
   try {
-    const Ctx = window.AudioContext ?? (window as any).webkitAudioContext
+    const Ctx =
+      window.AudioContext ??
+      (window as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
     if (!Ctx) return
     const ctx = new Ctx()
     const osc = ctx.createOscillator()
@@ -111,6 +132,8 @@ export default function BarcodeScanner({ onDetect, onClose }: Props) {
   }
 
   useEffect(() => {
+    // จับ element ไว้ตั้งแต่ต้น — ตอน cleanup ทำงาน videoRef.current อาจถูกเคลียร์ไปแล้ว
+    const videoEl = videoRef.current
     let stopped = false
     let stream: MediaStream | null = null
     let controls: { stop: () => void } | null = null
@@ -121,7 +144,7 @@ export default function BarcodeScanner({ onDetect, onClose }: Props) {
         width: { ideal: 1280 },
         height: { ideal: 720 },
         // เลนส์หลักมักโฟกัสใกล้ได้ดีที่สุดตอนไม่ซูม — เครื่องที่ default มาที่ 2x/3x จะถูกดึงกลับ
-        advanced: [{ focusMode: 'continuous' }] as any,
+        advanced: [{ focusMode: 'continuous' }] as AdvancedConstraint[],
       }
       if (id) video.deviceId = { exact: id }
       else video.facingMode = { ideal: 'environment' }
@@ -137,9 +160,10 @@ export default function BarcodeScanner({ onDetect, onClose }: Props) {
 
       try {
         stream = await openCamera(deviceId)
-      } catch (e: any) {
+      } catch (e) {
+        const name = (e as { name?: string } | null)?.name
         // กล้องที่จำไว้หายไป (เปลี่ยนเครื่อง/ถอนสิทธิ์) — ถอยไปใช้กล้องหลังตัวไหนก็ได้
-        if (deviceId && (e?.name === 'OverconstrainedError' || e?.name === 'NotFoundError')) {
+        if (deviceId && (name === 'OverconstrainedError' || name === 'NotFoundError')) {
           try {
             localStorage.removeItem(DEVICE_KEY)
           } catch { /* ไม่เป็นไร */ }
@@ -147,7 +171,7 @@ export default function BarcodeScanner({ onDetect, onClose }: Props) {
           return
         }
         setError(
-          e?.name === 'NotAllowedError'
+          name === 'NotAllowedError'
             ? 'ไม่ได้รับอนุญาตให้ใช้กล้อง — กดไอคอนกล้อง/แม่กุญแจบนแถบที่อยู่เว็บเพื่ออนุญาต'
             : 'เปิดกล้องไม่ได้ — อาจมีแอปอื่นใช้กล้องอยู่',
         )
@@ -160,19 +184,21 @@ export default function BarcodeScanner({ onDetect, onClose }: Props) {
         return
       }
 
-      const video = videoRef.current
+      const video = videoEl
       if (!video) return
 
       const track = stream.getVideoTracks()[0]
       trackRef.current = track ?? null
-      const caps: any = track?.getCapabilities?.() ?? {}
+      const caps: CameraCapabilities = track?.getCapabilities?.() ?? {}
       setTorchable(Boolean(caps.torch))
       setTorchOn(false)
       setActiveId(track?.getSettings?.().deviceId ?? null)
 
       // บางเครื่องเปิดกล้องมาที่ซูม 2x-3x ค้างไว้ ทำให้ส่องบาร์โค้ดระยะมือแล้วเบลอ — ดึงกลับสุด
       if (caps.zoom && typeof caps.zoom.min === 'number') {
-        await track.applyConstraints({ advanced: [{ zoom: caps.zoom.min }] } as any).catch(() => {})
+        await track
+          .applyConstraints({ advanced: [{ zoom: caps.zoom.min }] as AdvancedConstraint[] })
+          .catch(() => {})
       }
 
       // ชื่อกล้องจะอ่านได้ก็ต่อเมื่อได้สิทธิ์ใช้กล้องแล้ว — เลยมาถามรายชื่อตอนนี้
@@ -200,7 +226,7 @@ export default function BarcodeScanner({ onDetect, onClose }: Props) {
       setStarting(false)
 
       // Chrome บน Android อ่านบาร์โค้ดได้เองในตัว เร็วกว่าและกินแบตน้อยกว่า
-      const Detector = (window as any).BarcodeDetector
+      const Detector = (window as { BarcodeDetector?: BarcodeDetectorCtor }).BarcodeDetector
       if (Detector) {
         try {
           const supported: string[] = (await Detector.getSupportedFormats?.()) ?? []
@@ -231,7 +257,7 @@ export default function BarcodeScanner({ onDetect, onClose }: Props) {
         import('@zxing/library'),
       ])
       if (stopped) return
-      const hints = new Map<number, unknown>()
+      const hints = new Map<DecodeHintType, unknown>()
       hints.set(DecodeHintType.POSSIBLE_FORMATS, [
         BarcodeFormat.EAN_13,
         BarcodeFormat.EAN_8,
@@ -243,7 +269,7 @@ export default function BarcodeScanner({ onDetect, onClose }: Props) {
         BarcodeFormat.CODABAR,
       ])
       hints.set(DecodeHintType.TRY_HARDER, true)
-      const reader = new BrowserMultiFormatReader(hints as any, { delayBetweenScanAttempts: 120 })
+      const reader = new BrowserMultiFormatReader(hints, { delayBetweenScanAttempts: 120 })
       controls = await reader.decodeFromVideoElement(video, (result) => {
         if (result) handleCode(result.getText())
       })
@@ -258,8 +284,7 @@ export default function BarcodeScanner({ onDetect, onClose }: Props) {
       controls?.stop()
       stream?.getTracks().forEach((t) => t.stop())
       trackRef.current = null
-      const video = videoRef.current
-      if (video) video.srcObject = null
+      if (videoEl) videoEl.srcObject = null
     }
   }, [handleCode, deviceId])
 
@@ -268,7 +293,7 @@ export default function BarcodeScanner({ onDetect, onClose }: Props) {
     if (!track) return
     const next = !torchOn
     try {
-      await track.applyConstraints({ advanced: [{ torch: next }] } as any)
+      await track.applyConstraints({ advanced: [{ torch: next }] as AdvancedConstraint[] })
       setTorchOn(next)
     } catch {
       setTorchable(false)

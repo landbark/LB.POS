@@ -207,6 +207,10 @@ export default function LotManager({ productId, lots, unit, userId }: Props) {
   }
 
   const today = new Date().toISOString().split('T')[0]
+  // เส้นแบ่ง "ใกล้หมดอายุ" คิดครั้งเดียวจาก today — เดิมคิดใหม่ทุกแถวตอน render
+  const expiringSoonCutoff = new Date(Date.parse(today) + 30 * 24 * 60 * 60 * 1000)
+    .toISOString()
+    .split('T')[0]
   const inputClass = 'w-full border border-gray-300 rounded px-2.5 py-2 text-sm'
 
   return (
@@ -342,7 +346,7 @@ export default function LotManager({ productId, lots, unit, userId }: Props) {
           const soldOut = lot.quantity === 0
           const isExpired = !soldOut && lot.expiry_date && lot.expiry_date < today
           const isExpiringSoon = !soldOut && lot.expiry_date && lot.expiry_date >= today &&
-            lot.expiry_date <= new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+            lot.expiry_date <= expiringSoonCutoff
           const isEditing = editingId === lot.id
 
           return (

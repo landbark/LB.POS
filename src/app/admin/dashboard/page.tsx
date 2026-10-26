@@ -4,6 +4,7 @@ import { thaiToday, thaiDateIn, thaiDayRange } from '@/lib/thaiDate'
 import { Package, ShoppingBag, AlertTriangle, TrendingUp, Clock, CalendarClock, Syringe } from 'lucide-react'
 import { dueVaccinations, graceDaysFrom } from '@/lib/vaccines'
 import { fetchAll } from '@/lib/supabase/fetch-all'
+import { toOne } from '@/lib/supabase/embed'
 import { APPOINTMENT_TYPE_LABELS, type AppointmentType } from '@/lib/types'
 import StaffRequests, { type StaffRequest } from '../settings/StaffRequests'
 
@@ -220,17 +221,20 @@ export default async function DashboardPage() {
             สินค้าใกล้หมดอายุ (ภายใน 30 วัน)
           </h2>
           <div className="space-y-2">
-            {expiringSoon.map((lot, i) => (
-              <div key={i} className="flex justify-between text-sm">
-                <span className="text-gray-700">
-                  {(lot.products as any)?.name}
-                  <span className="text-gray-400"> · เหลือ {lot.quantity} {(lot.products as any)?.unit}</span>
-                </span>
-                <span className="text-red-600 font-medium">
-                  หมดอายุ {new Date(lot.expiry_date!).toLocaleDateString('th-TH')}
-                </span>
-              </div>
-            ))}
+            {expiringSoon.map((lot, i) => {
+              const p = toOne<{ name: string; unit: string }>(lot.products)
+              return (
+                <div key={i} className="flex justify-between text-sm">
+                  <span className="text-gray-700">
+                    {p?.name}
+                    <span className="text-gray-400"> · เหลือ {lot.quantity} {p?.unit}</span>
+                  </span>
+                  <span className="text-red-600 font-medium">
+                    หมดอายุ {new Date(lot.expiry_date!).toLocaleDateString('th-TH')}
+                  </span>
+                </div>
+              )
+            })}
           </div>
         </div>
       )}

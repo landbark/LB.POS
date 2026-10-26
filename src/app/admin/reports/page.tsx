@@ -4,6 +4,7 @@ import { fetchAll } from '@/lib/supabase/fetch-all'
 import { thaiDayRange, thaiMonthStart } from '@/lib/thaiDate'
 import { sumByMethod, type PaidTransaction } from '@/lib/payments'
 import { isOwnMoney, OWN_MONEY_CHANNELS } from '@/lib/salesChannel'
+import { toOne } from '@/lib/supabase/embed'
 
 export default async function ReportsPage() {
   const supabase = await createClient()
@@ -166,8 +167,8 @@ export default async function ReportsPage() {
                 <td className="px-4 py-3 text-sm text-gray-600">
                   {new Date(tx.created_at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}
                 </td>
-                <td className="px-4 py-3 text-sm text-gray-700">{(tx.profiles as any)?.name ?? '—'}</td>
-                <td className="px-4 py-3 text-sm text-gray-700">{(tx.customers as any)?.name ?? '—'}</td>
+                <td className="px-4 py-3 text-sm text-gray-700">{toOne<{ name: string }>(tx.profiles)?.name ?? '—'}</td>
+                <td className="px-4 py-3 text-sm text-gray-700">{toOne<{ name: string }>(tx.customers)?.name ?? '—'}</td>
                 <td className="px-4 py-3 text-sm text-gray-600">{PAYMENT_TH[tx.payment_method] ?? tx.payment_method}</td>
                 <td className="px-4 py-3 text-sm font-semibold text-gray-900 text-right">
                   ฿{tx.total.toFixed(2)}

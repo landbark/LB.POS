@@ -11,20 +11,18 @@ const DEBOUNCE_MS = 250
  * และไม่ต้องส่งรายชื่อลูกค้าทั้งร้านไปกับทุกครั้งที่เปิดหน้า
  */
 export function useLookup<T>(type: 'pets' | 'customers', query: string, enabled = true) {
-  const [results, setResults] = useState<T[]>([])
-  const [loading, setLoading] = useState(false)
+  // เก็บคำค้นไว้คู่กับผลลัพธ์ของมัน — "กำลังโหลด" คือผลที่ถืออยู่ยังไม่ใช่ของคำค้นปัจจุบัน
+  // คิดเอาแบบนี้แทนการ setState ตรงๆ ในบอดี้ของ effect ซึ่งทำให้ render ซ้อนกันเป็นทอดๆ
+  const [done, setDone] = useState<{ q: string; results: T[] }>({ q: '', results: [] })
+
+  const q = query.trim()
+  const active = enabled && q.length > 0
 
   useEffect(() => {
-    const q = query.trim()
-    if (!enabled || q.length === 0) {
-      setResults([])
-      setLoading(false)
-      return
-    }
+    if (!active) return
 
     let cancelled = false
     const controller = new AbortController()
-    setLoading(true)
 
     const timer = setTimeout(async () => {
       try {
@@ -33,11 +31,10 @@ export function useLookup<T>(type: 'pets' | 'customers', query: string, enabled 
           { signal: controller.signal }
         )
         const data = await res.json()
-        if (!cancelled) setResults(data.results ?? [])
+        if (!cancelled) setDone({ q, results: data.results ?? [] })
       } catch {
-        // ยกเลิกเพราะพิมพ์ต่อ หรือเน็ตสะดุด — ปล่อยผลเดิมไว้
-      } finally {
-        if (!cancelled) setLoading(false)
+        // ยกเลิกเพราะพิมพ์ต่อ หรือเน็ตสะดุด — ปล่อยผลเดิมไว้ แต่เลิกขึ้นว่ากำลังโหลด
+        if (!cancelled) setDone((prev) => ({ q, results: prev.results }))
       }
     }, DEBOUNCE_MS)
 
@@ -46,7 +43,11 @@ export function useLookup<T>(type: 'pets' | 'customers', query: string, enabled 
       clearTimeout(timer)
       controller.abort()
     }
-  }, [type, query, enabled])
+  }, [type, q, active])
 
-  return { results, loading }
+  return {
+    // ช่องว่างหรือปิดอยู่ = ไม่มีผลลัพธ์ ไม่ต้องล้าง state ทิ้ง
+    results: active ? done.results : [],
+    loading: active && done.q !== q,
+  }
 }

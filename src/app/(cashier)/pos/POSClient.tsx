@@ -1,11 +1,11 @@
 'use client'
 
-import { useState, useEffect, useMemo, useRef, useCallback, useDeferredValue } from 'react'
+import { useState, useEffect, useMemo, useRef, useCallback, useDeferredValue, useSyncExternalStore } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Search, X, Plus, Minus, ShoppingCart, User, MonitorPlay, Stethoscope, ScanBarcode, Store, AlertTriangle } from 'lucide-react'
 import toast from 'react-hot-toast'
-import type { Product, ProductUnit, CartItem, Promotion, PointsConfig, Customer, PaymentMethod, ClinicQueueVisit, RoundingMode } from '@/lib/types'
+import type { Product, ProductUnit, CartItem, Promotion, PointsConfig, Customer, ClinicQueueVisit, RoundingMode } from '@/lib/types'
 import { bestPromotion } from '@/lib/promotions'
 import { baseQty, factorOf, findByBarcode, posUnitChoices, unitNameOf, unitPriceOf } from '@/lib/productUnits'
 import { POS_DISPLAY_CHANNEL, type PosDisplayMessage } from '@/lib/posDisplay'
@@ -13,8 +13,16 @@ import PaymentModal from './PaymentModal'
 import { confirmDialog } from '@/lib/confirm'
 import BarcodeScanner, { type ScanFeedback } from '@/components/BarcodeScanner'
 import OpenShiftModal from '@/components/OpenShiftModal'
-import { withBoothPrices } from '@/lib/booth'
+import { withBoothPrices, getBoothTrip, getBoothTripOnServer, setBoothTrip, subscribeBoothTrip } from '@/lib/booth'
 import { openCustomerDisplay } from '@/lib/posDisplayWindow'
+
+// เครื่องที่ใช้เมาส์ยิงด้วยเครื่องยิงบาร์โค้ดอยู่แล้ว ไม่ต้องมีปุ่มกล้อง
+// อ่านผ่าน useSyncExternalStore เพื่อให้ฝั่ง server ได้ false เสมอ html จะได้ไม่ต่างกับฝั่ง client
+const canScanOnThisDevice = () =>
+  Boolean(navigator.mediaDevices?.getUserMedia) && window.matchMedia('(pointer: coarse)').matches
+// ค่าไม่เปลี่ยนระหว่างใช้งาน ไม่ต้อง subscribe อะไร
+const neverChanges = () => () => {}
+const noCameraOnServer = () => false
 
 /** รอบออกบูธที่เปิดอยู่ — ไม่มีรอบเปิด (null) ก็กดโหมดบูธไม่ได้ */
 export interface BoothContext {
@@ -89,50 +97,26 @@ export default function POSClient({ products: allProducts, booth, shiftOpen, pro
   const [showPayment, setShowPayment] = useState(false)
   const [categoryFilter, setCategoryFilter] = useState('')
   // โหมดบูธ — จำไว้ที่เครื่อง ไม่ใช่ที่บัญชี: เครื่องที่ไปงานเปิดไว้ ส่วนเครื่องที่ร้านยังขายราคาปกติ
-  const [boothMode, setBoothMode] = useState(false)
+  // อ่านจาก localStorage ตรงๆ ผ่าน store (ดู lib/booth) ไม่ต้องมี state ให้ sync กันสองทาง
+  const boothTrip = useSyncExternalStore(subscribeBoothTrip, getBoothTrip, getBoothTripOnServer)
+  // รอบปิดไปแล้วโหมดก็ปิดเอง ไม่งั้นวันรุ่งขึ้นที่ร้านจะขายราคาบูธโดยไม่รู้ตัว
+  const boothMode = Boolean(booth) && boothTrip === booth?.id
   // ในโหมดบูธปกติโชว์เฉพาะของในใบเบิก — ติ๊กอันนี้ถ้าต้องขายตัวที่ลืมลงใบ
   const [boothShowAll, setBoothShowAll] = useState(false)
   // เปิดกะจากหน้าขายได้เลย — เดินไปหน้าปิดกะตอนลูกค้ายืนรอแล้วตะกร้าหาย คนก็เลยข้ามการเปิดกะ
   const [showOpenShift, setShowOpenShift] = useState(false)
   const searchRef = useRef<HTMLInputElement>(null)
   const [showScanner, setShowScanner] = useState(false)
-  // ปุ่มกล้องโชว์เฉพาะมือถือ/แท็บเล็ตที่เปิดกล้องได้ — เครื่องที่ใช้เมาส์ยิงด้วยเครื่องยิงอยู่แล้ว
-  // เช็คหลัง mount ไม่ให้ html ฝั่ง server ไม่ตรงกับฝั่ง client
-  const [canScan, setCanScan] = useState(false)
-  useEffect(() => {
-    setCanScan(
-      Boolean(navigator.mediaDevices?.getUserMedia) &&
-        window.matchMedia('(pointer: coarse)').matches,
-    )
-  }, [])
-
-  // อ่านค่าที่เครื่องนี้ตั้งไว้หลัง mount (ฝั่ง server ไม่มี localStorage จะทำให้ html ไม่ตรงกัน)
-  // รอบปิดไปแล้วก็ปิดโหมดให้เอง ไม่งั้นวันรุ่งขึ้นที่ร้านจะขายราคาบูธโดยไม่รู้ตัว
-  useEffect(() => {
-    if (!booth) {
-      setBoothMode(false)
-      return
-    }
-    try {
-      setBoothMode(localStorage.getItem('lb_booth_trip') === booth.id)
-    } catch {
-      // โหมดส่วนตัว/ปิดคุกกี้ — ไม่เป็นไร เริ่มที่โหมดปกติ
-    }
-  }, [booth])
+  // ปุ่มกล้องโชว์เฉพาะมือถือ/แท็บเล็ตที่เปิดกล้องได้
+  const canScan = useSyncExternalStore(neverChanges, canScanOnThisDevice, noCameraOnServer)
 
   function toggleBoothMode(on: boolean) {
     if (cart.length > 0) {
       toast.error('เคลียร์ตะกร้าก่อนสลับโหมด — ราคาในตะกร้าจะไม่เปลี่ยนตาม')
       return
     }
-    setBoothMode(on)
+    setBoothTrip(on && booth ? booth.id : null)
     setCategoryFilter('')
-    try {
-      if (on && booth) localStorage.setItem('lb_booth_trip', booth.id)
-      else localStorage.removeItem('lb_booth_trip')
-    } catch {
-      // เก็บไม่ได้ก็ใช้ได้ปกติ แค่ต้องกดใหม่ถ้ารีเฟรชหน้า
-    }
   }
 
   // บอกให้รู้ทุกครั้งว่าทำไมไม่ไปจอที่สอง — ไม่งั้นกดแล้วหน้าต่างโผล่ที่เดิมโดยไม่รู้สาเหตุ
@@ -202,7 +186,7 @@ export default function POSClient({ products: allProducts, booth, shiftOpen, pro
     new Map(
       products
         .filter((p) => p.categories)
-        .map((p) => [(p.categories as any).name, (p.categories as any).name])
+        .map((p) => [p.categories!.name, p.categories!.name])
     ).values()
   )
 
@@ -212,7 +196,7 @@ export default function POSClient({ products: allProducts, booth, shiftOpen, pro
   const deferredSearch = useDeferredValue(search)
   const q = deferredSearch.trim().toLowerCase()
   const filtered = products.filter((p) => {
-    const matchCategory = !categoryFilter || (p.categories as any)?.name === categoryFilter
+    const matchCategory = !categoryFilter || p.categories?.name === categoryFilter
     // สินค้าสต็อค 0 ยังโชว์ — ของบนชั้นมักมีจริงแม้ยอดในระบบหมด ขายได้แล้วให้สต็อคติดลบไว้ฟ้องว่าต้องนับใหม่
     return matchesQuery(p, q) && matchCategory
   })
@@ -229,14 +213,14 @@ export default function POSClient({ products: allProducts, booth, shiftOpen, pro
   function getProductStock(product: Product): number {
     // บริการ (ค่าตรวจ/ค่าหัตถการ) ไม่มีล็อตให้ตัด — ไม่จำกัดจำนวนที่ขายได้
     if (product.is_service) return Infinity
-    return (product.product_lots ?? []).reduce((s: number, l: any) => s + l.quantity, 0)
+    return (product.product_lots ?? []).reduce((s, l) => s + l.quantity, 0)
   }
 
   // Pick the lot with the earliest expiry (FEFO) with stock
   function getBestLot(product: Product): string | null {
     const lots = (product.product_lots ?? [])
-      .filter((l: any) => l.quantity > 0)
-      .sort((a: any, b: any) => {
+      .filter((l) => l.quantity > 0)
+      .sort((a, b) => {
         if (!a.expiry_date) return 1
         if (!b.expiry_date) return -1
         return a.expiry_date.localeCompare(b.expiry_date)
@@ -252,7 +236,7 @@ export default function POSClient({ products: allProducts, booth, shiftOpen, pro
   function applyPromotion(product: Product, baseQuantity: number, gross: number) {
     return bestPromotion(
       promotions,
-      { id: product.id, category_id: (product as any).category_id, price: product.price },
+      { id: product.id, category_id: product.category_id, price: product.price },
       baseQuantity,
       gross,
     )
@@ -558,7 +542,7 @@ export default function POSClient({ products: allProducts, booth, shiftOpen, pro
     // หาคู่จากข้อความสดในช่อง ไม่ใช้ผลกรองของกริดที่ตั้งใจให้ตามหลัง
     const live = text.toLowerCase()
     const matches = products.filter(
-      (p) => matchesQuery(p, live) && (!categoryFilter || (p.categories as any)?.name === categoryFilter),
+      (p) => matchesQuery(p, live) && (!categoryFilter || p.categories?.name === categoryFilter),
     )
     if (matches.length === 1) {
       addToCart(matches[0])

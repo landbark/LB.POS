@@ -4,6 +4,7 @@ import { AlertTriangle, History } from 'lucide-react'
 import Link from '@/components/ProgressLink'
 import SearchBox from '@/components/SearchBox'
 import ScanToProductButton from './ScanToProductButton'
+import { toOne } from '@/lib/supabase/embed'
 
 /** ล็อตสินค้าสะสมขึ้นทุกครั้งที่รับของ — แสดงทีละหน้า แล้วให้ค้นที่ server */
 const PAGE_SIZE = 200
@@ -66,7 +67,7 @@ export default async function InventoryPage({
   )
 
   function LotRow({ lot, highlight }: { lot: typeof activeLots[0]; highlight?: 'expired' | 'soon' }) {
-    const p = lot.products as any
+    const p = toOne<{ name: string; sku: string | null; unit: string }>(lot.products)
     return (
       <tr className="hover:bg-gray-50">
         <td className="px-4 py-3 text-sm font-medium text-gray-900">{p?.name}</td>

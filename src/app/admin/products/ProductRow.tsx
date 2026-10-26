@@ -26,6 +26,10 @@ export default function ProductRow({
   const clinicOnly = isClinicOnly(product)
   const vat = isVatApplicable(product)
   const today = new Date().toISOString().split('T')[0]
+  // เส้นแบ่ง "ใกล้หมดอายุ" คิดครั้งเดียวจาก today — เดิมคิดใหม่ทุกแถวตอน render
+  const expiringSoonCutoff = new Date(Date.parse(today) + 30 * 24 * 60 * 60 * 1000)
+    .toISOString()
+    .split('T')[0]
 
   return (
     <>
@@ -151,7 +155,7 @@ export default function ProductRow({
                     const soldOut = lot.quantity === 0
                     const isExpired = !soldOut && lot.expiry_date && lot.expiry_date < today
                     const isExpiringSoon = !soldOut && lot.expiry_date && lot.expiry_date >= today &&
-                      lot.expiry_date <= new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+                      lot.expiry_date <= expiringSoonCutoff
                     return (
                       <tr key={lot.id}>
                         <td className="py-1.5 text-sm text-gray-700 font-mono">{lot.lot_number || 'ไม่ระบุ lot'}</td>
