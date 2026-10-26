@@ -6,8 +6,8 @@ import { createClient } from '@/lib/supabase/client'
 import Link from 'next/link'
 import { Plus, Edit, Trash2, X, Check, Printer } from 'lucide-react'
 import toast from 'react-hot-toast'
-import type { Promotion, Category, PromotionType, ApplyTo, AmountMode } from '@/lib/types'
-import { describeDiscount, describeCondition } from '@/lib/promotions'
+import type { Promotion, Category, PromotionType, ApplyTo, AmountMode, ChannelScope } from '@/lib/types'
+import { describeDiscount, describeCondition, promotionExpired, CHANNEL_SCOPE_LABEL } from '@/lib/promotions'
 import { confirmDialog } from '@/lib/confirm'
 import MultiPicker from '@/components/MultiPicker'
 
@@ -32,11 +32,19 @@ const emptyForm = {
   min_amount: '',
   max_discount: '',
   apply_to: 'all' as ApplyTo,
+  channel_scope: 'all' as ChannelScope,
   category_ids: [] as string[],
   product_ids: [] as string[],
   start_date: new Date().toISOString().split('T')[0],
   end_date: new Date().toISOString().split('T')[0],
   active: true,
+}
+
+const SCOPE_BADGE: Record<ChannelScope, string> = {
+  all: 'bg-gray-100 text-gray-600',
+  store: 'bg-blue-100 text-blue-700',
+  // สีเดียวกับ badge ช่องทาง "ออกบูธ" ในตารางบิล (lib/salesChannel)
+  booth: 'bg-amber-100 text-amber-800',
 }
 
 const todayStr = () => new Date().toISOString().split('T')[0]
@@ -91,10 +99,11 @@ export default function PromotionsClient({
       min_amount: p.min_amount?.toString() ?? '',
       max_discount: p.max_discount?.toString() ?? '',
       apply_to: p.apply_to,
+      channel_scope: p.channel_scope,
       category_ids: p.category_ids,
       product_ids: p.product_ids,
       start_date: p.start_date,
-      end_date: p.end_date,
+      end_date: p.end_date ?? '',
       active: p.active,
     })
   }
@@ -130,7 +139,8 @@ export default function PromotionsClient({
       toast.error('กรุณาเลือกสินค้าอย่างน้อย 1 รายการ')
       return
     }
-    if (form.start_date > form.end_date) {
+    // วันสิ้นสุดเว้นว่างได้ = ไม่มีวันหมด เทียบวันก็เฉพาะตอนที่กรอกมา
+    if (form.end_date && form.start_date > form.end_date) {
       toast.error('วันที่เริ่มต้องไม่เกินวันที่สิ้นสุด')
       return
     }
@@ -154,8 +164,9 @@ export default function PromotionsClient({
       min_amount: isBuyGet ? null : numOrNull(form.min_amount),
       max_discount: isPercent ? numOrNull(form.max_discount) : null,
       apply_to: form.apply_to,
+      channel_scope: form.channel_scope,
       start_date: form.start_date,
-      end_date: form.end_date,
+      end_date: form.end_date || null,
       active: form.active,
     }
 
@@ -387,13 +398,36 @@ export default function PromotionsClient({
           </div>
         )}
 
+        <div className="sm:col-span-2">
+          <label className={labelClass}>ใช้ที่ไหน *</label>
+          <select value={form.channel_scope} onChange={(e) => set('channel_scope', e.target.value as ChannelScope)} className={inputClass}>
+            <option value="all">ทุกที่ (หน้าร้าน + งานออกบูธ)</option>
+            <option value="store">หน้าร้านเท่านั้น</option>
+            <option value="booth">งานออกบูธเท่านั้น</option>
+          </select>
+          <p className="text-xs text-gray-500 mt-1">
+            {form.channel_scope === 'booth'
+              ? 'เด้งเฉพาะตอนแคชเชียร์เปิดโหมดบูธในหน้าขาย — ใช้ได้ทุกรอบที่ออกบูธ ไม่ต้องสร้างใหม่'
+              : form.channel_scope === 'store'
+                ? 'ไม่เด้งตอนขายที่งาน — ที่งานใช้ราคาบูธซึ่งลดมาแล้ว'
+                : 'ลดทั้งที่ร้านและที่งานออกบูธ (ที่งานคิดจากราคาบูธ)'}
+          </p>
+        </div>
+
         <div>
           <label className={labelClass}>วันที่เริ่ม *</label>
           <input type="date" value={form.start_date} onChange={(e) => set('start_date', e.target.value)} className={inputClass} />
         </div>
         <div>
-          <label className={labelClass}>วันที่สิ้นสุด *</label>
+          <label className={labelClass}>วันที่สิ้นสุด</label>
           <input type="date" value={form.end_date} onChange={(e) => set('end_date', e.target.value)} className={inputClass} />
+          <p className="text-xs text-gray-500 mt-1">
+            {form.end_date
+              ? form.channel_scope === 'booth'
+                ? 'โปรบูธที่ใช้ทุกรอบ ลบวันนี้ออกได้ — จะไม่มีวันหมด ไม่ต้องมาต่ออายุทุกเดือน'
+                : 'ถึงวันนี้แล้วหยุดลดเอง'
+              : 'ไม่มีวันหมด — ลดไปเรื่อยๆ จนกดปิดใช้งาน'}
+          </p>
         </div>
 
         <div className="sm:col-span-2 flex items-center gap-2">
@@ -440,6 +474,7 @@ export default function PromotionsClient({
               <th className="text-left text-xs font-medium text-gray-500 uppercase px-4 py-3">ส่วนลด</th>
               <th className="text-left text-xs font-medium text-gray-500 uppercase px-4 py-3">เงื่อนไข</th>
               <th className="text-left text-xs font-medium text-gray-500 uppercase px-4 py-3">ใช้กับ</th>
+              <th className="text-left text-xs font-medium text-gray-500 uppercase px-4 py-3">ใช้ที่ไหน</th>
               <th className="text-left text-xs font-medium text-gray-500 uppercase px-4 py-3">ช่วงเวลา</th>
               <th className="text-center text-xs font-medium text-gray-500 uppercase px-4 py-3">สถานะ</th>
               <th className="px-4 py-3"></th>
@@ -450,12 +485,12 @@ export default function PromotionsClient({
               if (editingId === p.id) {
                 return (
                   <tr key={p.id}>
-                    <td colSpan={7} className="px-4 py-3">{formCard}</td>
+                    <td colSpan={8} className="px-4 py-3">{formCard}</td>
                   </tr>
                 )
               }
               const condition = describeCondition(p)
-              const expired = p.end_date < today
+              const expired = promotionExpired(p, today)
               return (
                 <tr key={p.id} className="hover:bg-gray-50">
                   <td className="px-4 py-3 text-sm font-medium text-gray-900">{p.name}</td>
@@ -464,8 +499,13 @@ export default function PromotionsClient({
                     {condition || <span className="text-gray-300">ลดทันที</span>}
                   </td>
                   <td className="px-4 py-3 text-sm text-gray-600">{describeScope(p, categories, products)}</td>
+                  <td className="px-4 py-3">
+                    <span className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium whitespace-nowrap ${SCOPE_BADGE[p.channel_scope]}`}>
+                      {CHANNEL_SCOPE_LABEL[p.channel_scope]}
+                    </span>
+                  </td>
                   <td className="px-4 py-3 text-sm text-gray-500 whitespace-nowrap">
-                    {p.start_date} - {p.end_date}
+                    {p.end_date ? `${p.start_date} - ${p.end_date}` : `${p.start_date} - ไม่มีวันหมด`}
                   </td>
                   <td className="px-4 py-3 text-center">
                     <button
@@ -506,7 +546,7 @@ export default function PromotionsClient({
             })}
             {promotions.length === 0 && (
               <tr>
-                <td colSpan={7} className="px-4 py-10 text-center text-sm text-gray-400">
+                <td colSpan={8} className="px-4 py-10 text-center text-sm text-gray-400">
                   ยังไม่มีโปรโมชั่น — กด &quot;เพิ่มโปรโมชั่น&quot; เพื่อเริ่มต้น
                 </td>
               </tr>

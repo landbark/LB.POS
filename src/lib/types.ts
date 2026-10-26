@@ -498,6 +498,8 @@ export interface PointsConfig {
 
 export type PromotionType = 'percent_discount' | 'amount_discount' | 'buy_x_get_y'
 export type ApplyTo = 'all' | 'categories' | 'products'
+/** โปรนี้ใช้ขายที่ไหน — all = ทุกที่, store = หน้าร้านเท่านั้น, booth = งานออกบูธเท่านั้น */
+export type ChannelScope = 'all' | 'store' | 'booth'
 /** ลดเป็นบาท: per_unit = ลดต่อชิ้น, per_line = ลดครั้งเดียวต่อรายการในบิล */
 export type AmountMode = 'per_unit' | 'per_line'
 
@@ -519,8 +521,11 @@ export interface Promotion {
   /** สินค้า/หมวดที่โปรนี้คลุม — มาจากตารางเชื่อม promotion_products / promotion_categories */
   product_ids: string[]
   category_ids: string[]
+  /** ใช้ได้ที่ไหน — โปรบูธเด้งเฉพาะตอนเปิดโหมดบูธ, โปรหน้าร้านไม่เด้งที่บูธ */
+  channel_scope: ChannelScope
   start_date: string
-  end_date: string
+  /** null = ไม่มีวันหมด — โปรบูธที่ใช้ซ้ำทุกรอบไม่ต้องมาต่ออายุทุกเดือน */
+  end_date: string | null
   active: boolean
   created_at: string
 }

@@ -53,6 +53,13 @@ export default function PromotionPrintView({
       : { text: `ซื้อ ${p.buy_quantity} แถม ${p.get_quantity}`, fontSize: 3.4 }
 
   const condition = describeCondition(p)
+  // โปรเฉพาะงานออกบูธ — ป้ายต้องบอก ไม่งั้นคนเอาไปตั้งที่ร้านแล้วลูกค้ามาทวงส่วนลด
+  const boothOnly = p.channel_scope === 'booth'
+  const period = !p.end_date
+    ? `ตั้งแต่ ${thaiDate(p.start_date)}`
+    : p.start_date === p.end_date
+      ? `เฉพาะวันที่ ${thaiDate(p.start_date)}`
+      : `${thaiDate(p.start_date)} – ${thaiDate(p.end_date)}`
   const perLabel = p.type === 'amount_discount'
     ? p.amount_mode === 'per_unit' ? 'ต่อชิ้น' : 'ต่อรายการ'
     : null
@@ -156,9 +163,7 @@ export default function PromotionPrintView({
               alignSelf: 'center',
             }}
           >
-            {p.start_date === p.end_date
-              ? `เฉพาะวันที่ ${thaiDate(p.start_date)}`
-              : `${thaiDate(p.start_date)} – ${thaiDate(p.end_date)}`}
+            {boothOnly ? `เฉพาะที่งานออกบูธ · ${period}` : period}
           </div>
         </div>
       </div>

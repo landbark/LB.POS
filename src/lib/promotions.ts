@@ -1,4 +1,4 @@
-import type { Promotion } from './types'
+import type { ChannelScope, Promotion } from './types'
 
 /**
  * ทุกอย่างในไฟล์นี้คิดเป็น "หน่วยฐาน" เสมอ — ซื้อ 1 กล่อง (12 ซอง) นับเป็น 12 ชิ้น
@@ -14,6 +14,25 @@ export function promotionCovers(
   if (promo.apply_to === 'products') return promo.product_ids.includes(product.id)
   return Boolean(product.category_id) && promo.category_ids.includes(product.category_id!)
 }
+
+export const CHANNEL_SCOPE_LABEL: Record<ChannelScope, string> = {
+  all: 'ทุกที่',
+  store: 'หน้าร้าน',
+  booth: 'งานออกบูธ',
+}
+
+/**
+ * โปรนี้ใช้ได้ในโหมดที่กำลังขายอยู่ไหม
+ *
+ * ราคาที่งานกับที่ร้านคนละราคาอยู่แล้ว (booth_price) โปรก็ต้องแยกได้ด้วย —
+ * โปรบูธไม่ควรเด้งตอนลูกค้าซื้อที่ร้าน และโปรหน้าร้านก็ไม่ควรไปลดซ้ำกับราคาบูธที่ลดมาแล้ว
+ */
+export const promotionInChannel = (promo: Promotion, boothMode: boolean) =>
+  promo.channel_scope === 'all' || promo.channel_scope === (boothMode ? 'booth' : 'store')
+
+/** หมดอายุแล้วไหม — end_date ว่าง = ไม่มีวันหมด ใช้ไปเรื่อยๆ จนกดปิดใช้งาน */
+export const promotionExpired = (promo: Promotion, today: string) =>
+  promo.end_date != null && promo.end_date < today
 
 /** เงื่อนไข "ซื้อครบ" ผ่านไหม — ว่างทั้งคู่ = ไม่มีเงื่อนไข ลดทันที */
 export function promotionConditionMet(promo: Promotion, baseQuantity: number, gross: number): boolean {
@@ -106,7 +125,9 @@ export function describePromotion(p: Promotion): string {
   return cond ? `${cond} ${describeDiscount(p)}` : describeDiscount(p)
 }
 
-type PromotionRow = Omit<Promotion, 'product_ids' | 'category_ids'> & {
+type PromotionRow = Omit<Promotion, 'product_ids' | 'category_ids' | 'channel_scope'> & {
+  /** ไม่มีค่าถ้า migration ยังไม่ลง — PROMOTION_SELECT เป็น '*' จึงไม่ error แค่ขาดคอลัมน์ไป */
+  channel_scope?: ChannelScope | null
   promotion_products?: { product_id: string }[] | null
   promotion_categories?: { category_id: string }[] | null
 }
@@ -116,6 +137,9 @@ export function toPromotion(row: PromotionRow): Promotion {
   const { promotion_products, promotion_categories, ...promo } = row
   return {
     ...promo,
+    // deploy โค้ดก่อนรัน migration = ไม่มี channel_scope มา ถือเป็น "ทุกที่" ตามพฤติกรรมเดิม
+    // (ถ้าปล่อยเป็น undefined หน้าขายจะกรองโปรออกหมด = ทั้งร้านไม่ลดอะไรเลยโดยไม่มีใครรู้)
+    channel_scope: promo.channel_scope ?? 'all',
     product_ids: (promotion_products ?? []).map((r) => r.product_id),
     category_ids: (promotion_categories ?? []).map((r) => r.category_id),
   }

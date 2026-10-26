@@ -2,8 +2,10 @@ import { notFound } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { fetchAll } from '@/lib/supabase/fetch-all'
 import { sumByMethod, type PaidTransaction } from '@/lib/payments'
+import { thaiToday } from '@/lib/thaiDate'
+import { PROMOTION_SELECT, describePromotion, toPromotion } from '@/lib/promotions'
 import type { BoothTrip, BoothTripItem } from '@/lib/types'
-import BoothTripClient, { type SoldLine, type PickerProduct } from './BoothTripClient'
+import BoothTripClient, { type SoldLine, type PickerProduct, type BoothPromo } from './BoothTripClient'
 
 interface SoldRow {
   product_id: string | null
@@ -33,7 +35,9 @@ export default async function BoothTripPage({ params }: { params: Promise<{ id: 
 
   if (!trip) notFound()
 
-  const [{ data: items }, soldRows, { data: txs }, products] = await Promise.all([
+  const today = thaiToday()
+
+  const [{ data: items }, soldRows, { data: txs }, products, { data: promoRows }] = await Promise.all([
     supabase
       .from('booth_trip_items')
       .select('*, products(id, name, sku, unit, price, booth_price, cost)')
@@ -66,6 +70,18 @@ export default async function BoothTripPage({ params }: { params: Promise<{ id: 
         .order('id')
         .range(from, to),
     ),
+    // โปรที่หน้าขายจะลดให้ตอนเปิดโหมดบูธ — เอาไว้เช็คก่อนยกของไป ไม่ได้ผูกกับรอบนี้
+    // รอบที่ปิดแล้วไม่ต้องดึง โปรของวันนี้ไม่ได้บอกอะไรเกี่ยวกับงานที่จบไปแล้ว
+    trip.status === 'open'
+      ? supabase
+          .from('promotions')
+          .select(PROMOTION_SELECT)
+          .eq('active', true)
+          .in('channel_scope', ['all', 'booth'])
+          .lte('start_date', today)
+          .or(`end_date.is.null,end_date.gte.${today}`)
+          .order('created_at', { ascending: false })
+      : Promise.resolve({ data: [] }),
   ])
 
   // สินค้าที่ขายได้ในรอบนี้ — รวมตัวที่ไม่ได้อยู่ในใบเบิกด้วย (หยิบเพิ่มทีหลัง/ลืมลงใบ)
@@ -87,12 +103,29 @@ export default async function BoothTripPage({ params }: { params: Promise<{ id: 
 
   const bills = (txs ?? []) as PaidTransaction[]
 
+  // สรุปขอบเขตเป็นจำนวน ไม่ไปดึงชื่อสินค้า/หมวดเพิ่ม — แผงนี้ไว้เตือนความจำ กดเข้าไปดูของจริงได้
+  const promos: BoothPromo[] = (promoRows ?? []).map((row) => {
+    const p = toPromotion(row as never)
+    return {
+      id: p.id,
+      name: p.name,
+      detail: describePromotion(p),
+      scope: p.apply_to === 'all'
+        ? 'ทุกสินค้า'
+        : p.apply_to === 'categories'
+          ? `เฉพาะ ${p.category_ids.length} หมวด`
+          : `เฉพาะ ${p.product_ids.length} รายการ`,
+      boothOnly: p.channel_scope === 'booth',
+    }
+  })
+
   return (
     <BoothTripClient
       trip={trip as unknown as BoothTrip}
       items={(items ?? []) as unknown as BoothTripItem[]}
       sold={Object.fromEntries(sold)}
       products={products}
+      promos={promos}
       billCount={bills.length}
       salesTotal={bills.reduce((s, t) => s + Number(t.total), 0)}
       byMethod={sumByMethod(bills)}

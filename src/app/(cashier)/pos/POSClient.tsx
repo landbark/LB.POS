@@ -6,7 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 import { Search, X, Plus, Minus, ShoppingCart, User, MonitorPlay, Stethoscope, ScanBarcode, Store, AlertTriangle } from 'lucide-react'
 import toast from 'react-hot-toast'
 import type { Product, ProductUnit, CartItem, Promotion, PointsConfig, Customer, PaymentMethod, ClinicQueueVisit, RoundingMode } from '@/lib/types'
-import { bestPromotion } from '@/lib/promotions'
+import { bestPromotion, promotionInChannel } from '@/lib/promotions'
 import { baseQty, factorOf, findByBarcode, posUnitChoices, unitNameOf, unitPriceOf } from '@/lib/productUnits'
 import { POS_DISPLAY_CHANNEL, type PosDisplayMessage } from '@/lib/posDisplay'
 import PaymentModal from './PaymentModal'
@@ -197,6 +197,13 @@ export default function POSClient({ products: allProducts, booth, shiftOpen, pro
     return withBoothPrices(pool)
   }, [allProducts, booth, boothMode, boothShowAll])
 
+  // โปรที่ใช้ได้ในโหมดที่กำลังขายอยู่ — กรองจุดเดียวเหมือนราคาบูธ ไม่ไล่เช็คทุกที่ที่คิดส่วนลด
+  // สลับโหมดต้องเคลียร์ตะกร้าก่อนอยู่แล้ว (toggleBoothMode) ส่วนลดในตะกร้าจึงไม่ค้างข้ามโหมด
+  const activePromotions = useMemo(
+    () => promotions.filter((p) => promotionInChannel(p, boothMode)),
+    [promotions, boothMode],
+  )
+
   // Get unique categories from products
   const categories = Array.from(
     new Map(
@@ -251,7 +258,7 @@ export default function POSClient({ products: allProducts, booth, shiftOpen, pro
    */
   function applyPromotion(product: Product, baseQuantity: number, gross: number) {
     return bestPromotion(
-      promotions,
+      activePromotions,
       { id: product.id, category_id: (product as any).category_id, price: product.price },
       baseQuantity,
       gross,

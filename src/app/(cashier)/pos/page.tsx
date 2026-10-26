@@ -26,12 +26,14 @@ export default async function POSPage() {
         .order('id')   // ชื่อสินค้าซ้ำได้ ต้องมีคีย์ไม่ซ้ำปิดท้าย ไม่งั้นแถวซ้ำ/หายระหว่างหน้า
         .range(from, to)
     ),
+    // โปรที่ใช้ได้วันนี้ทั้งหน้าร้านและบูธ — หน้าขายกรองตามโหมดเองทีหลัง (โหมดบูธอยู่ฝั่ง client)
+    // end_date ว่าง = ไม่มีวันหมด (โปรบูธที่ใช้ซ้ำทุกรอบ)
     supabase
       .from('promotions')
       .select(PROMOTION_SELECT)
       .eq('active', true)
       .lte('start_date', thaiToday())
-      .gte('end_date', thaiToday()),
+      .or(`end_date.is.null,end_date.gte.${thaiToday()}`),
     supabase.from('points_config').select('*').limit(1).single(),
     supabase.from('store_settings').select('promptpay_id, rounding_mode').limit(1).single(),
     // คิวเก็บเงินจากคลินิก — หมอกด "ส่งไปเก็บเงิน" ที่หน้าตรวจรักษาแล้วมาโผล่ตรงนี้
