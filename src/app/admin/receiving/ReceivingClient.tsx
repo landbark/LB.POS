@@ -236,7 +236,7 @@ export default function ReceivingClient({ suppliers, products, purchases }: Prop
           </button>
         </div>
 
-        {/* รายการสินค้า — ห้ามใส่ overflow-x-auto ที่นี่ เพราะจะ clip dropdown ของ ProductPicker */}
+        {/* รายการสินค้า — ตารางแคบพอ ไม่ต้อง overflow-x-auto (dropdown ของ ProductPicker ลอยที่ body อยู่แล้ว) */}
         <div>
           <table className="w-full">
             <thead>

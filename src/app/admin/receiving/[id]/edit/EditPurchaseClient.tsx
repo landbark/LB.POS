@@ -177,7 +177,7 @@ export default function EditPurchaseClient({
           </button>
         </div>
 
-        {/* ห้ามใส่ overflow-x-auto ที่นี่ เพราะจะ clip dropdown ของ ProductPicker */}
+        {/* ตารางแคบพอ ไม่ต้อง overflow-x-auto (dropdown ของ ProductPicker ลอยที่ body อยู่แล้ว) */}
         <div>
           <table className="w-full">
             <thead>

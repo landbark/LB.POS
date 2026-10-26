@@ -1,7 +1,8 @@
 'use client'
 
-import { useState } from 'react'
-import { ListPlus, X, Search, Check } from 'lucide-react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
+import { X, Search, Check } from 'lucide-react'
 import type { ProductUnit } from '@/lib/types'
 import { purchaseUnitChoices } from '@/lib/productUnits'
 
@@ -91,6 +92,53 @@ export function UnitSelect({
 
 export const inputClass = 'w-full border border-gray-300 rounded-lg px-2.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500'
 
+/** ความสูงสูงสุดของลิสต์ และระยะห่างจากช่องพิมพ์ */
+const MENU_MAX_H = 256
+const MENU_GAP = 4
+
+interface MenuBox { left: number; top: number; width: number; maxHeight: number; above: boolean }
+
+/**
+ * ตำแหน่งของลิสต์ที่ลอยอยู่ — วัดจากช่องพิมพ์ทุกครั้งที่เปิด/เลื่อน/ย่อขยายจอ
+ *
+ * ลิสต์ต้องวาดที่ body แบบ fixed ไม่ใช่ absolute ใต้ช่องพิมพ์ เพราะหน้ารับสินค้า
+ * วางตารางไว้ในกล่อง overflow-x-auto (ตารางกว้างเกินจอ) — กล่องนั้น clip ลิสต์
+ * ทิ้งเกือบหมด พนักงานเลยเลือกสินค้าที่เพิ่งเพิ่มเข้าใบไม่ได้
+ */
+function useMenuBox(anchor: React.RefObject<HTMLDivElement | null>, open: boolean) {
+  const [box, setBox] = useState<MenuBox | null>(null)
+
+  const measure = useCallback(() => {
+    const el = anchor.current
+    if (!el) return
+    const r = el.getBoundingClientRect()
+    const below = window.innerHeight - r.bottom - MENU_GAP
+    const above = r.top - MENU_GAP
+    // ช่องพิมพ์อยู่ท้ายจอแล้วที่ว่างข้างล่างไม่พอ — พลิกลิสต์ขึ้นข้างบนแทน
+    const flip = below < 160 && above > below
+    setBox({
+      left: r.left,
+      top: flip ? r.top - MENU_GAP : r.bottom + MENU_GAP,
+      width: r.width,
+      maxHeight: Math.min(MENU_MAX_H, Math.max(120, flip ? above : below)),
+      above: flip,
+    })
+  }, [anchor])
+
+  useEffect(() => {
+    if (!open) return
+    // capture = true เพราะกล่องตารางเลื่อนเองได้ ไม่ใช่แค่ทั้งหน้า
+    window.addEventListener('scroll', measure, true)
+    window.addEventListener('resize', measure)
+    return () => {
+      window.removeEventListener('scroll', measure, true)
+      window.removeEventListener('resize', measure)
+    }
+  }, [measure, open])
+
+  return { box, measure }
+}
+
 // ช่องเลือกสินค้าแบบพิมพ์ค้นหา (ชื่อ / SKU / บาร์โค้ด)
 export function ProductPicker({
   products,
@@ -106,6 +154,8 @@ export function ProductPicker({
   const selected = products.find((p) => p.id === value)
   const [query, setQuery] = useState('')
   const [open, setOpen] = useState(false)
+  const anchorRef = useRef<HTMLDivElement>(null)
+  const { box, measure } = useMenuBox(anchorRef, open)
 
   const q = query.trim().toLowerCase()
   const hits = products.filter((p) => matchProduct(p, q))
@@ -118,13 +168,59 @@ export function ProductPicker({
     setQuery('')
   }
 
+  const menu = (b: MenuBox) => (
+    <div
+      style={{
+        position: 'fixed',
+        left: b.left,
+        top: b.top,
+        width: b.width,
+        maxHeight: b.maxHeight,
+        // พลิกขึ้นข้างบน = ยกลิสต์ขึ้นเท่าความสูงของตัวเอง
+        transform: b.above ? 'translateY(-100%)' : undefined,
+      }}
+      className="z-50 bg-white border border-gray-200 rounded-lg shadow-lg overflow-y-auto"
+    >
+      {matches.length === 0 && (
+        <p className="px-3 py-2.5 text-sm text-gray-400">ไม่พบสินค้า</p>
+      )}
+      {hits.length > matches.length && (
+        <p className="px-3 py-1.5 text-xs text-gray-400 bg-gray-50 sticky top-0">
+          เจอ {hits.length} รายการ — แสดง {matches.length} ตัวแรก พิมพ์เพิ่มเพื่อแคบลง
+        </p>
+      )}
+      {matches.map((p) => (
+        <button
+          type="button"
+          key={p.id}
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={() => pick(p)}
+          className="w-full text-left px-3 py-2 hover:bg-blue-50 border-b border-gray-50 last:border-0"
+        >
+          <p className="text-sm text-gray-900">
+            {p.name}
+            {supplierId && p.supplier_id === supplierId && (
+              <span className="text-yellow-500 ml-1">★</span>
+            )}
+          </p>
+          <p className="text-xs text-gray-400 flex items-center gap-2">
+            {(p.sku || p.barcode) && (
+              <span className="font-mono">{[p.sku, p.barcode].filter(Boolean).join(' · ')}</span>
+            )}
+            <StockBadge product={p} />
+          </p>
+        </button>
+      ))}
+    </div>
+  )
+
   return (
-    <div className="relative">
+    <div ref={anchorRef} className="relative">
       <input
         type="text"
         value={open ? query : selected?.name ?? ''}
-        onFocus={() => { setOpen(true); setQuery('') }}
-        onChange={(e) => { setQuery(e.target.value); setOpen(true) }}
+        onFocus={() => { measure(); setOpen(true); setQuery('') }}
+        onChange={(e) => { measure(); setQuery(e.target.value); setOpen(true) }}
         onBlur={() => setTimeout(() => setOpen(false), 150)}
         onKeyDown={(e) => {
           if (e.key === 'Enter') {
@@ -136,40 +232,7 @@ export function ProductPicker({
         placeholder="พิมพ์ชื่อ / SKU / บาร์โค้ด..."
         className={inputClass}
       />
-      {open && (
-        <div className="absolute z-20 top-full left-0 right-0 bg-white border border-gray-200 rounded-lg shadow-lg mt-1 max-h-64 overflow-y-auto">
-          {matches.length === 0 && (
-            <p className="px-3 py-2.5 text-sm text-gray-400">ไม่พบสินค้า</p>
-          )}
-          {hits.length > matches.length && (
-            <p className="px-3 py-1.5 text-xs text-gray-400 bg-gray-50 sticky top-0">
-              เจอ {hits.length} รายการ — แสดง {matches.length} ตัวแรก พิมพ์เพิ่มเพื่อแคบลง
-            </p>
-          )}
-          {matches.map((p) => (
-            <button
-              type="button"
-              key={p.id}
-              onMouseDown={(e) => e.preventDefault()}
-              onClick={() => pick(p)}
-              className="w-full text-left px-3 py-2 hover:bg-blue-50 border-b border-gray-50 last:border-0"
-            >
-              <p className="text-sm text-gray-900">
-                {p.name}
-                {supplierId && p.supplier_id === supplierId && (
-                  <span className="text-yellow-500 ml-1">★</span>
-                )}
-              </p>
-              <p className="text-xs text-gray-400 flex items-center gap-2">
-                {(p.sku || p.barcode) && (
-                  <span className="font-mono">{[p.sku, p.barcode].filter(Boolean).join(' · ')}</span>
-                )}
-                <StockBadge product={p} />
-              </p>
-            </button>
-          ))}
-        </div>
-      )}
+      {open && box && createPortal(menu(box), document.body)}
     </div>
   )
 }
