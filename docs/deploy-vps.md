@@ -41,7 +41,10 @@ VPS เลยเหลือ 1 GB (~$5/เดือน) ก็พอ และ d
 - สเปก: **1 vCPU / 1 GB RAM / 25 GB SSD** (~$5-6/เดือน) — พอสบายเพราะไม่ได้ build บนเครื่องนี้
 - เจ้าที่มีโซนสิงคโปร์: Vultr, DigitalOcean, Linode (Hetzner ไม่มีแพ็กเกจถูกในสิงคโปร์)
 
-ติดตั้ง Docker (Ubuntu 24.04):
+เลือก image เป็น **Ubuntu LTS ตัวล่าสุด (26.04)** — รองรับยาวถึงปี 2031 และ Docker มี package
+ให้แล้ว เครื่องนี้ทำหน้าที่แค่รัน container เลยไม่ต้องกลัวของใหม่
+
+ติดตั้ง Docker:
 
 ```bash
 curl -fsSL https://get.docker.com | sh
