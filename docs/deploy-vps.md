@@ -17,9 +17,22 @@ experimental บน adapter ของ Cloudflare — เสี่ยงเกิ
 เอาโซน **สิงคโปร์** เท่านั้น เพราะ Supabase ของร้านอยู่สิงคโปร์ (`sin1` เดิมบน Vercel ก็ตั้งไว้แบบนั้น)
 อยู่ไกลกว่านี้ทุก query จะช้าลงทั้งระบบ
 
-- สเปกขั้นต่ำ: **1 vCPU / 1 GB RAM / 25 GB SSD** (ราว $5/เดือน)
-- ถ้าจะเอา gaiseedvu มารันด้วยในอนาคต ขยับเป็น 2 GB RAM จะสบายกว่า
-- เจ้าที่มีโซนสิงคโปร์: DigitalOcean, Vultr, Linode
+วัดการใช้ RAM จริงของระบบนี้ไว้แล้ว — **สองค่านี้ต่างกันมาก อย่าดูแค่ค่าเดียว**:
+
+| | RAM |
+|---|---|
+| ตอน `next build` | **~1.7 GB** |
+| ตอนรันเสิร์ฟจริง | **~126 MB** |
+
+- **แนะนำ: 1 vCPU / 2 GB RAM / 25 GB SSD** (~$10-12/เดือน) — build บนเครื่องได้สบาย และเผื่อเอา
+  เว็บตัวอื่นของร้านมารันด้วยได้
+- **1 GB (~$5-6/เดือน) ก็ได้** แต่ `next build` จะ OOM ตาย ต้องเพิ่ม swap ก่อน:
+  ```bash
+  fallocate -l 2G /swapfile && chmod 600 /swapfile && mkswap /swapfile && swapon /swapfile
+  echo '/swapfile none swap sw 0 0' >> /etc/fstab
+  ```
+  รันได้ปกติ แต่ build จะช้าลงเพราะต้องสลับลงดิสก์ — ถ้า deploy บ่อยจะน่ารำคาญ
+- เจ้าที่มีโซนสิงคโปร์: DigitalOcean, Vultr, Linode (Hetzner ไม่มีแพ็กเกจถูกในสิงคโปร์)
 
 ติดตั้ง Docker บนเครื่อง (Ubuntu 24.04):
 
