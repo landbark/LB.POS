@@ -1,24 +1,21 @@
 # LANDBARK POS — รันบน VPS
 #
-#   docker compose up -d --build
+#   docker compose up -d
+#
+# ไม่ได้ build บนเครื่องนี้ — image ถูก build ไว้แล้วบนเครื่องของ GitHub
+# (ดู .github/workflows/deploy.yml) เพราะ next build กิน RAM ~1.7 GB
+# ส่วนตอนเสิร์ฟจริงใช้แค่ ~126 MB เครื่อง 1 GB เลยพอสบาย
 #
 # Caddy ขอใบ HTTPS จาก Let's Encrypt ให้เองตอนขึ้นครั้งแรก ไม่ต้องตั้งอะไรเพิ่ม
 # ขอแค่ DNS ของโดเมนชี้มาที่ IP เครื่องนี้แล้ว และพอร์ต 80/443 เปิดอยู่
 
 services:
   app:
-    build:
-      context: .
-      args:
-        # ต้องส่งตอน build เพราะค่าพวกนี้ถูกฝังลงบันเดิลฝั่งเบราว์เซอร์ (ดู Dockerfile)
-        NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL}
-        NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY}
-        NEXT_PUBLIC_SITE_URL: ${NEXT_PUBLIC_SITE_URL}
-        NEXT_PUBLIC_LIFF_ID: ${NEXT_PUBLIC_LIFF_ID}
-        NEXT_PUBLIC_TELEGRAM_BOT_USERNAME: ${NEXT_PUBLIC_TELEGRAM_BOT_USERNAME}
-        # /api/favicon ถูก prerender ตอน build และต้องอ่านโลโก้ร้านจาก Supabase
-        SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY}
-    # ส่วนที่อ่านตอนรัน (service role key, secret ต่าง ๆ) มาจากไฟล์ .env
+    # ตอน deploy ตัว workflow จะส่ง APP_IMAGE เป็น tag ของ commit นั้นมาให้
+    # ไม่พึ่ง :latest เพราะถ้า deploy ซ้อนกันจะไม่รู้ว่ากำลังรันโค้ดตัวไหนอยู่
+    image: ${APP_IMAGE:-ghcr.io/landbark/lb.pos:latest}
+    # ความลับที่อ่านตอนรัน (service role key, token ต่างๆ) มาจากไฟล์ .env
+    # ส่วน NEXT_PUBLIC_* ถูกฝังลงบันเดิลไปตั้งแต่ตอน build แล้ว ใส่ตรงนี้ไม่มีผล
     env_file: .env
     restart: unless-stopped
     expose:
