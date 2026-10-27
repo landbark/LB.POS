@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
-import { ArrowLeft, AlertTriangle, Stethoscope, FileText, FileSignature, Send, ClipboardList } from 'lucide-react'
+import { ArrowLeft, AlertTriangle, Stethoscope, FileText, FileSignature, Send, Tag } from 'lucide-react'
 import { createClient } from '@/lib/supabase/server'
 import { SPECIES_LABELS, VISIT_STATUS_LABELS, type Pet, type VisitStatus } from '@/lib/types'
 import { ageAt, petAge } from '@/lib/pets'
@@ -118,8 +118,8 @@ export default async function PetDetailPage({ params }: { params: Promise<{ id: 
           <a href={`/print/referral/${p.id}`} target="_blank" className="flex items-center gap-1.5 border border-gray-300 text-gray-700 text-sm px-3 py-2 rounded-lg hover:bg-gray-50">
             <Send size={15} /> ใบส่งตัว
           </a>
-          <a href={`/print/pet-history/${p.id}`} target="_blank" className="flex items-center gap-1.5 border border-gray-300 text-gray-700 text-sm px-3 py-2 rounded-lg hover:bg-gray-50">
-            <ClipboardList size={15} /> พิมพ์ประวัติสัตว์ป่วย
+          <a href={`/print/pet-label/${p.id}`} target="_blank" className="flex items-center gap-1.5 border border-gray-300 text-gray-700 text-sm px-3 py-2 rounded-lg hover:bg-gray-50">
+            <Tag size={15} /> ฉลากสัตว์ป่วย
           </a>
         </div>
       </div>
