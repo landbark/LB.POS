@@ -13,7 +13,7 @@ export default async function ReferralPage({ params }: { params: Promise<{ id: s
 
   const [{ data: store }, { data: visits }, { data: lastWeight }] = await Promise.all([
     supabase.from('store_settings').select('*').limit(1).single(),
-    supabase.from('visits').select('visit_date, diagnosis, treatment').eq('pet_id', id).order('visit_date', { ascending: false }).limit(5),
+    supabase.from('visits').select('visit_date, diagnosis, treatment, visit_diagnoses(diagnoses(*))').eq('pet_id', id).order('visit_date', { ascending: false }).limit(5),
     supabase.from('visits').select('weight').eq('pet_id', id).not('weight', 'is', null).order('visit_date', { ascending: false }).limit(1).maybeSingle(),
   ])
 

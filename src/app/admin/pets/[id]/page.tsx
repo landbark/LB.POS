@@ -4,6 +4,7 @@ import { ArrowLeft, AlertTriangle, Stethoscope, FileText, FileSignature, Send, T
 import { createClient } from '@/lib/supabase/server'
 import { SPECIES_LABELS, VISIT_STATUS_LABELS, type Pet, type VisitStatus } from '@/lib/types'
 import { ageAt, petAge } from '@/lib/pets'
+import { visitDiagnosisText } from '@/lib/diagnoses'
 import VaccineSection from './VaccineSection'
 import { graceDaysFrom } from '@/lib/vaccines'
 import TransferOwnerButton from './TransferOwnerButton'
@@ -23,7 +24,7 @@ export default async function PetDetailPage({ params }: { params: Promise<{ id: 
   const [{ data: visits }, { data: vaccinations }, { data: vaccines }, { data: customers }, { data: notifySettings }] = await Promise.all([
     supabase
       .from('visits')
-      .select('id, visit_number, visit_date, status, diagnosis, treatment, weight')
+      .select('id, visit_number, visit_date, status, diagnosis, treatment, weight, visit_diagnoses(diagnoses(*))')
       .eq('pet_id', id)
       .order('visit_date', { ascending: false })
       .limit(50),
@@ -142,7 +143,7 @@ export default async function PetDetailPage({ params }: { params: Promise<{ id: 
         {(visits ?? []).map((v) => (
           <Link key={v.id} href={`/admin/visits/${v.id}`} className="flex items-center justify-between gap-3 px-4 py-3 hover:bg-gray-50">
             <div className="min-w-0">
-              <p className="text-sm text-gray-900 truncate">{v.diagnosis || v.treatment || 'ไม่ได้บันทึกการวินิจฉัย'}</p>
+              <p className="text-sm text-gray-900 truncate">{visitDiagnosisText(v) || v.treatment || 'ไม่ได้บันทึกการวินิจฉัย'}</p>
               <p className="text-xs text-gray-400 font-mono">
                 {v.visit_number} · {fmtDate(v.visit_date)}{v.weight != null ? ` · ${v.weight} กก.` : ''}
               </p>

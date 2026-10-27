@@ -16,14 +16,15 @@ export default async function VisitPage({ params }: { params: Promise<{ id: stri
       pets(*, customers(id, name, phone)),
       customers(id, name, phone),
       vet:profiles!visits_vet_id_fkey(name),
-      visit_items(*, products(id, name, unit, price, is_service, is_vaccine, booster_type, booster_interval_days, label_name, label_name_en, indication, indication_en, brand, categories(is_vaccine)))
+      visit_items(*, products(id, name, unit, price, is_service, is_vaccine, booster_type, booster_interval_days, label_name, label_name_en, indication, indication_en, brand, categories(is_vaccine))),
+      visit_diagnoses(id, visit_id, diagnosis_id, created_at, diagnoses(*))
     `)
     .eq('id', id)
     .single()
 
   if (!visit) notFound()
 
-  const [products, { data: history }, { data: vaccinations }, { data: vaccines }, { data: profile }, { data: notifySettings }] = await Promise.all([
+  const [products, { data: history }, { data: vaccinations }, { data: vaccines }, { data: diagnosisCatalog }, { data: profile }, { data: notifySettings }] = await Promise.all([
     // ไล่ดึงทีละหน้า — supabase ตัดที่ 1000 แถว ยาหลายตัวเรียงตามชื่อแล้วตกขอบหายไปจากช่องสั่งจ่าย
     fetchAll((from, to) =>
       supabase
@@ -37,13 +38,14 @@ export default async function VisitPage({ params }: { params: Promise<{ id: stri
     // ประวัติการรักษาครั้งก่อนของสัตว์ตัวนี้
     supabase
       .from('visits')
-      .select('id, visit_number, visit_date, diagnosis, treatment, weight')
+      .select('id, visit_number, visit_date, diagnosis, treatment, weight, visit_diagnoses(diagnoses(*))')
       .eq('pet_id', visit.pet_id)
       .neq('id', id)
       .order('visit_date', { ascending: false })
       .limit(10),
     supabase.from('pet_vaccinations').select('*').eq('pet_id', visit.pet_id).order('dose_date', { ascending: false }),
     supabase.from('vaccines').select('*').order('name'),
+    supabase.from('diagnoses').select('*').order('name'),
     supabase.from('profiles').select('role').eq('id', user?.id ?? '').single(),
     // เลยกำหนดเกินกี่วันแล้วเลิกขึ้นแถบเตือนวัคซีน — ตั้งไว้ที่หน้าแจ้งเตือน
     supabase.from('notify_settings').select('*').eq('id', 1).maybeSingle(),
@@ -64,6 +66,7 @@ export default async function VisitPage({ params }: { params: Promise<{ id: stri
       vaccinations={vaccinations ?? []}
       vaccines={vaccines ?? []}
       vaccineGraceDays={graceDaysFrom(notifySettings)}
+      diagnosisCatalog={diagnosisCatalog ?? []}
     />
   )
 }

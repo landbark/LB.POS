@@ -4,6 +4,7 @@ import { useState } from 'react'
 import PrintToolbar from '@/components/PrintToolbar'
 import { SPECIES_LABELS, type StoreSettings, type Visit } from '@/lib/types'
 import { petAge } from '@/lib/pets'
+import { visitDiagnosisText } from '@/lib/diagnoses'
 
 type PaperSize = 'a4' | 'a5'
 
@@ -117,8 +118,8 @@ export default function VisitPrintView({ visit, store }: { visit: Visit; store: 
           {section(
             'Assessment / Diagnosis',
             visit.healthy
-              ? ['Healthy — สุขภาพปกติ', visit.diagnosis].filter(Boolean).join('\n')
-              : visit.diagnosis,
+              ? ['Healthy — สุขภาพปกติ', visitDiagnosisText(visit)].filter(Boolean).join('\n')
+              : visitDiagnosisText(visit),
           )}
           {section('Treatment', visit.treatment)}
 

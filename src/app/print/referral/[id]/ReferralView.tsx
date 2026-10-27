@@ -4,6 +4,7 @@ import { useState } from 'react'
 import PrintToolbar from '@/components/PrintToolbar'
 import { SPECIES_LABELS, type Pet, type StoreSettings } from '@/lib/types'
 import { petAge } from '@/lib/pets'
+import { visitDiagnosisText, type DiagnosisLink } from '@/lib/diagnoses'
 
 const todayTh = () => new Date().toLocaleDateString('th-TH', { day: 'numeric', month: 'long', year: 'numeric' })
 const dateTh = (d: string) => new Date(d).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' })
@@ -11,7 +12,7 @@ const dateTh = (d: string) => new Date(d).toLocaleDateString('th-TH', { day: 'nu
 const field = 'border-0 border-b border-gray-400 bg-transparent focus:outline-none focus:border-blue-500 px-1'
 const area = 'w-full border border-gray-300 rounded bg-transparent focus:outline-none focus:border-blue-500 px-2 py-1 resize-none print:border-gray-400'
 
-interface VisitRow { visit_date: string; diagnosis: string | null; treatment: string | null }
+interface VisitRow { visit_date: string; diagnosis: string | null; treatment: string | null; visit_diagnoses?: DiagnosisLink[] | null }
 
 export default function ReferralView({ pet, store, visits, weight }: { pet: Pet; store: StoreSettings | null; visits: VisitRow[]; weight: number | null }) {
   const [size, setSize] = useState<'a4'>('a4')
@@ -25,8 +26,8 @@ export default function ReferralView({ pet, store, visits, weight }: { pet: Pet;
 
   // ดึงประวัติรักษาล่าสุดมาเป็นค่าตั้งต้น (แก้ได้)
   const historyDefault = visits
-    .filter((v) => v.diagnosis || v.treatment)
-    .map((v) => `${dateTh(v.visit_date)} — ${[v.diagnosis, v.treatment].filter(Boolean).join(' / ')}`)
+    .filter((v) => visitDiagnosisText(v) || v.treatment)
+    .map((v) => `${dateTh(v.visit_date)} — ${[visitDiagnosisText(v), v.treatment].filter(Boolean).join(' / ')}`)
     .join('\n')
 
   const warningsDefault = [pet.allergies && `แพ้: ${pet.allergies}`, pet.chronic_conditions && `โรคประจำตัว: ${pet.chronic_conditions}`]

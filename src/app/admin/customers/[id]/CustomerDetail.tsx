@@ -8,6 +8,7 @@ import { AlertTriangle, ArrowLeft, Check, PawPrint, Plus, Receipt, Stethoscope, 
 import toast from 'react-hot-toast'
 import { SPECIES_LABELS, VISIT_STATUS_LABELS, type Breed, type Customer, type Pet, type PetSpecies, type VisitStatus } from '@/lib/types'
 import { ageAt, petAge } from '@/lib/pets'
+import { visitDiagnosisText, type DiagnosisLink } from '@/lib/diagnoses'
 import BreedSelect from '@/components/BreedSelect'
 
 interface TxRow {
@@ -23,6 +24,7 @@ interface VisitRow {
   visit_date: string
   status: VisitStatus
   diagnosis: string | null
+  visit_diagnoses?: DiagnosisLink[] | null
   pets: { name: string } | null
 }
 
@@ -244,7 +246,7 @@ export default function CustomerDetail({
             {visits.map((v) => (
               <Link key={v.id} href={`/admin/visits/${v.id}`} className="flex items-center justify-between gap-2 px-4 py-2.5 hover:bg-gray-50">
                 <div className="min-w-0">
-                  <p className="text-sm text-gray-900 truncate">{v.diagnosis || v.pets?.name || 'ไม่ได้บันทึกการวินิจฉัย'}</p>
+                  <p className="text-sm text-gray-900 truncate">{visitDiagnosisText(v) || v.pets?.name || 'ไม่ได้บันทึกการวินิจฉัย'}</p>
                   <p className="text-xs text-gray-400 font-mono">{v.visit_number} · {fmtDate(v.visit_date)}</p>
                 </div>
                 <span className="text-xs text-gray-400 shrink-0">{VISIT_STATUS_LABELS[v.status]}</span>

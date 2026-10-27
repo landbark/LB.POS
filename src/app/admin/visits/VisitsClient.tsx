@@ -8,6 +8,7 @@ import { ArrowLeft, Clock, Plus, Search, Stethoscope, X } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { SPECIES_LABELS, VISIT_STATUS_LABELS, type Breed, type Pet, type PetSpecies, type Visit, type VisitStatus } from '@/lib/types'
 import { ageAt, petAge } from '@/lib/pets'
+import { visitDiagnosisText } from '@/lib/diagnoses'
 import { useLookup } from '@/lib/use-lookup'
 import { thaiToday, thaiDateIn } from '@/lib/thaiDate'
 import BreedSelect from '@/components/BreedSelect'
@@ -236,7 +237,7 @@ export default function VisitsClient({
         || (v.customers?.hn ?? '').includes(q)
         || (v.customers?.name ?? '').toLowerCase().includes(q)
         || (v.customers?.phone ?? '').includes(q)
-        || (v.diagnosis ?? '').toLowerCase().includes(q)
+        || visitDiagnosisText(v).toLowerCase().includes(q)
         || (v.healthy && ('healthy สุขภาพปกติ'.includes(q)))
       return matchStatus && matchQuery
     })
@@ -399,7 +400,7 @@ export default function VisitsClient({
                       Healthy
                     </span>
                   )}
-                  {v.diagnosis || (v.healthy ? '' : '—')}
+                  {visitDiagnosisText(v) || (v.healthy ? '' : '—')}
                 </td>
                 <td className="px-4 py-3 text-sm text-gray-600">{v.vet?.name ?? '—'}</td>
                 <td className="px-4 py-3 text-center">

@@ -8,7 +8,7 @@ export default async function VisitsPage() {
   const [{ data: visits }, { data: recentPets }, { data: profile }, { data: weighed }, { data: breeds }] = await Promise.all([
     supabase
       .from('visits')
-      .select('*, pets(id, name, species, breed, hn), customers(id, name, phone, hn), vet:profiles!visits_vet_id_fkey(name)')
+      .select('*, pets(id, name, species, breed, hn), customers(id, name, phone, hn), vet:profiles!visits_vet_id_fkey(name), visit_diagnoses(diagnoses(*))')
       .order('visit_date', { ascending: false })
       .limit(200),
     // รายชื่อตั้งต้นของช่องเลือกสัตว์เท่านั้น — พิมพ์ค้นเมื่อไหร่ค่อยยิงไปค้นที่ server

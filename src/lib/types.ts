@@ -338,6 +338,25 @@ export const VISIT_STATUS_LABELS: Record<VisitStatus, string> = {
   cancelled: 'ยกเลิก',
 }
 
+/** แคตตาล็อกชื่อโรค — เลือกจากรายการในหน้าตรวจรักษา เพิ่มใหม่ตรงนั้นได้ รวมโรคซ้ำได้ที่ /admin/diagnoses */
+export interface Diagnosis {
+  id: string
+  /** ชื่อแสดงผล compose จาก "English / ไทย" */
+  name: string
+  name_en: string | null
+  name_th: string | null
+  created_at: string
+}
+
+/** โรคที่ผูกกับ visit — หนึ่ง visit มีได้หลายโรค */
+export interface VisitDiagnosis {
+  id: string
+  visit_id: string
+  diagnosis_id: string
+  created_at: string
+  diagnoses?: Diagnosis | null
+}
+
 export interface Visit {
   id: string
   visit_number: string
@@ -352,6 +371,7 @@ export interface Visit {
   symptoms: string | null
   history_taking: string | null
   physical_exam: string | null
+  /** รายละเอียดเพิ่มเติมที่หมอพิมพ์เอง — ชื่อโรคอยู่ใน visit_diagnoses */
   diagnosis: string | null
   /** สัตว์ปกติดี ไม่ได้ป่วย (วัคซีน/ตรวจสุขภาพ/หายแล้ว) */
   healthy: boolean
@@ -367,6 +387,7 @@ export interface Visit {
   customers?: Customer
   vet?: { name: string } | null
   visit_items?: VisitItem[]
+  visit_diagnoses?: VisitDiagnosis[]
 }
 
 /** ความถี่การให้ยา — sid/bid/tid/qid = วันละ 1/2/3/4 ครั้ง, q_h = ทุกๆ n ชม., prn = เมื่อมีอาการ */

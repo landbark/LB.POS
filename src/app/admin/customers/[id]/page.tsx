@@ -20,7 +20,7 @@ export default async function CustomerPage({ params }: { params: Promise<{ id: s
       .limit(20),
     supabase
       .from('visits')
-      .select('id, visit_number, visit_date, status, diagnosis, pets(name)')
+      .select('id, visit_number, visit_date, status, diagnosis, pets(name), visit_diagnoses(diagnoses(*))')
       .eq('customer_id', id)
       .order('visit_date', { ascending: false })
       .limit(20),

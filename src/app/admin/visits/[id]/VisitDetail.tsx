@@ -6,7 +6,7 @@ import { useProgress } from '@/lib/use-progress'
 import { createClient } from '@/lib/supabase/client'
 import { AlertTriangle, ArrowLeft, CalendarPlus, Check, Eye, Plus, Printer, Save, Send, Stethoscope, Trash2, X, Tag } from 'lucide-react'
 import toast from 'react-hot-toast'
-import { SPECIES_LABELS, VISIT_STATUS_LABELS, type PetVaccination, type Vaccine, type Visit, type VisitItem } from '@/lib/types'
+import { SPECIES_LABELS, VISIT_STATUS_LABELS, type Diagnosis, type PetVaccination, type Vaccine, type Visit, type VisitItem } from '@/lib/types'
 import { petAge, petWarnings } from '@/lib/pets'
 import { isClinicOnly, isVaccine, isVolumeDosed, billedMl } from '@/lib/clinic'
 import { computeNextDue } from '@/lib/vaccines'
@@ -14,6 +14,8 @@ import {
   FREQUENCY_OPTIONS, FOOD_OPTIONS, suggestedQuantity, sigText, labelName, labelIndication,
   TIME_SLOTS, defaultTimes, parseTimes, dosesPerDay, drugForm, type TimeSlot,
 } from '@/lib/sig'
+import DiagnosisSelect from '@/components/DiagnosisSelect'
+import { visitDiagnosisText, type DiagnosisLink } from '@/lib/diagnoses'
 import VaccineSection from '@/app/admin/pets/[id]/VaccineSection'
 import { confirmDialog } from '@/lib/confirm'
 
@@ -38,6 +40,7 @@ interface HistoryEntry {
   diagnosis: string | null
   treatment: string | null
   weight?: number | null
+  visit_diagnoses?: DiagnosisLink[] | null
 }
 
 // เศษเม็ดที่ใช้บ่อย — แยกจากจำนวนเต็ม หมอจะได้ผสมเองได้ทุกแบบ (1 เม็ดครึ่ง = 1 + ½)
@@ -70,6 +73,7 @@ export default function VisitDetail({
   vaccinations,
   vaccines,
   vaccineGraceDays,
+  diagnosisCatalog,
 }: {
   visit: Visit
   products: DispensableProduct[]
@@ -81,6 +85,8 @@ export default function VisitDetail({
   vaccines: Vaccine[]
   /** เลยกำหนดเกินกี่วันแล้วเลิกขึ้นแถบเตือนวัคซีน (ค่าจากหน้าแจ้งเตือน) */
   vaccineGraceDays: number
+  /** ชื่อโรคทั้งหมดในระบบ — ให้เลือก/ค้นหาในช่อง Assessment */
+  diagnosisCatalog: Diagnosis[]
 }) {
   const { refresh, push } = useProgress()
   const [saving, setSaving] = useState(false)
@@ -105,6 +111,10 @@ export default function VisitDetail({
     notes: visit.notes ?? '',
     follow_up_date: visit.follow_up_date ?? '',
   })
+  // ชื่อโรคที่ติดครั้งนี้ — เก็บเป็น state แล้วเขียน visit_diagnoses ตอนกดบันทึกพร้อมฟอร์ม (เหมือนช่องอื่น)
+  const [picked, setPicked] = useState<Diagnosis[]>(
+    (visit.visit_diagnoses ?? []).map((vd) => vd.diagnoses).filter((d): d is Diagnosis => !!d)
+  )
   // ช่องเพิ่มรายการ แยกกัน: Service Fee (บริการ/หัตถการ) กับ Prescription (ยา)
   const [serviceQuery, setServiceQuery] = useState('')
   const [rxQuery, setRxQuery] = useState('')
@@ -131,6 +141,27 @@ export default function VisitDetail({
 
   const numberOrNull = (value: string) => (value.trim() === '' ? null : Number(value))
 
+  // เขียนส่วนต่างของชื่อโรค — upsert ให้กดบันทึกซ้ำได้โดยไม่ชน unique (visit_id, diagnosis_id)
+  async function saveDiagnoses() {
+    const supabase = createClient()
+    const nextIds = picked.map((d) => d.id)
+    const prevIds = (visit.visit_diagnoses ?? []).map((vd) => vd.diagnosis_id)
+    const removed = prevIds.filter((id) => !nextIds.includes(id))
+
+    if (nextIds.length > 0) {
+      const { error } = await supabase
+        .from('visit_diagnoses')
+        .upsert(nextIds.map((diagnosis_id) => ({ visit_id: visit.id, diagnosis_id })),
+          { onConflict: 'visit_id,diagnosis_id', ignoreDuplicates: true })
+      if (error) return error
+    }
+    if (removed.length > 0) {
+      const { error } = await supabase.from('visit_diagnoses').delete().eq('visit_id', visit.id).in('diagnosis_id', removed)
+      if (error) return error
+    }
+    return null
+  }
+
   async function saveVisit(silent = false) {
     setSaving(true)
     const supabase = createClient()
@@ -152,9 +183,11 @@ export default function VisitDetail({
         follow_up_date: form.follow_up_date || null,
       })
       .eq('id', visit.id)
+
+    const diagError = error ? null : await saveDiagnoses()
     setSaving(false)
 
-    if (error) {
+    if (error || diagError) {
       toast.error('บันทึกไม่สำเร็จ')
       return false
     }
@@ -371,6 +404,8 @@ export default function VisitDetail({
   // สร้างนัดติดตามจากวันที่กรอกไว้ — บันทึกวันติดตามลง visit ด้วยกันเผื่อยังไม่ได้กดบันทึก
   async function createFollowUp() {
     if (!form.follow_up_date) return
+    // ใช้ชื่อโรคที่เลือกอยู่บนหน้าจอ (ยังไม่กดบันทึกก็ได้) ไม่ใช่ค่าที่เคยบันทึกไว้
+    const followUpNote = [picked.map((d) => d.name).join(', '), form.diagnosis.trim()].filter(Boolean).join(' — ')
     setMakingAppt(true)
     const supabase = createClient()
     const scheduled_at = new Date(`${form.follow_up_date}T${followUpTime || '09:00'}`).toISOString()
@@ -380,7 +415,7 @@ export default function VisitDetail({
       vet_id: visit.vet_id,
       scheduled_at,
       type: 'follow_up',
-      notes: visit.diagnosis ? `ติดตามอาการ: ${visit.diagnosis}` : null,
+      notes: followUpNote ? `ติดตามอาการ: ${followUpNote}` : null,
       visit_id: visit.id,
       created_by: userId,
     }).select('id').maybeSingle()
@@ -959,12 +994,13 @@ export default function VisitDetail({
               Healthy — สุขภาพปกติ
             </label>
           </div>
+          <DiagnosisSelect value={picked} onChange={setPicked} catalog={diagnosisCatalog} disabled={readOnly} />
           <textarea
             rows={2}
             value={form.diagnosis}
             onChange={(e) => set('diagnosis', e.target.value)}
-            placeholder={form.healthy ? 'สุขภาพปกติ — เขียนเพิ่มได้ถ้ามี' : ''}
-            className={inputClass}
+            placeholder={form.healthy ? 'สุขภาพปกติ — เขียนเพิ่มได้ถ้ามี' : 'รายละเอียดเพิ่มเติม (ถ้ามี)'}
+            className={`${inputClass} mt-2`}
           />
         </div>
         <div>
@@ -1128,7 +1164,7 @@ export default function VisitDetail({
                 <p className="text-xs text-gray-400 font-mono">
                   {h.visit_number} · {new Date(h.visit_date).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' })}
                 </p>
-                <p className="text-sm text-gray-700">{h.diagnosis || h.treatment || 'ไม่ได้บันทึกการวินิจฉัย'}</p>
+                <p className="text-sm text-gray-700">{visitDiagnosisText(h) || h.treatment || 'ไม่ได้บันทึกการวินิจฉัย'}</p>
               </Link>
             ))}
           </div>
