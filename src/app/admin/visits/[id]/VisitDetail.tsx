@@ -88,6 +88,8 @@ export default function VisitDetail({
   // หมอกดซ้ำเพราะนึกว่าไม่ติด → ได้รายการเบิ้ล ระหว่างนี้จึงปิดปุ่มกับช่องค้นหาไว้
   const [adding, setAdding] = useState(false)
   const [makingAppt, setMakingAppt] = useState(false)
+  // เวลานัดติดตาม — ไม่ได้เก็บลง visit (follow_up_date เป็น DATE) ใช้ตอนสร้าง appointment เท่านั้น
+  const [followUpTime, setFollowUpTime] = useState('09:00')
   const [form, setForm] = useState({
     weight: visit.weight?.toString() ?? '',
     temperature: visit.temperature?.toString() ?? '',
@@ -371,8 +373,7 @@ export default function VisitDetail({
     if (!form.follow_up_date) return
     setMakingAppt(true)
     const supabase = createClient()
-    // เที่ยงวันกันปัญหา timezone ขยับข้ามวัน
-    const scheduled_at = new Date(`${form.follow_up_date}T09:00`).toISOString()
+    const scheduled_at = new Date(`${form.follow_up_date}T${followUpTime || '09:00'}`).toISOString()
     const { data: created, error } = await supabase.from('appointments').insert({
       pet_id: visit.pet_id,
       customer_id: visit.customer_id,
@@ -979,6 +980,14 @@ export default function VisitDetail({
             <label className={labelClass}>Follow-up Date</label>
             <div className="flex items-center gap-2">
               <input type="date" value={form.follow_up_date} onChange={(e) => set('follow_up_date', e.target.value)} className={inputClass} />
+              <input
+                type="time"
+                value={followUpTime}
+                onChange={(e) => setFollowUpTime(e.target.value)}
+                disabled={!canEdit}
+                title="เวลานัด"
+                className={`${inputClass} w-28 shrink-0`}
+              />
               {form.follow_up_date && (
                 <button
                   type="button"
