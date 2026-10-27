@@ -9,7 +9,7 @@ import toast from 'react-hot-toast'
 import type { Supplier } from '@/lib/types'
 import {
   ProductPicker, MultiPicker, StockBadge, UnitSelect, newItem, inputClass,
-  findUnitChoice, factorOfRow,
+  findUnitChoice, factorOfRow, useUnitAdder,
   type ProductOption, type ItemRow,
 } from '../../pickers'
 
@@ -29,6 +29,7 @@ export default function EditPurchaseClient({
   products: ProductOption[]
 }) {
   const router = useRouter()
+  const addUnit = useUnitAdder(products)
   const [supplierId, setSupplierId] = useState(purchase.supplier_id ?? '')
   const [notes, setNotes] = useState(purchase.notes ?? '')
   const [items, setItems] = useState<ItemRow[]>(
@@ -207,7 +208,7 @@ export default function EditPurchaseClient({
                     <td className="pr-2 py-1.5 align-top">
                       <div className="flex items-center gap-1.5">
                         <input type="number" min="1" value={it.quantity} onChange={(e) => setItem(i, 'quantity', e.target.value)} className={inputClass} placeholder="0" />
-                        <UnitSelect product={p} value={it.product_unit_id} onChange={(id) => setItem(i, 'product_unit_id', id)} />
+                        <UnitSelect product={p} value={it.product_unit_id} onChange={(id) => setItem(i, 'product_unit_id', id)} onUnitAdded={addUnit} />
                       </div>
                       {factorOfRow(p, it.product_unit_id) > 1 && (parseInt(it.quantity) || 0) > 0 && (
                         <p className="mt-0.5 pl-1 text-[11px] text-gray-400">

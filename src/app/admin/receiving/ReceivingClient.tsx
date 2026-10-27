@@ -8,7 +8,7 @@ import { Plus, Trash2, PackagePlus, Printer, PackageCheck, ListPlus, Pencil } fr
 import { confirmDialog } from '@/lib/confirm'
 import toast from 'react-hot-toast'
 import type { PurchaseStatus, Supplier } from '@/lib/types'
-import { ProductPicker, MultiPicker, StockBadge, UnitSelect, newItem, inputClass, findUnitChoice, factorOfRow, type ProductOption, type ItemRow } from './pickers'
+import { ProductPicker, MultiPicker, StockBadge, UnitSelect, newItem, inputClass, findUnitChoice, factorOfRow, useUnitAdder, type ProductOption, type ItemRow } from './pickers'
 
 // เลขที่ใบรับของอิงเวลาที่กดบันทึก — อยู่นอกคอมโพเนนต์ให้ชัดว่าไม่ใช่ค่าที่คิดตอน render
 const newPurchaseNumber = () => `PO${Date.now()}`
@@ -32,6 +32,7 @@ interface Props {
 
 export default function ReceivingClient({ suppliers, products, purchases }: Props) {
   const router = useRouter()
+  const addUnit = useUnitAdder(products)
   const [supplierId, setSupplierId] = useState('')
   const [notes, setNotes] = useState('')
   const [items, setItems] = useState<ItemRow[]>([newItem()])
@@ -277,7 +278,7 @@ export default function ReceivingClient({ suppliers, products, purchases }: Prop
                           <>
                             <div className="flex items-center gap-1.5">
                               <input type="number" min="1" value={it.quantity} onChange={(e) => setItem(i, 'quantity', e.target.value)} className={inputClass} placeholder="0" />
-                              <UnitSelect product={p} value={it.product_unit_id} onChange={(id) => setItem(i, 'product_unit_id', id)} />
+                              <UnitSelect product={p} value={it.product_unit_id} onChange={(id) => setItem(i, 'product_unit_id', id)} onUnitAdded={addUnit} />
                             </div>
                             {factor > 1 && qty > 0 && (
                               <p className="mt-0.5 pl-1 text-[11px] text-gray-400">

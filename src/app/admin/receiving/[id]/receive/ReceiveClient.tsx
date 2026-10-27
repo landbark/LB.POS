@@ -6,7 +6,7 @@ import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { PackageCheck, ArrowLeft, Plus, Trash2 } from 'lucide-react'
 import toast from 'react-hot-toast'
-import { ProductPicker, UnitSelect, findUnitChoice, type ProductOption } from '../../pickers'
+import { ProductPicker, UnitSelect, findUnitChoice, useUnitAdder, type ProductOption } from '../../pickers'
 
 interface ReceiveItem {
   id: string
@@ -67,6 +67,7 @@ export default function ReceiveClient({
   products: ProductOption[]
 }) {
   const router = useRouter()
+  const addUnit = useUnitAdder(products)
   const [loading, setLoading] = useState(false)
   // รายการที่ถูกลบออกตอนรับของ — ลบออกจากใบสั่งซื้อตอนกดยืนยัน
   const [removedIds, setRemovedIds] = useState<string[]>([])
@@ -356,6 +357,7 @@ export default function ReceiveClient({
                             product={products.find((x) => x.id === r.productId)}
                             value={r.unitId}
                             onChange={(id) => pickUnit(i, id)}
+                            onUnitAdded={addUnit}
                           />
                         )}
                       </div>

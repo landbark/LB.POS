@@ -2,7 +2,9 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { X, Search, Check } from 'lucide-react'
+import { X, Search, Check, Plus } from 'lucide-react'
+import toast from 'react-hot-toast'
+import { createClient } from '@/lib/supabase/client'
 import type { ProductUnit } from '@/lib/types'
 import { purchaseUnitChoices } from '@/lib/productUnits'
 
@@ -67,26 +69,213 @@ export function UnitSelect({
   product,
   value,
   onChange,
+  onUnitAdded,
 }: {
   product: ProductOption | undefined
   value: string
   onChange: (unitId: string) => void
+  /** ส่งมาด้วย = มีปุ่มเพิ่มหน่วยใหญ่ให้ตั้งจากในฟอร์มนี้เลย ไม่ต้องไปตั้งที่หน้าสินค้าก่อน */
+  onUnitAdded?: (unit: ProductUnit) => void
 }) {
+  const [adding, setAdding] = useState(false)
   const choices = unitChoicesOf(product)
   if (!product) return null
-  if (choices.length <= 1) return <span className="shrink-0 text-xs text-gray-500">{product.unit}</span>
   return (
-    <select
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      className="shrink-0 border border-gray-300 rounded-lg px-1.5 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-    >
-      {choices.map((c) => (
-        <option key={c.unit?.id ?? 'base'} value={c.unit?.id ?? ''}>
-          {c.name}{c.factor > 1 ? ` (${c.factor})` : ''}
-        </option>
-      ))}
-    </select>
+    <span className="flex shrink-0 items-center gap-1">
+      {choices.length <= 1 ? (
+        <span className="text-xs text-gray-500">{product.unit}</span>
+      ) : (
+        <select
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          className="border border-gray-300 rounded-lg px-1.5 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+        >
+          {choices.map((c) => (
+            <option key={c.unit?.id ?? 'base'} value={c.unit?.id ?? ''}>
+              {c.name}{c.factor > 1 ? ` (${c.factor})` : ''}
+            </option>
+          ))}
+        </select>
+      )}
+      {onUnitAdded && (
+        <button
+          type="button"
+          onClick={() => setAdding(true)}
+          title={`เพิ่มหน่วยใหญ่ของ ${product.name} เช่น ลัง / กล่อง`}
+          className="rounded-lg border border-gray-300 p-1.5 text-gray-500 hover:bg-gray-50 hover:text-gray-700"
+        >
+          <Plus size={14} />
+        </button>
+      )}
+      {adding && onUnitAdded && (
+        <AddUnitModal
+          product={product}
+          onClose={() => setAdding(false)}
+          onCreated={(unit) => {
+            onUnitAdded(unit)
+            onChange(unit.id)
+            setAdding(false)
+          }}
+        />
+      )}
+    </span>
+  )
+}
+
+/**
+ * ตั้งหน่วยใหญ่ (ลัง/กล่อง) ของสินค้าตัวหนึ่งจากในใบสั่งซื้อ
+ *
+ * ของมาเป็นลังแต่สินค้ายังไม่เคยตั้งหน่วยลังไว้ เดิมต้องทิ้งใบที่กรอกค้างไว้ ไปตั้งที่หน้าสินค้า
+ * แล้วกลับมาเริ่มใหม่ — ค่าที่กรอกตรงนี้ไปลงที่ **ตัวสินค้า** เหมือนตั้งจากหน้าสินค้า ใช้ได้ทุกใบ
+ *
+ * เริ่มที่ปิดขายหน้าร้าน เพราะลังส่วนใหญ่ไว้สั่งของเท่านั้น (ติ๊กเปิดได้ถ้าจะขายยกลังด้วย)
+ */
+function AddUnitModal({
+  product,
+  onClose,
+  onCreated,
+}: {
+  product: ProductOption
+  onClose: () => void
+  onCreated: (unit: ProductUnit) => void
+}) {
+  const [unitName, setUnitName] = useState('')
+  const [factor, setFactor] = useState('')
+  const [cost, setCost] = useState('')
+  const [barcode, setBarcode] = useState('')
+  const [sellPos, setSellPos] = useState(false)
+  const [price, setPrice] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  const name = unitName.trim() || 'หน่วย'
+  const n = parseInt(factor, 10) || 0
+
+  async function save() {
+    if (!unitName.trim()) {
+      toast.error('ใส่ชื่อหน่วย เช่น กล่อง / ลัง')
+      return
+    }
+    if (n < 2) {
+      toast.error(`ใส่จำนวน ${product.unit} ต่อ 1 ${name} (ตั้งแต่ 2 ขึ้นไป)`)
+      return
+    }
+    setBusy(true)
+    const { data, error } = await createClient()
+      .from('product_units')
+      .insert({
+        product_id: product.id,
+        unit_name: unitName.trim(),
+        factor: n,
+        sku: null,
+        barcode: barcode.trim() || null,
+        // ไม่ใส่ราคา = ขายเท่าราคาหน่วยย่อยคูณตัวคูณ (ไม่ลด)
+        price: price.trim() ? parseFloat(price) : null,
+        cost: cost.trim() ? parseFloat(cost) : null,
+        sellable_pos: sellPos,
+        sellable_online: false,
+        purchasable: true,
+        sort_order: n,
+      })
+      .select('*')
+      .single()
+    setBusy(false)
+    if (error || !data) {
+      toast.error(
+        error?.code === '23505'
+          ? `สินค้านี้มีหน่วย ${unitName.trim()} อยู่แล้ว (หรือบาร์โค้ดซ้ำกับที่อื่น)`
+          : 'เพิ่มหน่วยไม่สำเร็จ: ' + (error?.message ?? ''),
+      )
+      return
+    }
+    toast.success(`เพิ่มหน่วย ${unitName.trim()} — 1 ${unitName.trim()} = ${n} ${product.unit}`)
+    onCreated(data as ProductUnit)
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+          <div className="min-w-0">
+            <h2 className="font-semibold text-gray-900">เพิ่มหน่วยใหญ่</h2>
+            <p className="truncate text-xs text-gray-500">{product.name} — หน่วยย่อยคือ {product.unit}</p>
+          </div>
+          <button onClick={onClose} className="p-1 text-gray-400 hover:text-gray-600"><X size={18} /></button>
+        </div>
+
+        <div className="px-5 py-4 space-y-3" onKeyDown={(e) => { if (e.key === 'Enter' && !busy) { e.preventDefault(); void save() } }}>
+          <div className="grid grid-cols-2 gap-2">
+            <label className="block">
+              <span className="text-xs text-gray-500">ชื่อหน่วย</span>
+              <input autoFocus value={unitName} onChange={(e) => setUnitName(e.target.value)} placeholder="ลัง" className={inputClass} />
+            </label>
+            <label className="block">
+              <span className="text-xs text-gray-500">1 {name} = กี่ {product.unit}</span>
+              <input type="number" min="2" step="1" value={factor} onChange={(e) => setFactor(e.target.value)} placeholder="12" className={inputClass} />
+            </label>
+            <label className="block">
+              <span className="text-xs text-gray-500">ทุนต่อ 1 {name}</span>
+              <input
+                type="number" min="0" step="0.01" value={cost} onChange={(e) => setCost(e.target.value)}
+                placeholder={product.cost != null && n >= 2 ? (product.cost * n).toFixed(2) : '0.00'}
+                className={inputClass}
+              />
+            </label>
+            <label className="block">
+              <span className="text-xs text-gray-500">บาร์โค้ดข้างลัง</span>
+              <input value={barcode} onChange={(e) => setBarcode(e.target.value)} placeholder="ไม่มีก็ได้" className={inputClass} />
+            </label>
+          </div>
+
+          <label className="flex items-center gap-2 text-sm text-gray-700">
+            <input type="checkbox" checked={sellPos} onChange={(e) => setSellPos(e.target.checked)} className="h-4 w-4" />
+            ขายยก{name}ที่หน้าร้านด้วย
+          </label>
+          {sellPos && (
+            <label className="block">
+              <span className="text-xs text-gray-500">ราคาขายต่อ 1 {name} (เว้นว่าง = ไม่ลด)</span>
+              <input type="number" min="0" step="0.01" value={price} onChange={(e) => setPrice(e.target.value)} placeholder="0.00" className={inputClass} />
+            </label>
+          )}
+
+          <p className="text-xs text-gray-400">
+            หน่วยนี้ไปอยู่ที่ตัวสินค้า — ใบอื่นเลือกได้ด้วย และสต็อคยังนับเป็น{product.unit}กองเดียวตามเดิม
+          </p>
+        </div>
+
+        <div className="flex justify-end gap-2 px-5 py-4 border-t border-gray-100">
+          <button onClick={onClose} className="rounded-lg px-4 py-2 text-sm text-gray-600 hover:bg-gray-50">ยกเลิก</button>
+          <button
+            onClick={save}
+            disabled={busy}
+            className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
+          >
+            <Check size={15} /> {busy ? 'กำลังบันทึก...' : 'เพิ่มหน่วย'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/**
+ * รับหน่วยที่เพิ่งสร้างจากในฟอร์มเข้าลิสต์สินค้า — ใบที่กรอกค้างอยู่ต้องเลือกได้ทันที
+ * ไม่ใช่รอ router.refresh()
+ *
+ * เขียนเพิ่มลงในตัวสินค้าตัวเดิม ไม่ได้ copy ลิสต์ใหม่ เพราะตัวจัดการเหตุการณ์ของฟอร์ม
+ * (ตอนเติมทุนต่อหน่วยให้แถวที่เพิ่งเลือกหน่วยใหม่) ปิดทับลิสต์ของ render นั้นไว้ —
+ * ถ้า copy ใหม่ โค้ดที่กำลังทำงานอยู่จะยังอ่านลิสต์เก่า หาหน่วยที่เพิ่งสร้างไม่เจอ
+ * แล้วทุนต่อลังที่กรอกไว้จะไม่ถูกเติมลงช่อง ของจริงมาจาก router.refresh() รอบถัดไป
+ */
+export function useUnitAdder(products: ProductOption[]) {
+  const [, rerender] = useState(0)
+  return useCallback(
+    (unit: ProductUnit) => {
+      const product = products.find((p) => p.id === unit.product_id)
+      if (!product) return
+      product.product_units = [...(product.product_units ?? []), unit]
+      rerender((n) => n + 1)
+    },
+    [products],
   )
 }
 
