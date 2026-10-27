@@ -108,6 +108,8 @@ export interface Product {
   indication_en: string | null
   /** ยี่ห้อ — ขึ้นใต้ชื่อยาบนฉลาก */
   brand: string | null
+  /** คำค้นสำรองที่ร้านเติมเอง — คั่นด้วยช่องว่าง/จุลภาค ใช้หาสินค้าที่ชื่อไม่ตรงกับที่คนเรียก */
+  search_keywords: string | null
   /** น้ำหนักต่อหน่วย (กรัม) — ใช้คิดค่าส่งบนเว็บ */
   weight_grams: number | null
   /** ขึ้นขายบนหน้าเว็บร้านค้าออนไลน์ */

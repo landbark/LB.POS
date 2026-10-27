@@ -9,7 +9,7 @@ import ShopeeButton from './ShopeeButton'
 // เลือกเฉพาะคอลัมน์ที่ตารางกับปุ่ม Shopee ใช้จริง — `*` ลากคอลัมน์ยาวๆ (คำอธิบายเว็บ, ฉลากยา,
 // สรรพคุณ) มาด้วยทั้งที่หน้านี้ไม่ได้แสดง กลายเป็นหลายร้อย KB ที่ต้องส่งไป browser ทุกครั้ง
 const COLUMNS = `
-  id, name, sku, barcode, price, unit, min_stock, active,
+  id, name, sku, barcode, search_keywords, price, unit, min_stock, active,
   is_service, on_shopee, online_available, image_url, weight_grams, clinic_only, vat_applicable,
   categories(name, clinic_only, vat_applicable),
   product_lots(id, lot_number, expiry_date, quantity),

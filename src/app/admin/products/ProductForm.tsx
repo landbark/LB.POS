@@ -46,6 +46,7 @@ export default function ProductForm({ categories, units, suppliers, product }: P
     indication: product?.indication ?? '',
     indication_en: product?.indication_en ?? '',
     brand: product?.brand ?? '',
+    search_keywords: product?.search_keywords ?? '',
   })
 
   // รูปใหม่ที่ crop/บีบอัดแล้วรออัปโหลด; preview = URL เดิมหรือ object URL ของรูปใหม่
@@ -171,6 +172,7 @@ export default function ProductForm({ categories, units, suppliers, product }: P
       indication: form.indication.trim() || null,
       indication_en: form.indication_en.trim() || null,
       brand: form.brand.trim() || null,
+      search_keywords: form.search_keywords.trim() || null,
     }
 
     const { error } = product
@@ -259,6 +261,21 @@ export default function ProductForm({ categories, units, suppliers, product }: P
               placeholder="8850xxxxxxx"
             />
           </div>
+        </div>
+
+        <div>
+          <label className={labelClass}>คำค้นสำรอง</label>
+          <input
+            type="text"
+            value={form.search_keywords}
+            onChange={(e) => set('search_keywords', e.target.value)}
+            className={inputClass}
+            placeholder="เช่น ซองฟ้า ตัวที่หมอสั่ง อาหารแมวแก่"
+          />
+          <p className="mt-1 text-xs text-gray-500">
+            คำที่พนักงานพิมพ์หาแต่ไม่มีในชื่อสินค้า พิมพ์ต่อกันคั่นด้วยช่องว่าง — ยี่ห้อดังกับคำว่า
+            เปียก/เม็ด/แมว/หมา ระบบเติมให้เองอยู่แล้ว ไม่ต้องใส่ซ้ำ
+          </p>
         </div>
 
         <div className="grid grid-cols-2 gap-4">

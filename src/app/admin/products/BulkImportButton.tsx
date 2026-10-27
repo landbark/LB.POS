@@ -8,13 +8,15 @@ import toast from 'react-hot-toast'
 import { parseCsv, downloadCsv, headerIndexer, parseDateCell } from '@/lib/csv'
 import type { Category, Unit } from '@/lib/types'
 
-const HEADERS = ['ชื่อสินค้า', 'SKU', 'บาร์โค้ด', 'หมวดหมู่', 'หน่วย', 'ราคาขาย', 'ราคาทุน', 'แจ้งเตือนสต็อคต่ำกว่า', 'ซัพพลายเออร์', 'จำนวนคงเหลือ', 'LOT', 'วันหมดอายุ', 'VAT']
+const HEADERS = ['ชื่อสินค้า', 'SKU', 'บาร์โค้ด', 'คำค้นสำรอง', 'หมวดหมู่', 'หน่วย', 'ราคาขาย', 'ราคาทุน', 'แจ้งเตือนสต็อคต่ำกว่า', 'ซัพพลายเออร์', 'จำนวนคงเหลือ', 'LOT', 'วันหมดอายุ', 'VAT']
 
 interface DraftRow {
   rowNum: number
   name: string
   sku: string
   barcode: string
+  /** คำที่พนักงานพิมพ์หาแต่ไม่มีในชื่อสินค้า คั่นด้วยช่องว่าง */
+  searchKeywords: string
   category: string
   unit: string
   price: string
@@ -100,6 +102,7 @@ export default function BulkImportButton({ categories, units, suppliers, userId 
       name: idx('ชื่อสินค้า'),
       sku: idx('SKU'),
       barcode: idx('บาร์โค้ด'),
+      searchKeywords: idx('คำค้นสำรอง'),
       category: idx('หมวดหมู่'),
       unit: idx('หน่วย'),
       price: idx('ราคาขาย'),
@@ -131,6 +134,7 @@ export default function BulkImportButton({ categories, units, suppliers, userId 
         name,
         sku: get(r, col.sku),
         barcode: get(r, col.barcode),
+        searchKeywords: get(r, col.searchKeywords),
         category: get(r, col.category),
         unit: get(r, col.unit),
         price,
@@ -188,6 +192,7 @@ export default function BulkImportButton({ categories, units, suppliers, userId 
         name: d.name,
         sku: d.sku || null,
         barcode: d.barcode || null,
+        search_keywords: d.searchKeywords || null,
         category_id: categoryId,
         supplier_id: supplierId,
         price: parseFloat(d.price),

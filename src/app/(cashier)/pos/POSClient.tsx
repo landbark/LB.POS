@@ -14,6 +14,7 @@ import { confirmDialog } from '@/lib/confirm'
 import BarcodeScanner, { type ScanFeedback } from '@/components/BarcodeScanner'
 import OpenShiftModal from '@/components/OpenShiftModal'
 import { withBoothPrices, getBoothTrip, getBoothTripOnServer, setBoothTrip, subscribeBoothTrip } from '@/lib/booth'
+import { buildHaystacks, haystackOf, matchesTokens, scoreOf, tokenize } from '@/lib/productSearch'
 import { openCustomerDisplay } from '@/lib/posDisplayWindow'
 
 // เครื่องที่ใช้เมาส์ยิงด้วยเครื่องยิงบาร์โค้ดอยู่แล้ว ไม่ต้องมีปุ่มกล้อง
@@ -58,32 +59,6 @@ const isScannable = (code: string | null | undefined) => /^\d{8,14}$/.test((code
 
 /** คีย์ของบรรทัดในตะกร้า — สินค้าตัวเดียวอยู่ได้หลายบรรทัดถ้าขายคนละหน่วย */
 const lineKey = (item: Pick<CartItem, 'product' | 'unit'>) => `${item.product.id}:${item.unit?.id ?? 'base'}`
-
-/** ข้อความทั้งหมดที่ใช้ค้นสินค้าตัวหนึ่ง — ชื่อ + รหัส + บาร์โค้ด รวมของหน่วยยกแพ็กด้วย */
-const haystackOf = (p: Product) =>
-  [p.name, p.sku, p.barcode, ...(p.product_units ?? []).flatMap((u) => [u.sku, u.barcode])]
-    .filter(Boolean)
-    .join(' ')
-    .toLowerCase()
-
-/** ตัดคำค้นเป็นคำๆ — ช่องว่างซ้ำ/ขึ้นบรรทัดไม่นับ */
-const tokenize = (q: string) => q.toLowerCase().split(/\s+/).filter(Boolean)
-
-// ต้องเจอครบทุกคำ แต่ไม่สนลำดับและไม่ต้องติดกัน — ชื่อสินค้าที่นำเข้ามายาวและเรียงคำไม่เหมือนที่คนพิมพ์
-// ("royal jelly" ต้องเจอ ROYAL CANIN INSTINCTIVE IN JELLY ADULT CATS 85G, "sterilised 10" ต้องเจอ
-// ROYAL CANIN STERILISED  10 KG. ที่มีช่องว่างซ้อน) — เดิมเทียบเป็นก้อนเดียวเลยต้องพิมพ์ยาวเกือบทั้งชื่อ
-const matchesTokens = (hay: string, tokens: string[]) => tokens.every((t) => hay.includes(t))
-
-// ลำดับความตรง: ขึ้นต้นด้วยคำค้น > มีคำค้นติดกันอยู่ในชื่อ > ครบทุกคำในชื่อ > เจอแค่ในรหัส/บาร์โค้ด
-// กริดวาดแค่ GRID_LIMIT ตัว ถ้าไม่จัดลำดับ ตัวที่ตรงที่สุดจมอยู่ท้ายแถวจนไม่ถูกวาด
-const scoreOf = (p: Product, hay: string, q: string, tokens: string[]) => {
-  if (!q) return 0
-  const name = p.name.toLowerCase()
-  if (name.startsWith(q)) return 0
-  if (name.includes(q)) return 1
-  if (matchesTokens(name, tokens)) return 2
-  return matchesTokens(hay, tokens) ? 3 : 4
-}
 
 // จำนวนสินค้าที่วาดบนกริด — วาดครบสองพันตัวทำให้ทุกตัวอักษรที่พิมพ์หน่วงเป็นสิบ ms
 const GRID_LIMIT = 60
@@ -213,11 +188,7 @@ export default function POSClient({ products: allProducts, booth, shiftOpen, pro
   const tokens = tokenize(q)
 
   // ข้อความค้นของสินค้าทุกตัว ทำครั้งเดียวต่อชุดสินค้า ไม่ใช่ทุกตัวอักษรที่พิมพ์
-  const haystacks = useMemo(() => {
-    const m = new Map<string, string>()
-    for (const p of products) m.set(p.id, haystackOf(p))
-    return m
-  }, [products])
+  const haystacks = useMemo(() => buildHaystacks(products), [products])
 
   const filtered = products.filter((p) => {
     const matchCategory = !categoryFilter || p.categories?.name === categoryFilter

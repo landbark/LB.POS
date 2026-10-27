@@ -9,6 +9,7 @@ import { createClient } from '@/lib/supabase/client'
 import { confirmDialog } from '@/lib/confirm'
 import { isVatApplicable } from '@/lib/vat'
 import { hasBoothPrice } from '@/lib/booth'
+import { buildHaystacks } from '@/lib/productSearch'
 import type { Product } from '@/lib/types'
 
 // แสดงทีละชุด — ร้านมีสินค้าสองพันกว่าตัว วาดทั้งตารางทีเดียวหน้าหนืด
@@ -33,19 +34,17 @@ export default function ProductsTable({ products }: { products: Product[] }) {
   const [boothFilter, setBoothFilter] = useState<'' | 'yes' | 'no'>('')
   const [shown, setShown] = useState(PAGE)
 
-  const haystacks = useMemo(
-    () =>
-      new Map(
-        products.map((p) => [
-          p.id,
-          [p.name, p.sku, p.barcode, p.categories?.name, p.unit]
-            .filter(Boolean)
-            .join(' ')
-            .toLowerCase(),
-        ]),
-      ),
-    [products],
-  )
+  // กองคำค้นชุดเดียวกับหน้าขาย (ชื่อ/รหัส/บาร์โค้ด/คำค้นสำรอง) บวกหมวดกับหน่วยที่ใช้แต่ในตารางนี้
+  // — ค้นในหน้าสินค้าต้องเจอด้วยคำเดียวกับที่พนักงานใช้หน้าร้าน ไม่งั้นตามแก้ของที่เขาหาไม่เจอไม่ถูก
+  const haystacks = useMemo(() => {
+    const base = buildHaystacks(products)
+    return new Map(
+      products.map((p) => [
+        p.id,
+        [base.get(p.id), p.categories?.name, p.unit].filter(Boolean).join(' ').toLowerCase(),
+      ]),
+    )
+  }, [products])
 
   const stoppedCount = useMemo(() => products.filter((p) => !p.active).length, [products])
 
