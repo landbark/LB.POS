@@ -18,6 +18,7 @@ import DiagnosisSelect from '@/components/DiagnosisSelect'
 import { visitDiagnosisText, type DiagnosisLink } from '@/lib/diagnoses'
 import VaccineSection from '@/app/admin/pets/[id]/VaccineSection'
 import { confirmDialog } from '@/lib/confirm'
+import { canExamine } from '@/lib/roles'
 
 interface DispensableProduct {
   id: string
@@ -127,7 +128,7 @@ export default function VisitDetail({
   // - หมอ/แอดมิน: แก้ได้ ยกเว้นใบที่ "หมอคนอื่นกำลังตรวจ" (status=open + เจ้าของเป็นคนอื่น) และใบที่ยกเลิก
   // - ตรวจเสร็จแล้ว (pending_payment/paid): หมอคนไหนก็แก้บันทึกได้
   const examinedByOther = visit.status === 'open' && !!visit.vet_id && visit.vet_id !== userId
-  const canEdit = (role === 'vet' || role === 'admin') && visit.status !== 'cancelled' && !examinedByOther
+  const canEdit = canExamine(role) && visit.status !== 'cancelled' && !examinedByOther
   const readOnly = !canEdit
 
   // ส่งไปเก็บเงินแล้วห้ามแก้รายการยา (ตะกร้าฝั่งแคชเชียร์อ่านจากตรงนี้) + ต้องมีสิทธิ์แก้

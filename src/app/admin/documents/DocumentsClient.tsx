@@ -49,10 +49,12 @@ export default function DocumentsClient({
   receipts,
   purchaseOrders,
   currentUserId,
+  canEdit,
 }: {
   receipts: ReceiptRow[]
   purchaseOrders: PurchaseOrderRow[]
   currentUserId: string
+  canEdit: boolean
 }) {
   const router = useRouter()
   const [tab, setTab] = useState<Tab>('receipt')
@@ -168,7 +170,7 @@ export default function DocumentsClient({
                         <Printer size={15} />
                       </Link>
                       {/* บิลแพลตฟอร์มไม่มีวิธีรับเงินให้แก้ — เงินเข้าทางแพลตฟอร์ม ไม่ได้รับที่ร้าน */}
-                      {r.status !== 'cancelled' && !isOnlineChannel(r.sales_channel) && (
+                      {canEdit && r.status !== 'cancelled' && !isOnlineChannel(r.sales_channel) && (
                         <button
                           onClick={() => setEditingPayment(r)}
                           title="แก้วิธีรับเงิน"
@@ -177,7 +179,7 @@ export default function DocumentsClient({
                           <Wallet size={15} />
                         </button>
                       )}
-                      {r.status !== 'cancelled' && (
+                      {canEdit && r.status !== 'cancelled' && (
                         <button
                           onClick={() => setCancelling(r)}
                           title="ยกเลิกใบเสร็จ"

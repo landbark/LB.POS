@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getAdmin } from '@/lib/require-staff'
 
-const ROLES = ['admin', 'cashier', 'vet']
+const ROLES = ['admin', 'cashier', 'vet', 'vet_plus']
 const normalizeRole = (role: unknown) => (ROLES.includes(role as string) ? (role as string) : 'cashier')
 
 // ตรวจว่า caller เป็นแอดมินที่ยังใช้งานอยู่ ก่อนใช้ service role ทุกครั้ง

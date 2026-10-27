@@ -140,6 +140,7 @@ export default function StaffSection({ staff, migrated }: Props) {
             >
               <option value="cashier">พนักงานขาย</option>
               <option value="vet">สัตวแพทย์</option>
+              <option value="vet_plus">สัตวแพทย์พิเศษ</option>
               <option value="admin">เจ้าของร้าน</option>
             </select>
           </div>
@@ -218,6 +219,7 @@ export default function StaffSection({ staff, migrated }: Props) {
                   >
                     <option value="cashier">พนักงานขาย</option>
                     <option value="vet">สัตวแพทย์</option>
+                    <option value="vet_plus">สัตวแพทย์พิเศษ</option>
                     <option value="admin">เจ้าของร้าน</option>
                   </select>
                 </td>

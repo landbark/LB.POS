@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 
-const ROLES = ['admin', 'cashier', 'vet']
+const ROLES = ['admin', 'cashier', 'vet', 'vet_plus']
 const normalizeRole = (role: unknown) => (ROLES.includes(role as string) ? (role as string) : 'cashier')
 
 async function requireAdmin() {

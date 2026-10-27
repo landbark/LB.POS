@@ -34,11 +34,13 @@ import {
   BookOpen,
   ClipboardList,
 } from 'lucide-react'
+import { isVet } from '@/lib/roles'
 
 /** ถามจำนวนออเดอร์ค้างซ้ำทุกกี่มิลลิวินาที (เฉพาะตอนแท็บถูกมองอยู่) */
 const POLL_MS = 300_000
 
 // vetHidden = หน้าที่หมอเข้าไม่ได้ (proxy.ts กันไว้แล้ว ตรงนี้แค่ไม่ให้เห็นเมนู)
+// vetPlus   = หน้าที่ "สัตวแพทย์พิเศษ" เห็นได้ ทั้งที่ปิดไว้สำหรับหมอทั่วไป/แอดมินเท่านั้น
 const navItems = [
   { href: '/admin/dashboard', label: 'ภาพรวม', icon: LayoutDashboard, cashierHidden: true },
   { href: '/pos', label: 'หน้าขาย', icon: ShoppingCart, adminOnly: false, vetHidden: true },
@@ -58,10 +60,10 @@ const navItems = [
   { href: '/admin/website', label: 'เว็บร้าน / ค่าส่ง', icon: Globe, adminOnly: true },
   { href: '/admin/promotions', label: 'โปรโมชั่น', icon: Tag, adminOnly: true },
   { href: '/admin/booth', label: 'งานออกบูธ', icon: Store, adminOnly: false, vetHidden: true },
-  { href: '/admin/documents', label: 'เอกสาร', icon: FileText, adminOnly: false, vetHidden: true },
+  { href: '/admin/documents', label: 'เอกสาร', icon: FileText, adminOnly: false, vetHidden: true, vetPlus: true },
   { href: '/admin/shift', label: 'ปิดกะ/เงินสด', icon: Wallet, adminOnly: false, vetHidden: true },
-  { href: '/admin/daily', label: 'สรุปรายวัน', icon: CalendarDays, adminOnly: false, vetHidden: true },
-  { href: '/admin/reports', label: 'รายงาน', icon: BarChart2, adminOnly: true },
+  { href: '/admin/daily', label: 'สรุปรายวัน', icon: CalendarDays, adminOnly: false, vetHidden: true, vetPlus: true },
+  { href: '/admin/reports', label: 'รายงาน', icon: BarChart2, adminOnly: true, vetPlus: true },
   { href: '/admin/notifications', label: 'แจ้งเตือน Telegram', icon: Bell, adminOnly: false },
   { href: '/admin/settings', label: 'ตั้งค่า', icon: Settings, adminOnly: true },
   { href: '/admin/help', label: 'คู่มือพนักงาน', icon: BookOpen, adminOnly: false },
@@ -76,7 +78,7 @@ export default function AdminNav({ userName, role }: { userName: string; role: s
   const [orderCounts, setOrderCounts] = useState({ todo: 0, waiting: 0 })
 
   useEffect(() => {
-    if (role === 'vet') return
+    if (isVet(role)) return
     let cancelled = false
 
     async function loadCounts() {
@@ -186,8 +188,8 @@ export default function AdminNav({ userName, role }: { userName: string; role: s
           ไม่ใช่ดันปุ่มออกจากระบบตกขอบล่างไป */}
       <nav className="flex-1 min-h-0 overflow-y-auto py-4 space-y-0.5 px-2">
         {navItems
-          .filter((item) => role === 'admin' || !item.adminOnly)
-          .filter((item) => role !== 'vet' || !item.vetHidden)
+          .filter((item) => role === 'admin' || !item.adminOnly || (role === 'vet_plus' && item.vetPlus))
+          .filter((item) => !isVet(role) || !item.vetHidden || (role === 'vet_plus' && item.vetPlus))
           .filter((item) => role !== 'cashier' || !item.cashierHidden)
           .map(({ href, label, icon: Icon }) => {
           const active = (pathname.startsWith(href) && href !== '/pos') || pathname === href

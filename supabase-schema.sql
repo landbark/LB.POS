@@ -4,7 +4,7 @@
 -- Profiles (extends auth.users)
 CREATE TABLE profiles (
   id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
-  role TEXT NOT NULL CHECK (role IN ('admin', 'cashier', 'vet')),
+  role TEXT NOT NULL CHECK (role IN ('admin', 'cashier', 'vet', 'vet_plus')),
   name TEXT NOT NULL,
   email TEXT,
   active BOOLEAN NOT NULL DEFAULT true,
@@ -16,7 +16,7 @@ CREATE TABLE staff_emails (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   email TEXT NOT NULL UNIQUE,
   name TEXT NOT NULL,
-  role TEXT NOT NULL DEFAULT 'cashier' CHECK (role IN ('admin', 'cashier', 'vet')),
+  role TEXT NOT NULL DEFAULT 'cashier' CHECK (role IN ('admin', 'cashier', 'vet', 'vet_plus')),
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -64,7 +64,7 @@ CREATE OR REPLACE FUNCTION public.is_vet()
 RETURNS boolean
 SECURITY DEFINER SET search_path = public
 LANGUAGE sql AS $$
-  SELECT EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'vet');
+  SELECT EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role IN ('vet', 'vet_plus'));
 $$;
 
 -- เลขที่รายการขาย RC + วันเดือนปีค.ศ. (เวลาไทย) + ลำดับ 4 หลัก รีเซ็ตรายวัน

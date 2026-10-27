@@ -2,12 +2,13 @@
 export const DEFAULT_REMINDER_FOOTER =
   'ถ้าต้องการเลื่อนนัดหรือสอบถามเพิ่มเติม ติดต่อคลินิกได้เลยค่ะ\nLINE: @landbark · โทร. 098-329-5945'
 
-export type Role = 'admin' | 'cashier' | 'vet'
+export type Role = 'admin' | 'cashier' | 'vet' | 'vet_plus'
 
 export const ROLE_LABELS: Record<Role, string> = {
   admin: 'เจ้าของร้าน',
   cashier: 'พนักงานขาย',
   vet: 'สัตวแพทย์',
+  vet_plus: 'สัตวแพทย์พิเศษ',
 }
 
 export interface Profile {

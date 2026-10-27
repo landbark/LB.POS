@@ -1,6 +1,7 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 import { homePath } from '@/lib/home-path'
+import { isVet, isVetPlusPath } from '@/lib/roles'
 
 export async function proxy(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request })
@@ -77,22 +78,27 @@ export async function proxy(request: NextRequest) {
       return NextResponse.redirect(new URL(homePath(profile?.role), request.url))
     }
 
+    const role = profile?.role as string | undefined
+
+    // สัตวแพทย์พิเศษ: หมอที่เปิดสิทธิ์ดูรายงาน / เอกสาร / สรุปรายวัน เพิ่มให้
+    const vetPlusAllowed = role === 'vet_plus' && isVetPlusPath(pathname)
+
     // เฉพาะ admin: รายงาน / ตั้งค่า / โปรโมชั่น (RLS ก็บังคับ admin เท่านั้นอยู่แล้ว) — หน้าอื่นใต้ /admin cashier เข้าได้
     const adminOnlyPaths = ['/admin/reports', '/admin/settings', '/admin/promotions', '/admin/announcements', '/admin/website']
-    if (adminOnlyPaths.some((p) => pathname.startsWith(p)) && profile?.role !== 'admin') {
-      return NextResponse.redirect(new URL(homePath(profile?.role), request.url))
+    if (adminOnlyPaths.some((p) => pathname.startsWith(p)) && role !== 'admin' && !vetPlusAllowed) {
+      return NextResponse.redirect(new URL(homePath(role), request.url))
     }
 
     // Dashboard (ภาพรวม): admin + หมอ เข้าได้ (เป็นหน้าแรกของทั้งคู่) — แคชเชียร์ให้ไปหน้าขาย
-    if (pathname.startsWith('/admin/dashboard') && profile?.role !== 'admin' && profile?.role !== 'vet') {
-      return NextResponse.redirect(new URL(homePath(profile?.role), request.url))
+    if (pathname.startsWith('/admin/dashboard') && role !== 'admin' && !isVet(role)) {
+      return NextResponse.redirect(new URL(homePath(role), request.url))
     }
 
     // สัตวแพทย์: ทำงานคลินิก + ดูสินค้า/สต็อค/ลูกค้าได้ แต่ไม่ยุ่งกับการขาย/จัดซื้อ/เงิน
     // (RLS ฝั่ง DB กันการเขียนไว้อีกชั้น — ตรงนี้แค่ไม่ให้หลงเข้าหน้าที่ใช้ไม่ได้)
     const vetBlockedPaths = ['/pos', '/admin/stock-count', '/admin/receiving', '/admin/suppliers', '/admin/shift', '/admin/daily', '/admin/documents', '/admin/orders', '/admin/booth']
-    if (profile?.role === 'vet' && vetBlockedPaths.some((p) => pathname === p || pathname.startsWith(p + '/'))) {
-      return NextResponse.redirect(new URL(homePath('vet'), request.url))
+    if (isVet(role) && !vetPlusAllowed && vetBlockedPaths.some((p) => pathname === p || pathname.startsWith(p + '/'))) {
+      return NextResponse.redirect(new URL(homePath(role), request.url))
     }
   }
 

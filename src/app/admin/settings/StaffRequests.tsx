@@ -85,6 +85,7 @@ export default function StaffRequests({ requests }: { requests: StaffRequest[] }
             >
               <option value="cashier">{ROLE_LABELS.cashier}</option>
               <option value="vet">{ROLE_LABELS.vet}</option>
+              <option value="vet_plus">{ROLE_LABELS.vet_plus}</option>
               <option value="admin">{ROLE_LABELS.admin}</option>
             </select>
 

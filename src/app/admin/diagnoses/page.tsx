@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import DiagnosesClient from './DiagnosesClient'
+import { canExamine } from '@/lib/roles'
 
 export default async function DiagnosesPage() {
   const supabase = await createClient()
@@ -19,7 +20,7 @@ export default async function DiagnosesPage() {
     <DiagnosesClient
       diagnoses={diagnoses ?? []}
       usage={usage}
-      canManage={profile?.role === 'vet' || profile?.role === 'admin'}
+      canManage={canExamine(profile?.role)}
     />
   )
 }

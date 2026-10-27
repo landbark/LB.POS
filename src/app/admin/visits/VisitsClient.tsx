@@ -12,6 +12,7 @@ import { visitDiagnosisText } from '@/lib/diagnoses'
 import { useLookup } from '@/lib/use-lookup'
 import { thaiToday, thaiDateIn } from '@/lib/thaiDate'
 import BreedSelect from '@/components/BreedSelect'
+import { canExamine as canExamineRole } from '@/lib/roles'
 
 type OwnerOption = { id: string; name: string; phone: string; hn?: string | null }
 type LastWeight = { weight: number; date: string }
@@ -78,7 +79,7 @@ export default function VisitsClient({
   const [newOwner, setNewOwner] = useState({ name: '', phone: '' })
   const [addingOwner, setAddingOwner] = useState(false)
 
-  const canExamine = role === 'vet' || role === 'admin'
+  const canExamine = canExamineRole(role)
 
   function closeModal() {
     setRegistering(false)
