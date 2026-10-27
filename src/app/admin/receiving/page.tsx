@@ -4,7 +4,7 @@ import ReceivingClient from './ReceivingClient'
 
 export default async function ReceivingPage() {
   const supabase = await createClient()
-  const [{ data: suppliers }, products, { data: purchases }] = await Promise.all([
+  const [{ data: suppliers }, products, { data: pending }, { data: received }] = await Promise.all([
     supabase.from('suppliers').select('*').order('name'),
     // ร้านมีสินค้าเกิน 1000 ตัว — ต้องไล่ทีละหน้า ไม่งั้นตัวท้ายๆ หายจากช่องเลือกแบบเงียบๆ
     fetchAll((from, to) =>
@@ -16,9 +16,16 @@ export default async function ReceivingPage() {
         .order('id')
         .range(from, to)
     ),
+    // ใบที่ยังรอรับของคืองานค้าง — ขึ้นก่อนทั้งหมด ไม่ให้หลุดท้ายรายการเพราะสั่งไว้นาน
     supabase
       .from('purchases')
       .select('*, suppliers(name), purchase_items(id)')
+      .eq('status', 'pending')
+      .order('created_at', { ascending: false }),
+    supabase
+      .from('purchases')
+      .select('*, suppliers(name), purchase_items(id)')
+      .eq('status', 'received')
       .order('created_at', { ascending: false })
       .limit(15),
   ])
@@ -27,7 +34,7 @@ export default async function ReceivingPage() {
     <ReceivingClient
       suppliers={suppliers ?? []}
       products={(products as never[]) ?? []}
-      purchases={(purchases as never[]) ?? []}
+      purchases={[...(pending ?? []), ...(received ?? [])] as never[]}
     />
   )
 }
