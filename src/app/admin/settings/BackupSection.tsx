@@ -5,11 +5,15 @@ import { Download, ShieldCheck, Loader2 } from 'lucide-react'
 import toast from 'react-hot-toast'
 
 /** Chrome/Edge บนเดสก์ท็อปเปิดหน้าต่าง "Save As" ให้เลือกที่เก็บเองได้ */
+interface FileHandle {
+  createWritable: () => Promise<WritableStream>
+}
+
 interface SaveFilePickerWindow {
   showSaveFilePicker?: (options: {
     suggestedName?: string
     types?: { description: string; accept: Record<string, string[]> }[]
-  }) => Promise<{ createWritable: () => Promise<WritableStream> }>
+  }) => Promise<FileHandle>
 }
 
 const fmtSize = (bytes: number) =>
@@ -20,6 +24,28 @@ export default function BackupSection() {
   const [lastRun, setLastRun] = useState<string | null>(null)
 
   async function download() {
+    const stamp = new Date().toLocaleString('sv', { timeZone: 'Asia/Bangkok' })
+      .replace(/[: ]/g, '-').slice(0, 16)
+    const filename = `landbark-backup-${stamp}.zip`
+
+    // ต้องเปิดหน้าต่างเลือกที่เก็บตอนกดปุ่มทันที — ถ้ารอโหลดข้อมูลเสร็จก่อน เบราว์เซอร์จะบล็อก
+    const picker = (window as unknown as SaveFilePickerWindow).showSaveFilePicker
+    let handle: FileHandle | null = null
+
+    if (picker) {
+      try {
+        handle = await picker({
+          suggestedName: filename,
+          types: [{ description: 'ไฟล์สำรองข้อมูล', accept: { 'application/zip': ['.zip'] } }],
+        })
+      } catch (err) {
+        // ผู้ใช้กดยกเลิก — ไม่ใช่ข้อผิดพลาด
+        if (err instanceof DOMException && err.name === 'AbortError') return
+        // เบราว์เซอร์ไม่ยอมเปิด — ลงโฟลเดอร์ดาวน์โหลดตามปกติแทน
+        handle = null
+      }
+    }
+
     setBusy(true)
     const started = Date.now()
 
@@ -32,35 +58,22 @@ export default function BackupSection() {
 
       const rows = res.headers.get('X-Backup-Rows') ?? '?'
       const files = res.headers.get('X-Backup-Files') ?? '?'
-      const stamp = new Date().toLocaleString('sv', { timeZone: 'Asia/Bangkok' })
-        .replace(/[: ]/g, '-').slice(0, 16)
-      const filename = `landbark-backup-${stamp}.zip`
       const blob = await res.blob()
 
-      const picker = (window as unknown as SaveFilePickerWindow).showSaveFilePicker
-
-      if (picker) {
+      if (handle) {
         // เลือกที่เก็บเองได้ — เซฟตรงลง iCloud/Drive ได้เลยไม่ต้องย้ายทีหลัง
-        try {
-          const handle = await picker({
-            suggestedName: filename,
-            types: [{ description: 'ไฟล์สำรองข้อมูล', accept: { 'application/zip': ['.zip'] } }],
-          })
-          const writable = await handle.createWritable()
-          await blob.stream().pipeTo(writable)
-        } catch (err) {
-          // ผู้ใช้กดยกเลิกหน้าต่างเลือกที่เก็บ — ไม่ใช่ข้อผิดพลาด
-          if (err instanceof DOMException && err.name === 'AbortError') return
-          throw err
-        }
+        const writable = await handle.createWritable()
+        await blob.stream().pipeTo(writable)
       } else {
         // Safari/Firefox ยังไม่รองรับ — ลงโฟลเดอร์ดาวน์โหลดตามปกติ
         const url = URL.createObjectURL(blob)
         const a = document.createElement('a')
         a.href = url
         a.download = filename
+        document.body.appendChild(a)
         a.click()
-        URL.revokeObjectURL(url)
+        a.remove()
+        setTimeout(() => URL.revokeObjectURL(url), 10_000)
       }
 
       const seconds = ((Date.now() - started) / 1000).toFixed(1)
