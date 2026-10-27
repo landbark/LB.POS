@@ -260,11 +260,13 @@ export default function CountClient({
 
     const key = keyOf(product.id, lot)
     const step = unit?.factor ?? 1
-    const current = intendedRef.current.get(key) ?? findRow(product.id, lot)?.counted_quantity ?? 0
+    const existing = findRow(product.id, lot)
+    const current = intendedRef.current.get(key) ?? existing?.counted_quantity ?? 0
     const next = current + step
     intendedRef.current.set(key, next)
 
-    void queueSave(product, lot, next, null, null)
+    // หมายเหตุ/วันหมดอายุที่กรอกไว้แล้วต้องติดไปด้วย ไม่งั้นยิงชิ้นถัดไปแล้วล้างทิ้ง
+    void queueSave(product, lot, next, existing?.note ?? null, existing?.expiry_date ?? null)
     const where = lot ? ` (lot ${lotById.get(lot)?.lot_number || '—'})` : ''
     return { ok: true, message: `${product.name}${where} — นับได้ ${next} ${product.unit}` }
   }
@@ -340,6 +342,21 @@ export default function CountClient({
     const product = byId.get(row.product_id)
     if (!product) return
     await queueSave(product, row.product_lot_id, n, row.note, row.expiry_date)
+  }
+
+  /**
+   * แก้วันหมดอายุของแถวที่นับไว้แล้ว
+   *
+   * โหมดยิงนับทีละชิ้นไม่ได้เปิดฟอร์มให้กรอก (กล้องค้างไว้ยิงต่อ) — ยิงจบแล้วมากรอกตรงนี้
+   * ล้างค่าในช่อง = ไม่เขียนทับวันหมดอายุเดิมใน lot ตอนยืนยัน
+   */
+  async function editExpiry(row: ItemRow, value: string) {
+    const next = value || null
+    if (next === row.expiry_date) return
+    const product = byId.get(row.product_id)
+    if (!product) return
+    const ok = await queueSave(product, row.product_lot_id, row.counted_quantity, row.note, next)
+    if (ok) toast.success(next ? `${product.name} — หมดอายุ ${fmtDate(next)}` : 'ล้างวันหมดอายุแล้ว')
   }
 
   async function removeRow(row: ItemRow) {
@@ -460,7 +477,7 @@ export default function CountClient({
             </div>
           </div>
           <p className="text-xs text-gray-400 mb-3">
-            ยิงนับทีละชิ้น = ยิงของทุกชิ้น ระบบบวกให้เอง · ยิงหาสินค้า = นับแยกไว้แล้ว ยิงหนึ่งครั้งให้มันเปิดสินค้าตัวนั้นมาให้ แล้วใส่ยอดรวมทีเดียว
+            ยิงนับทีละชิ้น = ยิงของทุกชิ้น ระบบบวกให้เอง · ยิงหาสินค้า = นับแยกไว้แล้ว ยิงหนึ่งครั้งให้มันเปิดสินค้าตัวนั้นมาให้ แล้วใส่ยอดรวมทีเดียว · วันหมดอายุจากกล่องกรอกที่แถวในตารางได้ทีหลัง
           </p>
 
           {matches.length > 0 && (
@@ -612,9 +629,25 @@ export default function CountClient({
                     <p className="text-xs text-gray-400">
                       {r.counter?.name ? `${r.counter.name} · ` : ''}
                       {new Date(r.counted_at).toLocaleString('th-TH', { timeZone: 'Asia/Bangkok', dateStyle: 'short', timeStyle: 'short' })}
-                      {r.expiry_date ? ` · หมดอายุ ${fmtDate(r.expiry_date)}` : ''}
+                      {locked && r.expiry_date ? ` · หมดอายุ ${fmtDate(r.expiry_date)}` : ''}
                       {r.note ? ` · ${r.note}` : ''}
                     </p>
+                    {/* กรอกวันหมดอายุจากกล่องตรงนี้ได้ — หลาย lot ต้องนับแยก lot ก่อน ไม่งั้นไม่รู้ว่าของ lot ไหน */}
+                    {!locked && p && (canStampExpiry(p, r.product_lot_id) ? (
+                      <label className="mt-1 inline-flex items-center gap-1 text-xs text-gray-400">
+                        หมดอายุ
+                        <input
+                          type="date"
+                          defaultValue={r.expiry_date ?? ''}
+                          onChange={(e) => editExpiry(r, e.target.value)}
+                          className="border border-gray-200 rounded-lg px-2 py-0.5 text-xs text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                      </label>
+                    ) : (
+                      <p className="text-xs text-gray-400">
+                        {r.expiry_date ? `หมดอายุ ${fmtDate(r.expiry_date)} · ` : ''}มีหลาย lot — นับแยก lot ถ้าจะกรอกวันหมดอายุ
+                      </p>
+                    ))}
                   </td>
                   <td className="px-4 py-3 text-sm text-right text-gray-500">{r.system_quantity}</td>
                   <td className="px-4 py-3 text-right">
@@ -717,7 +750,7 @@ export default function CountClient({
           hint={
             scanMode === 'find'
               ? 'ยิงหนึ่งครั้ง — จะปิดกล้องแล้วเปิดสินค้าตัวนั้นให้ใส่จำนวนที่นับได้'
-              : 'จ่อบาร์โค้ดให้อยู่ในกรอบ — ยิงต่อกันได้เรื่อยๆ ระบบบวกให้ทีละชิ้น'
+              : 'จ่อบาร์โค้ดให้อยู่ในกรอบ — ยิงต่อกันได้เรื่อยๆ ระบบบวกให้ทีละชิ้น · วันหมดอายุกรอกที่ตารางหลังปิดกล้อง'
           }
         />
       )}
