@@ -3,7 +3,7 @@
 import { useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { ScanLine, Search, Trash2, Check, X, ChevronDown, ChevronUp, AlertTriangle } from 'lucide-react'
+import { ScanLine, ScanSearch, Search, Trash2, Check, X, ChevronDown, ChevronUp, AlertTriangle } from 'lucide-react'
 import toast from 'react-hot-toast'
 import BarcodeScanner, { type ScanFeedback } from '@/components/BarcodeScanner'
 import { confirmDialog } from '@/lib/confirm'
@@ -18,7 +18,7 @@ import {
   type CountableProduct,
   type CountLot,
 } from '@/lib/stockCount'
-import type { StockCount } from '@/lib/types'
+import type { ProductUnit, StockCount } from '@/lib/types'
 
 interface ItemRow {
   id: string
@@ -41,6 +41,13 @@ const fmtDate = (d: string) => new Date(d).toLocaleDateString('th-TH', { timeZon
 /** หนึ่งแถว = (สินค้า, lot) — ใช้เป็นคีย์ทั้งตอนหาแถวเดิมและตอนจำยอดที่กำลังบันทึก */
 const keyOf = (productId: string, lotId: string | null) => `${productId}|${lotId ?? ''}`
 
+/**
+ * ยิงบาร์โค้ดได้สองแบบ
+ * - tally: ยิงทุกชิ้นบนชั้น ระบบบวกให้ทีละชิ้น (ยิงลัง = บวกทั้งลัง)
+ * - find:  นับแยกมาแล้วด้วยมือ ยิงแค่ให้มันหาสินค้าตัวนั้นมาให้ แล้วใส่ยอดรวมทีเดียว
+ */
+type ScanMode = 'tally' | 'find'
+
 const lotLabel = (lot: CountLot) =>
   [
     lot.lot_number || 'ไม่มีเลข lot',
@@ -61,7 +68,7 @@ export default function CountClient({
 }) {
   const router = useRouter()
   const [rows, setRows] = useState<ItemRow[]>(initialItems)
-  const [showScanner, setShowScanner] = useState(false)
+  const [scanMode, setScanMode] = useState<ScanMode | null>(null)
   const [term, setTerm] = useState('')
   const [picked, setPicked] = useState<CountableProduct | null>(null)
   const [qty, setQty] = useState('')
@@ -72,6 +79,7 @@ export default function CountClient({
   const [posting, setPosting] = useState(false)
   const [showRemaining, setShowRemaining] = useState(false)
   const qtyRef = useRef<HTMLInputElement>(null)
+  const panelRef = useRef<HTMLDivElement>(null)
 
   // ยิงบาร์โค้ดรัว ๆ เร็วกว่า setState จะ flush — เก็บสำเนาที่อัปเดตทันทีไว้ใช้หาแถวเดิม
   // และจำยอดที่ "กำลังจะเป็น" ไว้ ไม่งั้นยิงสองครั้งติดกันจะอ่านยอดเก่าทั้งคู่แล้วนับหาย
@@ -208,17 +216,37 @@ export default function CountClient({
     return next
   }
 
-  /** ยิงบาร์โค้ด = บวกทีละชิ้น (ยิงลัง = บวกทั้งลัง) นับของบนชั้นได้โดยไม่ต้องพิมพ์ */
-  function handleScan(code: string): ScanFeedback {
+  /** หาสินค้าจากรหัสที่ยิงมา — บาร์โค้ด (ของตัวสินค้าหรือของลัง) ก่อน ไม่เจอค่อยลอง SKU */
+  function lookup(code: string): { product: CountableProduct; unit: ProductUnit | null } | null {
+    const hit = findByBarcode(products, code)
+    if (hit) return hit
+    const lower = code.trim().toLowerCase()
+    const p = products.find((x) => x.sku?.toLowerCase() === lower)
+    return p ? { product: p, unit: null } : null
+  }
+
+  /**
+   * โหมดหาสินค้า — ยิงหนึ่งครั้งแล้วเปิดสินค้าตัวนั้นขึ้นมาให้ใส่จำนวน
+   *
+   * คนนับมักนับของกองนั้นแยกไว้ก่อนแล้วค่อยมาคีย์ยอดรวมทีเดียว ไม่ได้ยิงทุกชิ้น
+   * ยิงลังก็ตั้งหน่วยเป็นลังให้เลย คีย์ "3" แล้วได้ 3 ลัง
+   */
+  function handleFind(code: string): ScanFeedback {
     if (locked) return { ok: false, message: 'รอบนี้ปิดแล้ว' }
 
-    const hit = findByBarcode(products, code)
-    const bySku = hit ?? (() => {
-      const lower = code.trim().toLowerCase()
-      const p = products.find((x) => x.sku?.toLowerCase() === lower)
-      return p ? { product: p, unit: null } : null
-    })()
+    const hit = lookup(code)
+    if (!hit) return { ok: false, message: `ไม่พบสินค้าจากรหัส ${code}` }
 
+    setScanMode(null)
+    pick(hit.product, hit.unit)
+    return { ok: true, message: `${hit.product.name} — ใส่จำนวนที่นับได้` }
+  }
+
+  /** โหมดนับทีละชิ้น = ยิงแล้วบวกทีละชิ้น (ยิงลัง = บวกทั้งลัง) นับของบนชั้นได้โดยไม่ต้องพิมพ์ */
+  function handleTally(code: string): ScanFeedback {
+    if (locked) return { ok: false, message: 'รอบนี้ปิดแล้ว' }
+
+    const bySku = lookup(code)
     if (!bySku) return { ok: false, message: `ไม่พบสินค้าจากรหัส ${code}` }
 
     const { product, unit } = bySku
@@ -241,7 +269,8 @@ export default function CountClient({
     return { ok: true, message: `${product.name}${where} — นับได้ ${next} ${product.unit}` }
   }
 
-  function pick(product: CountableProduct) {
+  /** เปิดฟอร์มใส่จำนวนของสินค้าตัวหนึ่ง — scannedUnit มาจากบาร์โค้ดลังที่ยิงในโหมดหาสินค้า */
+  function pick(product: CountableProduct, scannedUnit: ProductUnit | null = null) {
     const lots = lotsWithStock(product)
     const wholeRow = rowsRef.current.find((r) => r.product_id === product.id && !r.product_lot_id)
     const lotRow = rowsRef.current.find((r) => r.product_id === product.id && r.product_lot_id)
@@ -249,15 +278,24 @@ export default function CountClient({
     const startLot = wholeRow ? null : lotRow?.product_lot_id ?? null
     const row = startLot ? lotRow : wholeRow
 
+    // ยอดที่ prefill จากแถวเดิมเป็นหน่วยฐานเสมอ — มีแถวเดิมอยู่ก็เปิดที่หน่วยฐาน
+    // ไม่งั้นเลข 12 (ซอง) จะไปโผล่ใต้หน่วย "ลัง" แล้วกดบันทึกทับเป็น 12 ลัง
+    const unitIndex = scannedUnit && !row
+      ? countUnitChoices(product).findIndex((c) => c.unit?.id === scannedUnit.id)
+      : -1
+
     setPicked(product)
-    setUnitIdx(0)
+    setUnitIdx(unitIndex > 0 ? unitIndex : 0)
     setLotId(startLot)
     setExpiry(row?.expiry_date ?? '')
     setNote(row?.note ?? '')
     setQty(row ? String(row.counted_quantity) : '')
     setTerm('')
-    // สินค้าหลาย lot ที่ยังไม่เคยนับ ให้คนเลือก lot ก่อน จะโฟกัสช่องจำนวนก็ได้อยู่
-    if (lots.length <= 1 || row) setTimeout(() => qtyRef.current?.focus(), 0)
+    setTimeout(() => {
+      panelRef.current?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+      // สินค้าหลาย lot ที่ยังไม่เคยนับ ให้คนเลือก lot ก่อน จะโฟกัสช่องจำนวนก็ได้อยู่
+      if (lots.length <= 1 || row) qtyRef.current?.focus()
+    }, 0)
   }
 
   function switchLot(value: string) {
@@ -398,14 +436,20 @@ export default function CountClient({
 
       {!locked && (
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 my-4">
-          <div className="flex gap-2 mb-3">
+          <div className="flex flex-wrap gap-2 mb-2">
             <button
-              onClick={() => setShowScanner(true)}
+              onClick={() => setScanMode('tally')}
               className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-4 py-2.5 rounded-lg shrink-0"
             >
-              <ScanLine size={16} /> ยิงบาร์โค้ด
+              <ScanLine size={16} /> ยิงนับทีละชิ้น
             </button>
-            <div className="relative flex-1">
+            <button
+              onClick={() => setScanMode('find')}
+              className="flex items-center gap-2 border border-gray-300 hover:bg-gray-50 text-gray-700 text-sm font-medium px-4 py-2.5 rounded-lg shrink-0"
+            >
+              <ScanSearch size={16} /> ยิงหาสินค้า
+            </button>
+            <div className="relative flex-1 min-w-48">
               <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
               <input
                 value={term}
@@ -415,6 +459,9 @@ export default function CountClient({
               />
             </div>
           </div>
+          <p className="text-xs text-gray-400 mb-3">
+            ยิงนับทีละชิ้น = ยิงของทุกชิ้น ระบบบวกให้เอง · ยิงหาสินค้า = นับแยกไว้แล้ว ยิงหนึ่งครั้งให้มันเปิดสินค้าตัวนั้นมาให้ แล้วใส่ยอดรวมทีเดียว
+          </p>
 
           {matches.length > 0 && (
             <ul className="border border-gray-100 rounded-lg divide-y divide-gray-50 mb-3 max-h-64 overflow-y-auto">
@@ -436,7 +483,7 @@ export default function CountClient({
           )}
 
           {picked && (
-            <div className="bg-gray-50 rounded-lg p-3">
+            <div ref={panelRef} className="bg-gray-50 rounded-lg p-3">
               <div className="flex items-center justify-between gap-2 mb-2">
                 <div className="min-w-0">
                   <p className="text-sm font-medium text-gray-900 truncate">{picked.name}</p>
@@ -544,7 +591,7 @@ export default function CountClient({
             {rows.length === 0 && (
               <tr>
                 <td colSpan={locked ? 5 : 6} className="px-4 py-10 text-center text-sm text-gray-400">
-                  ยังไม่ได้นับอะไรเลย — ยิงบาร์โค้ดหรือค้นชื่อสินค้าเพื่อเริ่ม
+                  ยังไม่ได้นับอะไรเลย — ยิงบาร์โค้ด หรือค้นชื่อสินค้าแล้วใส่จำนวนเพื่อเริ่ม
                 </td>
               </tr>
             )}
@@ -662,7 +709,18 @@ export default function CountClient({
         </p>
       )}
 
-      {showScanner && <BarcodeScanner onDetect={handleScan} onClose={() => setShowScanner(false)} />}
+      {scanMode && (
+        <BarcodeScanner
+          onDetect={scanMode === 'find' ? handleFind : handleTally}
+          onClose={() => setScanMode(null)}
+          title={scanMode === 'find' ? 'ยิงหาสินค้า' : 'ยิงนับทีละชิ้น'}
+          hint={
+            scanMode === 'find'
+              ? 'ยิงหนึ่งครั้ง — จะปิดกล้องแล้วเปิดสินค้าตัวนั้นให้ใส่จำนวนที่นับได้'
+              : 'จ่อบาร์โค้ดให้อยู่ในกรอบ — ยิงต่อกันได้เรื่อยๆ ระบบบวกให้ทีละชิ้น'
+          }
+        />
+      )}
     </div>
   )
 }
