@@ -3,7 +3,7 @@
 import { useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from '@/components/ProgressLink'
-import { ArrowLeft, ListPlus, Printer, Store, Trash2, Lock } from 'lucide-react'
+import { ArrowLeft, ListPlus, Printer, Store, Tag, Trash2, Lock } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { createClient } from '@/lib/supabase/client'
 import { confirmDialog } from '@/lib/confirm'
@@ -25,11 +25,23 @@ export interface PickerProduct extends ProductOption {
   booth_price: number | null
 }
 
+/** โปรที่หน้าขายจะลดให้ตอนเปิดโหมดบูธ — อ่านอย่างเดียว แก้ที่หน้าโปรโมชั่น */
+export interface BoothPromo {
+  id: string
+  name: string
+  /** เงื่อนไข + ส่วนลดเป็นประโยคเดียว (describePromotion) */
+  detail: string
+  scope: string
+  /** true = เด้งแค่ที่บูธ, false = โปรทุกที่ที่พลอยติดมาด้วย */
+  boothOnly: boolean
+}
+
 interface Props {
   trip: BoothTrip
   items: BoothTripItem[]
   sold: Record<string, SoldLine>
   products: PickerProduct[]
+  promos: BoothPromo[]
   billCount: number
   salesTotal: number
   byMethod: Record<string, number>
@@ -71,7 +83,7 @@ interface Line {
 }
 
 export default function BoothTripClient({
-  trip, items, sold, products, billCount, salesTotal, byMethod, userId, canSeeCost,
+  trip, items, sold, products, promos, billCount, salesTotal, byMethod, userId, canSeeCost,
 }: Props) {
   const router = useRouter()
   const open = trip.status === 'open'
@@ -346,6 +358,48 @@ export default function BoothTripClient({
         <div className="mb-6 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
           เปิด <span className="font-semibold">หน้าขาย</span> บนเครื่องที่เอาไปงาน แล้วกดสวิตช์
           &quot;โหมดบูธ&quot; ด้านบน — ราคาจะสลับเป็นราคาบูธ และหน้าขายจะโชว์เฉพาะของในใบเบิกนี้
+        </div>
+      )}
+
+      {/* ───────── โปรที่ใช้ที่บูธ — อ่านอย่างเดียว ไม่ได้ผูกกับรอบ ใช้ซ้ำได้ทุกงาน ───────── */}
+      {open && (
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden mb-6">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-100 px-4 py-3">
+            <div>
+              <h2 className="font-semibold text-gray-900 flex items-center gap-2">
+                <Tag size={16} className="text-[#C4865A]" /> โปรโมชั่นที่ใช้ที่งานนี้
+              </h2>
+              <p className="text-xs text-gray-500">
+                หน้าขายจะลดให้เองตอนเปิดโหมดบูธ — ตั้งไว้ครั้งเดียวใช้ได้ทุกรอบ ไม่ผูกกับงานนี้
+              </p>
+            </div>
+            <Link
+              href="/admin/promotions"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50"
+            >
+              <Tag size={15} /> จัดการโปรโมชั่น
+            </Link>
+          </div>
+          {promos.length === 0 ? (
+            <p className="px-4 py-6 text-center text-sm text-gray-400">
+              ยังไม่มีโปรที่ใช้ได้ที่งานนี้ — ไปที่หน้าโปรโมชั่นแล้วตั้ง &quot;ใช้ที่ไหน&quot; เป็นงานออกบูธ
+            </p>
+          ) : (
+            <ul className="divide-y divide-gray-50">
+              {promos.map((p) => (
+                <li key={p.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-3">
+                  <span className="font-medium text-sm text-gray-900">{p.name}</span>
+                  <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${
+                    p.boothOnly ? 'bg-amber-100 text-amber-800' : 'bg-gray-100 text-gray-600'
+                  }`}>
+                    {p.boothOnly ? 'เฉพาะออกบูธ' : 'ทุกที่'}
+                  </span>
+                  <span className="text-sm text-gray-600">{p.detail}</span>
+                  <span className="text-xs text-gray-400">· {p.scope}</span>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
       )}
 

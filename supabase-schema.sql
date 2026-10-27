@@ -486,8 +486,11 @@ CREATE TABLE promotions (
   -- เพดานส่วนลดต่อรายการ กันลด % บานปลายกับของแพง
   max_discount NUMERIC(12,2) CHECK (max_discount > 0),
   apply_to TEXT NOT NULL CHECK (apply_to IN ('all', 'categories', 'products')),
+  -- ใช้ที่ไหน — booth = เด้งเฉพาะตอนเปิดโหมดบูธในหน้าขาย, store = ไม่เด้งที่บูธ
+  channel_scope TEXT NOT NULL DEFAULT 'all' CHECK (channel_scope IN ('all', 'store', 'booth')),
   start_date DATE NOT NULL,
-  end_date DATE NOT NULL,
+  -- NULL = ไม่มีวันหมด — โปรบูธที่ใช้ซ้ำทุกรอบไม่ต้องมาต่ออายุทุกเดือน
+  end_date DATE,
   active BOOLEAN NOT NULL DEFAULT true,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );

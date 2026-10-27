@@ -10,7 +10,7 @@ import { createClient } from '@supabase/supabase-js'
 import { readFileSync } from 'node:fs'
 import { resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { bestPromotion, toPromotion, PROMOTION_SELECT, describePromotion } from '../src/lib/promotions'
+import { bestPromotion, toPromotion, promotionInChannel, PROMOTION_SELECT, describePromotion } from '../src/lib/promotions'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 for (const line of readFileSync(resolve(ROOT, '.env.local'), 'utf8').split('\n')) {
@@ -44,6 +44,9 @@ async function main() {
     .limit(1)
   check('คอลัมน์ใหม่ครบ (discount_amount, amount_mode, min_quantity, min_amount, max_discount)', newColsErr?.message ?? 'ok', 'ok')
 
+  const { error: scopeColErr } = await supabase.from('promotions').select('channel_scope').limit(1)
+  check('คอลัมน์ channel_scope ลงแล้ว (โปรแยกหน้าร้าน/ออกบูธ)', scopeColErr?.message ?? 'ok', 'ok')
+
   const { error: oldColErr } = await supabase.from('promotions').select('product_id').limit(1)
   check('คอลัมน์เก่า product_id ถูกลบแล้ว', oldColErr ? 'ลบแล้ว' : 'ยังอยู่', 'ลบแล้ว')
 
@@ -67,8 +70,10 @@ async function main() {
            (p.apply_to === 'categories' && p.category_ids.length === 0),
   )
   check('ไม่มีโปรเดิมที่ขอบเขตหายไประหว่างย้าย', orphan.map((p) => p.name), [])
+  // migration ตั้ง default 'all' ให้ของเดิมทั้งหมด — พฤติกรรมเดิมคือลดทั้งที่ร้านและที่บูธ
+  check('โปรเดิมถูกตั้ง "ใช้ที่ไหน" ให้เองครบ', live.filter((p) => !p.channel_scope).map((p) => p.name), [])
   for (const p of live) {
-    console.log(`    · ${p.name} — ${describePromotion(p)} [${p.apply_to}]`)
+    console.log(`    · ${p.name} — ${describePromotion(p)} [${p.apply_to} · ${p.channel_scope}]`)
   }
 
   // ── 3) สร้างของทดสอบแล้วยิงตรรกะจริง ─────────────────────────
@@ -177,6 +182,42 @@ async function main() {
   // สินค้าที่ไม่ได้อยู่ในขอบเขต ต้องไม่โดนโปร
   const other = { id: '00000000-0000-0000-0000-000000000000', category_id: null, price: 100 }
   check('สินค้านอกขอบเขต ไม่ได้ส่วนลด', bestPromotion([perUnit, multiCat], other, 10, 1000), null)
+
+  // ── 4) โปรแยกหน้าร้าน / งานออกบูธ ────────────────────────────
+  console.log('\n4) ใช้ที่ไหน (หน้าร้าน / งานออกบูธ)')
+
+  const boothPromo = await makePromo({
+    type: 'percent_discount', discount_percent: 15, apply_to: 'products',
+    channel_scope: 'booth', end_date: null,
+  }, { products: [product.id] })
+  check('end_date ว่างได้ = ไม่มีวันหมด (ใช้ซ้ำได้ทุกรอบ)', boothPromo.end_date, null)
+  check('โปรบูธไม่เด้งตอนขายหน้าร้าน', promotionInChannel(boothPromo, false), false)
+  check('โปรบูธเด้งในโหมดบูธ', promotionInChannel(boothPromo, true), true)
+
+  // ตั้งเปอร์เซ็นต์ไม่เท่าโปรบูธ เพื่อแยกออกว่าส่วนลดที่ได้มาจากโปรตัวไหน
+  const storePromo = await makePromo({
+    type: 'percent_discount', discount_percent: 10, apply_to: 'products',
+    channel_scope: 'store',
+  }, { products: [product.id] })
+  check('โปรหน้าร้านไม่เด้งที่บูธ', promotionInChannel(storePromo, true), false)
+  check('โปรหน้าร้านเด้งที่ร้าน', promotionInChannel(storePromo, false), true)
+
+  const anywherePromo = await makePromo({
+    type: 'percent_discount', discount_percent: 5, channel_scope: 'all',
+  })
+  check(
+    'โปร "ทุกที่" เด้งทั้งสองโหมด',
+    [promotionInChannel(anywherePromo, false), promotionInChannel(anywherePromo, true)],
+    [true, true],
+  )
+
+  // หน้าขายกรองตามโหมดก่อนส่งเข้า bestPromotion — ในโหมดบูธต้องเหลือโปรบูธ + โปรทุกที่
+  const atBooth = [boothPromo, storePromo, anywherePromo].filter((p) => promotionInChannel(p, true))
+  check('โหมดบูธเหลือโปรที่ใช้ได้ 2 อัน', atBooth.length, 2)
+  check('โหมดบูธลดด้วยโปรบูธ 15% ของยอด 300', bestPromotion(atBooth, target, 3, 300)?.discount, 45)
+
+  const atStore = [boothPromo, storePromo, anywherePromo].filter((p) => promotionInChannel(p, false))
+  check('หน้าร้านลดด้วยโปรหน้าร้าน 10% ของยอด 300 (ไม่ใช่โปรบูธ 15%)', bestPromotion(atStore, target, 3, 300)?.discount, 30)
 
   // ขอบเขตอ่านกลับจาก DB ได้จริง (ไม่ใช่แค่ object ในหน่วยความจำ)
   const { data: reread } = await supabase.from('promotions').select(PROMOTION_SELECT).eq('id', perUnit.id).single()
