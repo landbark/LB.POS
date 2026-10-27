@@ -28,6 +28,10 @@ interface Props {
   // คืนข้อความไปโชว์ใต้กล้อง — ยิงรัวได้ไม่ต้องปิดเปิดใหม่ทีละชิ้น
   onDetect: (code: string) => ScanFeedback | void
   onClose: () => void
+  /** หัวข้อบนกล้อง — บอกว่ายิงรอบนี้เอาไปทำอะไร (หน้านับสต็อกยิงได้สองแบบ) */
+  title?: string
+  /** คำแนะนำใต้กล้องตอนยังไม่ได้ยิงอะไร */
+  hint?: string
 }
 
 // ยิงซ้ำรหัสเดิมภายในเวลานี้ไม่นับ — กล้องอ่านบาร์โค้ดเดิมได้หลายสิบครั้งต่อวินาที
@@ -85,7 +89,7 @@ function pickBackCamera(cams: MediaDeviceInfo[]): string | null {
   return (good[0] ?? pool[0])?.deviceId ?? null
 }
 
-export default function BarcodeScanner({ onDetect, onClose }: Props) {
+export default function BarcodeScanner({ onDetect, onClose, title, hint }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null)
   const [starting, setStarting] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -303,7 +307,7 @@ export default function BarcodeScanner({ onDetect, onClose }: Props) {
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-black">
       <div className="flex items-center justify-between px-4 py-3 text-white">
-        <span className="text-sm font-medium">สแกนบาร์โค้ด</span>
+        <span className="text-sm font-medium">{title ?? 'สแกนบาร์โค้ด'}</span>
         <div className="flex items-center gap-1">
           {cameras.length > 1 && (
             <button
@@ -386,7 +390,7 @@ export default function BarcodeScanner({ onDetect, onClose }: Props) {
             {feedback.message}
           </p>
         ) : (
-          <p className="text-sm text-white/60">จ่อบาร์โค้ดให้อยู่ในกรอบ — ยิงต่อกันได้เรื่อยๆ</p>
+          <p className="text-sm text-white/60">{hint ?? 'จ่อบาร์โค้ดให้อยู่ในกรอบ — ยิงต่อกันได้เรื่อยๆ'}</p>
         )}
         <button
           onClick={onClose}
