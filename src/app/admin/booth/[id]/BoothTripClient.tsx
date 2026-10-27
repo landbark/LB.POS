@@ -47,6 +47,7 @@ const METHOD_LABELS: Record<string, string> = {
 const money = (n: number) => n.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 const inputClass = 'w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#C4865A]/40'
 const qtyClass = 'w-20 border border-gray-300 rounded-lg px-2 py-1.5 text-sm text-right focus:outline-none focus:ring-2 focus:ring-[#C4865A]/40 disabled:bg-gray-50 disabled:text-gray-500'
+const priceClass = 'w-24 border border-gray-300 rounded-lg px-2 py-1.5 text-sm text-right focus:outline-none focus:ring-2 focus:ring-[#C4865A]/40'
 
 /** หนึ่งบรรทัดในใบเบิก/ใบคืน พร้อมยอดที่ขายได้จริงของสินค้าตัวนั้น */
 interface Line {
@@ -55,7 +56,14 @@ interface Line {
   name: string
   unit: string
   cost: number | null
+  /** ราคาที่ใช้ขายที่บูธจริง = ราคาบูธถ้าตั้งไว้ ไม่งั้นราคาหน้าร้าน */
   price: number
+  /** ราคาหน้าร้าน — ไว้โชว์เป็น placeholder ตอนยังไม่ตั้งราคาบูธ */
+  listPrice: number
+  /** ราคาบูธที่ตั้งไว้ที่ตัวสินค้า (null = ไม่ได้ตั้ง) */
+  boothPriceSet: number | null
+  /** สินค้ายังอยู่ในระบบ — ถูกลบ/ปิดการขายแล้วแก้ราคาไม่ได้ */
+  editable: boolean
   taken: number
   returned: number | null
   sold: number
@@ -90,6 +98,9 @@ export default function BoothTripClient({
         unit: p?.unit ?? s?.unit ?? '',
         cost: p?.cost ?? s?.cost ?? null,
         price: p ? boothPrice(p) : 0,
+        listPrice: p?.price ?? 0,
+        boothPriceSet: p?.booth_price ?? null,
+        editable: p != null,
         taken: it.taken_quantity,
         returned: it.returned_quantity,
         sold: s?.quantity ?? 0,
@@ -102,7 +113,8 @@ export default function BoothTripClient({
       if (listed.has(productId)) continue
       rows.push({
         id: null, productId, name: s.name, unit: s.unit, cost: s.cost,
-        price: 0, taken: 0, returned: null, sold: s.quantity, revenue: s.revenue,
+        price: 0, listPrice: 0, boothPriceSet: null, editable: false,
+        taken: 0, returned: null, sold: s.quantity, revenue: s.revenue,
       })
     }
     return rows
@@ -152,6 +164,35 @@ export default function BoothTripClient({
     const supabase = createClient()
     const { error } = await supabase.from('booth_trip_items').update({ [field]: value }).eq('id', line.id)
     if (error) toast.error('บันทึกไม่สำเร็จ: ' + error.message)
+    router.refresh()
+  }
+
+  /**
+   * แก้ราคาบูธจากใบเบิก — ค่าไปลงที่ **ตัวสินค้า** (products.booth_price) ไม่ใช่ที่รอบนี้
+   * เพราะหน้าขายโหมดบูธอ่านราคาจากสินค้า จึงมีผลกับรอบอื่นที่ใช้สินค้าตัวเดียวกันด้วย
+   *
+   * ปล่อยว่าง = ไม่ตั้งราคาบูธ กลับไปขายราคาหน้าร้าน
+   */
+  async function saveBoothPrice(line: Line, raw: string) {
+    if (!line.id || !line.editable) return
+    const key = `${line.id}:booth_price`
+    setDraft((d) => { const next = { ...d }; delete next[key]; return next })
+
+    const text = raw.trim()
+    const value = text === '' ? null : parseFloat(text)
+    if (value !== null && (!isFinite(value) || value < 0)) {
+      toast.error('ราคาต้องเป็นตัวเลขไม่ติดลบ')
+      return
+    }
+    if (value === line.boothPriceSet) return
+
+    const supabase = createClient()
+    const { error } = await supabase.from('products').update({ booth_price: value }).eq('id', line.productId)
+    if (error) {
+      toast.error('บันทึกราคาบูธไม่สำเร็จ: ' + error.message)
+      return
+    }
+    toast.success(value == null ? `${line.name} — กลับไปใช้ราคาหน้าร้าน` : `${line.name} — ราคาบูธ ฿${money(value)}`)
     router.refresh()
   }
 
@@ -315,6 +356,7 @@ export default function BoothTripClient({
             <h2 className="font-semibold text-gray-900">ใบเบิก / ใบคืน</h2>
             <p className="text-xs text-gray-500">
               ของที่ยกไปยังไม่ถูกตัดสต็อก — ตัดตอนขายเหมือนหน้าร้าน ส่วนที่หายตัดตอนปิดรอบ
+              {open && ' · ราคาบูธแก้ที่นี่ได้ ค่าไปลงที่ตัวสินค้า (มีผลกับรอบอื่นด้วย)'}
             </p>
           </div>
           {open && (
@@ -348,6 +390,7 @@ export default function BoothTripClient({
                 const gap = l.returned == null ? null : Math.max(0, should - l.returned)
                 const takenKey = `${l.id}:taken_quantity`
                 const returnedKey = `${l.id}:returned_quantity`
+                const priceKey = `${l.id}:booth_price`
                 return (
                   <tr key={l.id ?? l.productId} className={l.id ? '' : 'bg-orange-50/50'}>
                     <td className="px-4 py-2 text-sm text-gray-900">
@@ -356,8 +399,26 @@ export default function BoothTripClient({
                         <span className="block text-xs text-orange-700">ขายได้แต่ไม่อยู่ในใบเบิก</span>
                       )}
                     </td>
-                    <td className="px-3 py-2 text-sm text-right text-gray-500">
-                      {l.id ? `฿${money(l.price)}` : '—'}
+                    <td className="px-3 py-2 text-right">
+                      {l.id && open && l.editable ? (
+                        <>
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            placeholder={money(l.listPrice)}
+                            className={priceClass}
+                            value={draft[priceKey] ?? (l.boothPriceSet == null ? '' : String(l.boothPriceSet))}
+                            onChange={(e) => setDraft((d) => ({ ...d, [priceKey]: e.target.value }))}
+                            onBlur={(e) => saveBoothPrice(l, e.target.value)}
+                          />
+                          {l.boothPriceSet == null && (
+                            <span className="block text-[10px] text-gray-400">ราคาหน้าร้าน</span>
+                          )}
+                        </>
+                      ) : (
+                        <span className="text-sm text-gray-500">{l.id ? `฿${money(l.price)}` : '—'}</span>
+                      )}
                     </td>
                     <td className="px-3 py-2 text-right">
                       {l.id && open ? (
