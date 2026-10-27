@@ -59,16 +59,31 @@ const isScannable = (code: string | null | undefined) => /^\d{8,14}$/.test((code
 /** คีย์ของบรรทัดในตะกร้า — สินค้าตัวเดียวอยู่ได้หลายบรรทัดถ้าขายคนละหน่วย */
 const lineKey = (item: Pick<CartItem, 'product' | 'unit'>) => `${item.product.id}:${item.unit?.id ?? 'base'}`
 
-const matchesQuery = (p: Product, q: string) =>
-  !q ||
-  p.name.toLowerCase().includes(q) ||
-  (p.sku != null && p.sku.toLowerCase().includes(q)) ||
-  (p.barcode != null && p.barcode.toLowerCase().includes(q)) ||
-  (p.product_units ?? []).some(
-    (u) =>
-      (u.sku != null && u.sku.toLowerCase().includes(q)) ||
-      (u.barcode != null && u.barcode.toLowerCase().includes(q)),
-  )
+/** ข้อความทั้งหมดที่ใช้ค้นสินค้าตัวหนึ่ง — ชื่อ + รหัส + บาร์โค้ด รวมของหน่วยยกแพ็กด้วย */
+const haystackOf = (p: Product) =>
+  [p.name, p.sku, p.barcode, ...(p.product_units ?? []).flatMap((u) => [u.sku, u.barcode])]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase()
+
+/** ตัดคำค้นเป็นคำๆ — ช่องว่างซ้ำ/ขึ้นบรรทัดไม่นับ */
+const tokenize = (q: string) => q.toLowerCase().split(/\s+/).filter(Boolean)
+
+// ต้องเจอครบทุกคำ แต่ไม่สนลำดับและไม่ต้องติดกัน — ชื่อสินค้าที่นำเข้ามายาวและเรียงคำไม่เหมือนที่คนพิมพ์
+// ("royal jelly" ต้องเจอ ROYAL CANIN INSTINCTIVE IN JELLY ADULT CATS 85G, "sterilised 10" ต้องเจอ
+// ROYAL CANIN STERILISED  10 KG. ที่มีช่องว่างซ้อน) — เดิมเทียบเป็นก้อนเดียวเลยต้องพิมพ์ยาวเกือบทั้งชื่อ
+const matchesTokens = (hay: string, tokens: string[]) => tokens.every((t) => hay.includes(t))
+
+// ลำดับความตรง: ขึ้นต้นด้วยคำค้น > มีคำค้นติดกันอยู่ในชื่อ > ครบทุกคำในชื่อ > เจอแค่ในรหัส/บาร์โค้ด
+// กริดวาดแค่ GRID_LIMIT ตัว ถ้าไม่จัดลำดับ ตัวที่ตรงที่สุดจมอยู่ท้ายแถวจนไม่ถูกวาด
+const scoreOf = (p: Product, hay: string, q: string, tokens: string[]) => {
+  if (!q) return 0
+  const name = p.name.toLowerCase()
+  if (name.startsWith(q)) return 0
+  if (name.includes(q)) return 1
+  if (matchesTokens(name, tokens)) return 2
+  return matchesTokens(hay, tokens) ? 3 : 4
+}
 
 // จำนวนสินค้าที่วาดบนกริด — วาดครบสองพันตัวทำให้ทุกตัวอักษรที่พิมพ์หน่วงเป็นสิบ ms
 const GRID_LIMIT = 60
@@ -195,19 +210,32 @@ export default function POSClient({ products: allProducts, booth, shiftOpen, pro
   // (React คืนค่าใน input กลับเป็น state เก่าระหว่างที่ยัง render ไม่ทัน) — ยิงแล้วไม่ติดเพราะแบบนี้
   const deferredSearch = useDeferredValue(search)
   const q = deferredSearch.trim().toLowerCase()
+  const tokens = tokenize(q)
+
+  // ข้อความค้นของสินค้าทุกตัว ทำครั้งเดียวต่อชุดสินค้า ไม่ใช่ทุกตัวอักษรที่พิมพ์
+  const haystacks = useMemo(() => {
+    const m = new Map<string, string>()
+    for (const p of products) m.set(p.id, haystackOf(p))
+    return m
+  }, [products])
+
   const filtered = products.filter((p) => {
     const matchCategory = !categoryFilter || p.categories?.name === categoryFilter
     // สินค้าสต็อค 0 ยังโชว์ — ของบนชั้นมักมีจริงแม้ยอดในระบบหมด ขายได้แล้วให้สต็อคติดลบไว้ฟ้องว่าต้องนับใหม่
-    return matchesQuery(p, q) && matchCategory
+    return matchesTokens(haystacks.get(p.id) ?? '', tokens) && matchCategory
   })
 
-  // สแกนบาร์โค้ดเป็นหลัก — ของที่ยิงไม่ได้คือของที่ต้องกดเลือกเอง เลยดันขึ้นมาก่อน
+  // เรียงตามความตรงก่อน แล้วค่อยดันของที่สแกนไม่ได้ขึ้นมาในกลุ่มที่ตรงเท่ากัน
   //
+  // สแกนบาร์โค้ดเป็นหลัก — ของที่ยิงไม่ได้คือของที่ต้องกดเลือกเอง เลยดันขึ้นมาก่อน
   // ดู "ยิงได้จริงไหม" ไม่ใช่ "ช่องบาร์โค้ดว่างไหม" เพราะตอนย้ายระบบมีการเติม SKU ตัวเอง
   // (EXT002) และรหัสภายใน (DUCKMUZZLE-L) ลงช่องบาร์โค้ดไว้ด้วย ซึ่งไม่มีอยู่บนกล่องสินค้าจริง
   // ของจริงเป็น EAN/UPC = ตัวเลขล้วน 8-14 หลักเสมอ
   const ordered = [...filtered].sort(
-    (a, b) => Number(isScannable(a.barcode)) - Number(isScannable(b.barcode)),
+    (a, b) =>
+      scoreOf(a, haystacks.get(a.id) ?? '', q, tokens) -
+        scoreOf(b, haystacks.get(b.id) ?? '', q, tokens) ||
+      Number(isScannable(a.barcode)) - Number(isScannable(b.barcode)),
   )
 
   function getProductStock(product: Product): number {
@@ -540,9 +568,11 @@ export default function POSClient({ products: allProducts, booth, shiftOpen, pro
     }
 
     // หาคู่จากข้อความสดในช่อง ไม่ใช้ผลกรองของกริดที่ตั้งใจให้ตามหลัง
-    const live = text.toLowerCase()
+    const live = tokenize(text)
     const matches = products.filter(
-      (p) => matchesQuery(p, live) && (!categoryFilter || p.categories?.name === categoryFilter),
+      (p) =>
+        matchesTokens(haystacks.get(p.id) ?? haystackOf(p), live) &&
+        (!categoryFilter || p.categories?.name === categoryFilter),
     )
     if (matches.length === 1) {
       addToCart(matches[0])
@@ -802,6 +832,12 @@ export default function POSClient({ products: allProducts, booth, shiftOpen, pro
             {filtered.length === 0 && (
               <div className="col-span-full text-center py-12 text-gray-400 text-sm">
                 ไม่พบสินค้า
+              </div>
+            )}
+            {/* บอกตรงๆ ว่ายังมีของที่ตรงแต่ไม่ได้วาด — ไม่งั้นพนักงานเห็นกริดเต็มแล้วนึกว่าไม่มี */}
+            {filtered.length > GRID_LIMIT && (
+              <div className="col-span-full text-center py-3 text-gray-400 text-xs">
+                แสดง {GRID_LIMIT} จาก {filtered.length} รายการ · พิมพ์เพิ่มเพื่อกรองให้แคบลง
               </div>
             )}
           </div>
