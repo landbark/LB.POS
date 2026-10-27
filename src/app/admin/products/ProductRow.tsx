@@ -6,12 +6,11 @@ import { ChevronDown, ChevronRight, Edit } from 'lucide-react'
 import DeleteProductButton from './DeleteProductButton'
 import OnlineToggle from './OnlineToggle'
 import StopSellingToggle from './StopSellingToggle'
+import { ProductThumb, ProductMeta, PriceLines, LotList, stockOf } from './ProductBits'
 import { isClinicOnly } from '@/lib/clinic'
-import { isVatApplicable } from '@/lib/vat'
-import { hasBoothPrice } from '@/lib/booth'
-import { formatWeight } from '@/lib/shop'
 import type { Product } from '@/lib/types'
 
+/** แถวในตารางสินค้า — ใช้บนจอกว้างเท่านั้น จอเล็กใช้ ProductCard แทน */
 export default function ProductRow({
   product, selected, onToggle,
 }: {
@@ -20,16 +19,7 @@ export default function ProductRow({
   onToggle: () => void
 }) {
   const [expanded, setExpanded] = useState(false)
-  const lots = product.product_lots ?? []
-  const totalStock = lots.reduce((sum, lot) => sum + (lot.quantity ?? 0), 0)
-  const lowStock = !product.is_service && totalStock <= product.min_stock
-  const clinicOnly = isClinicOnly(product)
-  const vat = isVatApplicable(product)
-  const today = new Date().toISOString().split('T')[0]
-  // เส้นแบ่ง "ใกล้หมดอายุ" คิดครั้งเดียวจาก today — เดิมคิดใหม่ทุกแถวตอน render
-  const expiringSoonCutoff = new Date(Date.parse(today) + 30 * 24 * 60 * 60 * 1000)
-    .toISOString()
-    .split('T')[0]
+  const stock = stockOf(product)
 
   return (
     <>
@@ -54,34 +44,10 @@ export default function ProductRow({
             ) : (
               <ChevronRight size={14} className="text-gray-400 shrink-0" />
             )}
-            {product.image_url ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={product.image_url}
-                alt={product.name}
-                loading="lazy"
-                className="w-10 h-10 rounded-lg object-cover border border-gray-100 shrink-0"
-              />
-            ) : (
-              <div className="w-10 h-10 rounded-lg bg-gray-100 flex items-center justify-center text-base shrink-0">
-                🐾
-              </div>
-            )}
+            <ProductThumb product={product} />
             <div>
               <p className="text-sm font-medium text-gray-900 hover:text-blue-600">{product.name}</p>
-              <p className="text-xs text-gray-500">
-                {product.unit}
-                {!product.active && <span className="ml-1.5 font-medium text-red-600">· งดจำหน่าย</span>}
-                {vat && <span className="ml-1.5 text-indigo-600">· VAT</span>}
-                {clinicOnly && <span className="ml-1.5 text-amber-600">· ของคลินิก</span>}
-                {product.is_service && <span className="ml-1.5 text-gray-400">· บริการ</span>}
-                {product.on_shopee && <span className="ml-1.5 text-orange-600">· Shopee</span>}
-                {!product.is_service && !clinicOnly && (
-                  product.weight_grams != null
-                    ? <span className="ml-1.5 text-gray-400">· {formatWeight(product.weight_grams)}</span>
-                    : <span className="ml-1.5 text-amber-600">· ยังไม่ใส่น้ำหนัก</span>
-                )}
-              </p>
+              <ProductMeta product={product} />
             </div>
           </button>
         </td>
@@ -95,34 +61,18 @@ export default function ProductRow({
           {product.categories?.name || '—'}
         </td>
         <td className="px-4 py-3 text-sm text-right font-medium text-gray-900">
-          ฿{product.price.toLocaleString('th-TH', { minimumFractionDigits: 2 })}
-          {hasBoothPrice(product) && (
-            <span className="block text-xs font-normal text-amber-700" title="ราคาตอนออกบูธ">
-              บูธ ฿{product.booth_price!.toLocaleString('th-TH', { minimumFractionDigits: 2 })}
-            </span>
-          )}
-          {/* หน่วยใหญ่ที่ผูกไว้ — ปิดโชว์หน้าขายจะขึ้นวงเล็บกำกับว่าใช้สั่งของเท่านั้น */}
-          {(product.product_units ?? [])
-            .filter((u) => u.active)
-            .sort((a, b) => a.factor - b.factor)
-            .map((u) => (
-              <span key={u.id} className="block text-xs font-normal text-gray-500">
-                {u.unit_name} ({u.factor}) ฿
-                {(u.price ?? product.price * u.factor).toLocaleString('th-TH', { minimumFractionDigits: 2 })}
-                {!u.sellable_pos && ' · สั่งของ'}
-              </span>
-            ))}
+          <PriceLines product={product} />
         </td>
         <td className="px-4 py-3 text-sm text-right">
-          <span className={lowStock ? 'text-red-600 font-semibold' : 'text-gray-700'}>
-            {totalStock} {product.unit}
+          <span className={stock.low ? 'text-red-600 font-semibold' : 'text-gray-700'}>
+            {stock.total} {product.unit}
           </span>
         </td>
         <td className="px-4 py-3 text-center">
           <StopSellingToggle product={product} />
         </td>
         <td className="px-4 py-3 text-center">
-          <OnlineToggle product={product} clinicOnly={clinicOnly} />
+          <OnlineToggle product={product} clinicOnly={isClinicOnly(product)} />
         </td>
         <td className="px-4 py-3">
           <div className="flex items-center gap-2 justify-end">
@@ -139,40 +89,7 @@ export default function ProductRow({
       {expanded && (
         <tr className="bg-gray-50/60">
           <td colSpan={10} className="px-4 py-3">
-            {lots.length === 0 ? (
-              <p className="text-sm text-gray-400 py-1">ยังไม่มี lot</p>
-            ) : (
-              <table className="w-full max-w-xl">
-                <thead>
-                  <tr className="text-xs font-medium text-gray-400 uppercase">
-                    <th className="text-left pb-1.5 font-medium">Lot</th>
-                    <th className="text-left pb-1.5 font-medium">วันหมดอายุ</th>
-                    <th className="text-right pb-1.5 font-medium">คงเหลือ</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100">
-                  {lots.map((lot) => {
-                    const soldOut = lot.quantity === 0
-                    const isExpired = !soldOut && lot.expiry_date && lot.expiry_date < today
-                    const isExpiringSoon = !soldOut && lot.expiry_date && lot.expiry_date >= today &&
-                      lot.expiry_date <= expiringSoonCutoff
-                    return (
-                      <tr key={lot.id}>
-                        <td className="py-1.5 text-sm text-gray-700 font-mono">{lot.lot_number || 'ไม่ระบุ lot'}</td>
-                        <td className={`py-1.5 text-sm ${isExpired ? 'text-red-600' : isExpiringSoon ? 'text-orange-500' : 'text-gray-500'}`}>
-                          {lot.expiry_date ? new Date(lot.expiry_date).toLocaleDateString('th-TH') : 'ไม่มีวันหมดอายุ'}
-                          {isExpired && ' ⚠️ หมดแล้ว'}
-                          {isExpiringSoon && ' ⚠️ ใกล้หมด'}
-                        </td>
-                        <td className="py-1.5 text-sm text-right font-semibold text-gray-900">
-                          {lot.quantity} {product.unit}
-                        </td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            )}
+            <LotList product={product} />
           </td>
         </tr>
       )}

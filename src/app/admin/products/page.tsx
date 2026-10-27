@@ -39,9 +39,10 @@ export default async function ProductsPage() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
+      {/* จอเล็กเรียงลงมาเป็นแถว — เดิมยัดชื่อหน้ากับปุ่มสี่อันไว้บรรทัดเดียว ตัวอักษรแตกเป็นคำละบรรทัด */}
+      <div className="mb-6 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <h1 className="text-2xl font-bold text-gray-900">สินค้า</h1>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <ShopeeButton products={products as never} />
           <BulkImportButton
             categories={categories ?? []}
@@ -51,14 +52,14 @@ export default async function ProductsPage() {
           />
           <Link
             href="/admin/products/units"
-            className="flex items-center gap-2 bg-white border border-gray-200 hover:border-gray-300 text-gray-700 text-sm font-medium px-4 py-2 rounded-lg transition-colors"
+            className="flex shrink-0 items-center gap-2 whitespace-nowrap bg-white border border-gray-200 hover:border-gray-300 text-gray-700 text-sm font-medium px-4 py-2 rounded-lg transition-colors"
           >
             <Boxes size={16} />
-            หน่วยขาย (กล่อง/ลัง)
+            หน่วยขาย<span className="hidden sm:inline"> (กล่อง/ลัง)</span>
           </Link>
           <Link
             href="/admin/products/new"
-            className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
+            className="flex shrink-0 items-center gap-2 whitespace-nowrap bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
           >
             <Plus size={16} />
             เพิ่มสินค้า

@@ -86,7 +86,7 @@ export default function ShopeeButton({ products }: { products: Product[] }) {
     <>
       <button
         onClick={() => setOpen(true)}
-        className="flex items-center gap-2 border border-gray-300 text-gray-600 text-sm px-4 py-2 rounded-lg hover:bg-gray-50"
+        className="flex shrink-0 items-center gap-2 whitespace-nowrap border border-gray-300 text-gray-600 text-sm px-4 py-2 rounded-lg hover:bg-gray-50"
         title="อัปเดตสต็อก Shopee / ออกไฟล์รายการสินค้าที่ลงขายไว้"
       >
         <Store size={15} /> Shopee

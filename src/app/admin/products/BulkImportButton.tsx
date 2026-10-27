@@ -256,7 +256,7 @@ export default function BulkImportButton({ categories, units, suppliers, userId 
     <>
       <button
         onClick={() => setOpen(true)}
-        className="flex items-center gap-2 border border-gray-300 hover:bg-gray-50 text-gray-700 text-sm font-medium px-4 py-2 rounded-lg transition-colors"
+        className="flex shrink-0 items-center gap-2 whitespace-nowrap border border-gray-300 hover:bg-gray-50 text-gray-700 text-sm font-medium px-4 py-2 rounded-lg transition-colors"
       >
         <Upload size={16} />
         นำเข้าเป็นชุด

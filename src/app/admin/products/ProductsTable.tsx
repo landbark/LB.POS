@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { Search, X, Receipt } from 'lucide-react'
 import toast from 'react-hot-toast'
 import ProductRow from './ProductRow'
+import ProductCard from './ProductCard'
 import { createClient } from '@/lib/supabase/client'
 import { confirmDialog } from '@/lib/confirm'
 import { isVatApplicable } from '@/lib/vat'
@@ -199,11 +200,22 @@ export default function ProductsTable({ products }: { products: Product[] }) {
   const visible = found.slice(0, shown)
   const count = (n: number) => n.toLocaleString('th-TH')
   const allVisiblePicked = visible.length > 0 && visible.every((p) => picked.has(p.id))
+  const emptyText = products.length === 0
+    ? 'ยังไม่มีสินค้า — กด "เพิ่มสินค้า" เพื่อเริ่มต้น'
+    : `ไม่เจอสินค้าที่ตรงกับ "${query}"`
+
+  /** ติ๊ก/ปลดทั้งชุดที่กำลังแสดงอยู่ */
+  function toggleVisible() {
+    const next = new Set(picked)
+    if (allVisiblePicked) visible.forEach((p) => next.delete(p.id))
+    else visible.forEach((p) => next.add(p.id))
+    setPicked(next)
+  }
 
   return (
     <>
       <div className="flex flex-wrap items-center gap-3 mb-4">
-        <div className="relative flex-1 min-w-64">
+        <div className="relative w-full min-w-0 sm:w-auto sm:flex-1 sm:min-w-64">
           <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
           <input
             value={query}
@@ -221,10 +233,13 @@ export default function ProductsTable({ products }: { products: Product[] }) {
             </button>
           )}
         </div>
+        {/* จอเล็กให้สองตัวนี้อยู่แถวของมันเอง ไม่งั้นโดนบีบจนอ่านไม่ออกว่ากรองอะไรอยู่
+            — sm:contents ทำให้ div นี้หายไปบนจอใหญ่ แถวเดิมจึงไม่เปลี่ยน */}
+        <div className="flex w-full gap-3 sm:contents">
         <select
           value={vatFilter}
           onChange={(e) => { setVatFilter(e.target.value as '' | 'yes' | 'no'); setShown(PAGE) }}
-          className="shrink-0 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+          className="min-w-0 flex-1 sm:flex-none sm:shrink-0 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30"
         >
           <option value="">VAT: ทั้งหมด</option>
           <option value="yes">เฉพาะที่มี VAT</option>
@@ -233,12 +248,13 @@ export default function ProductsTable({ products }: { products: Product[] }) {
         <select
           value={boothFilter}
           onChange={(e) => { setBoothFilter(e.target.value as '' | 'yes' | 'no'); setShown(PAGE) }}
-          className="shrink-0 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+          className="min-w-0 flex-1 sm:flex-none sm:shrink-0 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30"
         >
           <option value="">ราคาบูธ: ทั้งหมด</option>
           <option value="yes">เฉพาะที่ตั้งราคาบูธไว้</option>
           <option value="no">เฉพาะที่ใช้ราคาปกติ</option>
         </select>
+        </div>
         {stoppedCount > 0 && (
           <label className="flex items-center gap-2 text-sm text-gray-600 shrink-0">
             <input
@@ -264,7 +280,7 @@ export default function ProductsTable({ products }: { products: Product[] }) {
       </div>
 
       {picked.size > 0 && (
-        <div className="sticky top-0 z-10 mb-3 flex flex-wrap items-center gap-2 rounded-xl border border-blue-200 bg-blue-50 px-4 py-2.5">
+        <div className="sticky top-14 md:top-0 z-10 mb-3 flex flex-wrap items-center gap-2 rounded-xl border border-blue-200 bg-blue-50 px-3 py-2.5 md:px-4">
           <Receipt size={15} className="text-blue-600 shrink-0" />
           <span className="text-sm font-medium text-blue-900">
             เลือกไว้ {count(picked.size)} รายการ
@@ -335,7 +351,37 @@ export default function ProductsTable({ products }: { products: Product[] }) {
         </div>
       )}
 
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-x-auto">
+      {/* จอเล็กใช้การ์ด — ตารางสิบคอลัมน์บีบจนชื่อสินค้าแตกเป็นคำละบรรทัด อ่านบนมือถือไม่ได้ */}
+      <div className="md:hidden">
+        {visible.length > 0 && (
+          <label className="mb-2 flex items-center gap-2 px-1 text-xs text-gray-500">
+            <input
+              type="checkbox"
+              checked={allVisiblePicked}
+              onChange={toggleVisible}
+              className="h-4 w-4 accent-blue-600"
+            />
+            เลือกทั้งหมดที่แสดงอยู่ ({count(visible.length)})
+          </label>
+        )}
+        <div className="space-y-2">
+          {visible.map((product) => (
+            <ProductCard
+              key={product.id}
+              product={product}
+              selected={picked.has(product.id)}
+              onToggle={() => toggleOne(product.id)}
+            />
+          ))}
+        </div>
+        {found.length === 0 && (
+          <p className="rounded-xl border border-gray-100 bg-white px-4 py-10 text-center text-sm text-gray-400">
+            {emptyText}
+          </p>
+        )}
+      </div>
+
+      <div className="hidden md:block bg-white rounded-xl shadow-sm border border-gray-100 overflow-x-auto">
         <table className="w-full">
           <thead className="bg-gray-50 border-b border-gray-100">
             <tr>
@@ -343,12 +389,7 @@ export default function ProductsTable({ products }: { products: Product[] }) {
                 <input
                   type="checkbox"
                   checked={allVisiblePicked}
-                  onChange={() => {
-                    const next = new Set(picked)
-                    if (allVisiblePicked) visible.forEach((p) => next.delete(p.id))
-                    else visible.forEach((p) => next.add(p.id))
-                    setPicked(next)
-                  }}
+                  onChange={toggleVisible}
                   aria-label="เลือกทั้งหมดในหน้านี้"
                   className="w-4 h-4 accent-blue-600"
                 />
@@ -376,9 +417,7 @@ export default function ProductsTable({ products }: { products: Product[] }) {
             {found.length === 0 && (
               <tr>
                 <td colSpan={10} className="px-4 py-10 text-center text-sm text-gray-400">
-                  {products.length === 0
-                    ? 'ยังไม่มีสินค้า — กด "เพิ่มสินค้า" เพื่อเริ่มต้น'
-                    : `ไม่เจอสินค้าที่ตรงกับ "${query}"`}
+                  {emptyText}
                 </td>
               </tr>
             )}
