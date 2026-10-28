@@ -1,5 +1,5 @@
 /**
- * ตรวจการเปิดกะ + ดึงบิลที่ขายก่อนเปิดกะ กับฐานข้อมูลจริง โดยไม่แตะข้อมูลของร้าน
+ * ตรวจการเปิดกะ + ดึงบิลที่ขายก่อนเปิดกะ + ยอดยกมาจากกะที่แล้ว กับฐานข้อมูลจริง โดยไม่แตะข้อมูลของร้าน
  *
  *   npx tsx scripts/verify-shift-open.ts
  *
@@ -10,7 +10,7 @@ import { createClient } from '@supabase/supabase-js'
 import { readFileSync } from 'node:fs'
 import { resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { findOrphanSales, openShift, orphanNote } from '../src/lib/shiftOpen'
+import { carryNote, findCarryOver, findOrphanSales, openShift, orphanNote } from '../src/lib/shiftOpen'
 import { sumByMethod, type PaidTransaction } from '../src/lib/payments'
 import { thaiDayRange } from '../src/lib/thaiDate'
 
@@ -180,6 +180,49 @@ async function main() {
       .from('transactions').select('id')
       .eq('status', 'completed').eq('sales_channel', 'store').gte('created_at', row2!.opened_at)
     check(!(after ?? []).some((t) => t.id === tx2!.id), 'ไม่ติ๊ก = บิลนั้นตกนอกกะจริง (ปิดกะจะขึ้นเงินเกิน ฿1.00)')
+
+    await cleanup()
+    madeShifts.length = 0
+
+    // --- 9) ยอดยกมาจากกะที่แล้ว = ที่นับได้ตอนปิด − ที่แยกให้เจ้าของ และส่วนต่างต้องถูกจดไว้
+    // กะทดสอบนี้ปิดแล้ว (closed_at = เมื่อกี้) จึงกลายเป็นกะล่าสุดที่ findCarryOver มองเห็น
+    const { data: closedShift } = await supabase
+      .from('shifts')
+      .insert({
+        opened_at: new Date(Date.now() - 2 * 60_000).toISOString(),
+        opened_by: userId, opening_cash: 100,
+        closed_at: new Date(Date.now() - 60_000).toISOString(), closed_by: userId,
+        expected_cash: 1000, closing_cash_counted: 1000, cash_difference: 0,
+        cash_to_owner: 300, notes: 'กะทดสอบ verify-shift-open',
+      })
+      .select('id').single()
+    madeShifts.push(closedShift!.id)
+
+    const carry = await findCarryOver(db)
+    check(carry?.amount === 700, 'ยอดยกมา = นับได้ ฿1,000 − แยกให้เจ้าของ ฿300 = ฿700', `฿${carry?.amount}`)
+    check(carry?.counted === 1000 && carry?.toOwner === 300, 'คืนที่มาของยอดมาด้วย (ไว้โชว์ให้คนเปิดกะเห็น)')
+
+    // นับได้เท่ายอดยกมา → ไม่ต้องจดอะไร
+    const same = await openShift({ openingCash: 700, openedBy: userId, openedByName: 'สคริปต์ทดสอบ', carry }, db)
+    check(!same.error, 'เปิดกะด้วยยอดยกมาได้', same.error ?? '')
+    let { data: sameRow } = await supabase.from('shifts').select('*').is('closed_at', null).maybeSingle()
+    if (sameRow) madeShifts.push(sameRow.id)
+    check(sameRow?.notes == null, 'นับได้ตรงยอดยกมา → ไม่เขียน notes')
+    await supabase.from('shifts').delete().eq('id', sameRow!.id)
+
+    // นับได้เกินยอดยกมา 15 (เคสจริง 2026-10-28) → ต้องเขียนไว้ ไม่ให้หายเงียบ
+    const off = await openShift(
+      { openingCash: 715, openedBy: userId, openedByName: 'สคริปต์ทดสอบ', carry, carryReason: 'เมื่อคืนนับเหรียญขาด' },
+      db,
+    )
+    check(!off.error, 'เปิดกะด้วยยอดที่นับได้จริงได้ แม้ไม่ตรงยอดยกมา', off.error ?? '')
+    ;({ data: sameRow } = await supabase.from('shifts').select('*').is('closed_at', null).maybeSingle())
+    if (sameRow) madeShifts.push(sameRow.id)
+    check(sameRow?.opening_cash === 715, 'ใช้ยอดที่นับได้จริงเป็นเงินตั้งต้น (ไม่ทับด้วยยอดยกมา)', `฿${sameRow?.opening_cash}`)
+    check((sameRow?.notes ?? '').startsWith('[เงินตั้งต้นไม่ตรงยอดยกมา'), 'เขียน audit line ส่วนต่างลง notes', sameRow?.notes ?? '')
+    check((sameRow?.notes ?? '').includes('เกิน ฿15.00'), 'audit line บอกว่าเกินเท่าไหร่')
+    check((sameRow?.notes ?? '').includes('เมื่อคืนนับเหรียญขาด'), 'audit line เก็บเหตุผลที่คนเปิดกะกรอก')
+    check(sameRow?.notes === carryNote(carry!, 715, 'สคริปต์ทดสอบ', 'เมื่อคืนนับเหรียญขาด'), 'audit line ตรงกับ carryNote()')
 
     await cleanup()
     madeShifts.length = 0

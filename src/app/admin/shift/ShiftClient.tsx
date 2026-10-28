@@ -1,10 +1,10 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { Fragment, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { expectedCash as computeExpectedCash, splitShiftBills, type ShiftBill } from '@/lib/shiftCash'
-import { Wallet, Lock, Unlock, Pencil } from 'lucide-react'
+import { Wallet, Lock, Unlock, Pencil, StickyNote } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { confirmDialog } from '@/lib/confirm'
 import OpenShiftModal from '@/components/OpenShiftModal'
@@ -41,6 +41,10 @@ type ShiftRow = Shift & {
   owner_denominations?: Record<string, number> | null
 }
 
+// เงินที่กะหนึ่งต้องส่งต่อให้กะถัดไป = ที่นับได้ตอนปิด − ที่แยกให้เจ้าของ (ปิดโดยไม่นับ = เทียบไม่ได้)
+const carryOf = (s: ShiftRow | undefined) =>
+  s && s.closing_cash_counted != null ? Number(s.closing_cash_counted) - Number(s.cash_to_owner ?? 0) : null
+
 // สรุปรายละเอียดแบงค์เป็นข้อความ เช่น "แบงค์พัน × 3\nแบงค์ร้อย × 5" (ใช้เป็น tooltip ในประวัติกะ)
 const denomTitle = (den: Record<string, number> | null | undefined) =>
   den
@@ -71,6 +75,8 @@ export default function ShiftClient({
   const [reopenNext, setReopenNext] = useState(false)
   // กะที่ปิดไปแล้วแต่กรอกยอดผิด — เปิดกล่องแก้ไขจากตารางประวัติ
   const [editing, setEditing] = useState<ShiftRow | null>(null)
+  // แถวประวัติที่กางหมายเหตุอยู่ — หมายเหตุคือที่เก็บ audit ว่าเงินตั้งต้นไม่ตรงยอดยกมา/ใครแก้ยอด
+  const [openNote, setOpenNote] = useState<string | null>(null)
   const [editCounted, setEditCounted] = useState('')
   const [editOwner, setEditOwner] = useState('')
   const [editNote, setEditNote] = useState('')
@@ -132,6 +138,8 @@ export default function ShiftClient({
         cashSales, cashFromCancelled, cashRefunds, cashIn, cashOut,
       })
     : 0
+  // กะที่ปิดล่าสุด = แถวแรกของประวัติ → เงินที่ควรยกมาให้กะที่เปิดอยู่
+  const openingCarry = carryOf(history[0])
   const hasCount = DENOMS.some((d) => (counts[d.value] ?? '') !== '')
   const counted = DENOMS.reduce((s, d) => s + d.value * (parseInt(counts[d.value] || '0', 10) || 0), 0)
   const qtyOf = (c: Record<number, string>, v: number) => parseInt(c[v] || '0', 10) || 0
@@ -384,7 +392,7 @@ export default function ShiftClient({
             <Unlock size={18} className="text-green-500" />
             <h2 className="font-semibold text-gray-900">กะกำลังเปิดอยู่</h2>
           </div>
-          <p className="text-sm text-gray-500 mb-4">
+          <p className="text-sm text-gray-500 mb-1">
             เปิดเมื่อ {fmtDate(openShift.opened_at)} โดย {openShift.opener?.name ?? '—'} · เงินสดตั้งต้น ฿{money(openShift.opening_cash)}
             {canEditClosed && !editOpening && (
               <button
@@ -396,6 +404,14 @@ export default function ShiftClient({
               </button>
             )}
           </p>
+          {openingCarry != null && (
+            <p className={`text-xs mb-4 ${openingCarry === openShift.opening_cash ? 'text-gray-400' : 'text-amber-700 font-medium'}`}>
+              ยกมาจากกะที่แล้ว ฿{money(openingCarry)}
+              {openingCarry !== openShift.opening_cash && (
+                <> · เช้านี้นับได้{openShift.opening_cash > openingCarry ? 'เกิน' : 'ขาด'} ฿{money(Math.abs(openShift.opening_cash - openingCarry))} — ดูหมายเหตุของกะนี้</>
+              )}
+            </p>
+          )}
 
           {editOpening && (
             <div className="bg-blue-50 border border-blue-100 rounded-lg p-3 mb-4 space-y-2">
@@ -664,15 +680,39 @@ export default function ShiftClient({
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-50">
-            {history.map((s) => (
-              <tr key={s.id} className="hover:bg-gray-50">
+            {history.map((s, i) => {
+              // history เรียงใหม่→เก่า แถวถัดไปคือกะก่อนหน้า = ต้นทางของเงินที่ยกมา
+              const carry = carryOf(history[i + 1])
+              const carryDiff = carry == null ? null : s.opening_cash - carry
+              return (
+              <Fragment key={s.id}>
+              <tr className="hover:bg-gray-50">
                 <td className="px-4 py-3 text-sm text-gray-600 whitespace-nowrap">
                   {fmtDate(s.opened_at)} - {s.closed_at ? fmtDate(s.closed_at) : '—'}
+                  {s.notes && (
+                    <button
+                      onClick={() => setOpenNote(openNote === s.id ? null : s.id)}
+                      title="ดูหมายเหตุของกะนี้"
+                      className={`ml-1.5 align-middle ${openNote === s.id ? 'text-blue-600' : 'text-gray-300 hover:text-blue-600'}`}
+                    >
+                      <StickyNote size={14} />
+                    </button>
+                  )}
                 </td>
                 <td className="px-4 py-3 text-sm text-gray-600">
                   {s.opener?.name ?? '—'} / {s.closer?.name ?? '—'}
                 </td>
-                <td className="px-4 py-3 text-sm text-right text-gray-700">฿{money(s.opening_cash)}</td>
+                <td className="px-4 py-3 text-sm text-right text-gray-700">
+                  ฿{money(s.opening_cash)}
+                  {carryDiff != null && carryDiff !== 0 && (
+                    <span
+                      className="block text-xs font-medium text-amber-600"
+                      title={`กะก่อนหน้าส่งต่อมา ฿${money(carry!)} แต่กะนี้ตั้งต้น ฿${money(s.opening_cash)}`}
+                    >
+                      {carryDiff > 0 ? '+' : '−'}฿{money(Math.abs(carryDiff))} จากยกมา
+                    </span>
+                  )}
+                </td>
                 <td className="px-4 py-3 text-sm text-right text-gray-700">{s.expected_cash != null ? `฿${money(s.expected_cash)}` : '—'}</td>
                 <td className="px-4 py-3 text-sm text-right text-gray-700" title={denomTitle(s.closing_denominations)}>
                   {s.closing_cash_counted != null ? `฿${money(s.closing_cash_counted)}` : '—'}
@@ -697,7 +737,16 @@ export default function ShiftClient({
                   </td>
                 )}
               </tr>
-            ))}
+              {openNote === s.id && s.notes && (
+                <tr className="bg-amber-50/60">
+                  <td colSpan={canEditClosed ? 8 : 7} className="px-4 py-3 text-xs text-gray-700 whitespace-pre-line">
+                    {s.notes}
+                  </td>
+                </tr>
+              )}
+              </Fragment>
+              )
+            })}
             {history.length === 0 && (
               <tr>
                 <td colSpan={canEditClosed ? 8 : 7} className="px-4 py-10 text-center text-sm text-gray-400">ยังไม่มีประวัติกะ</td>

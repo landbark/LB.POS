@@ -4,6 +4,11 @@
 // เปิดจึงตกนอกกะทุกกะ เงินอยู่ในเก๊ะแต่ไม่มีใครนับ ตอนปิดกะจะขึ้นว่า "เงินเกิน" เท่ายอดนั้นแล้ว
 // กลบเงินขาดจริง/เงินที่หยิบไปใช้โดยไม่ได้ลงบันทึกไปด้วย — เปิดกะทีหลังจึงเสนอย้อนเวลาเปิดกะ
 // ไปที่บิลแรกของช่วงที่ไม่มีกะ ให้บิลพวกนั้นกลับเข้ามาอยู่ในกะ
+//
+// ช่อง "เงินสดตั้งต้น" เคยเป็นช่องว่างให้พิมพ์เอง เงินที่เหลือข้ามคืนจากกะที่แล้วจึงไม่มีใครเทียบ
+// พิมพ์ผิดไป 8 ใน 20 กะ (ตั้งแต่ -3,000 ถึง +7,146) และทุกครั้งส่วนต่างหายเงียบ ไม่รู้ว่าคืนก่อน
+// นับผิดหรือเงินหายระหว่างคืน (เจอ 2026-10-28: ยกมา 3,439 แต่เช้านับได้ 3,454 เกิน 15 เงียบๆ)
+// ตอนนี้จึงเติมยอดยกมาให้ก่อน แล้วถ้าคนนับได้ไม่เท่ากันก็ยังแก้ได้ แต่ส่วนต่างถูกเขียนลง `notes`
 
 import { createClient } from '@/lib/supabase/client'
 import { sumByMethod, type PaidTransaction } from '@/lib/payments'
@@ -69,6 +74,52 @@ export function orphanNote(orphan: OrphanSales, byName: string) {
   return `[รวมบิลก่อนเปิดกะ ${stamp} โดย ${byName || 'พนักงาน'}] ย้อนเวลาเปิดกะไปที่ ${fmtTime(orphan.firstAt)} · บิลหน้าร้าน ${orphan.bills} ใบ เงินสด ฿${money(orphan.cash)}`
 }
 
+export interface CarryOver {
+  /** เงินที่ต้องเหลือข้ามคืนในเก๊ะ = ที่นับได้ตอนปิดกะที่แล้ว − ที่แยกให้เจ้าของ */
+  amount: number
+  /** ยอดที่นับได้ตอนปิดกะที่แล้ว */
+  counted: number
+  /** ยอดที่แยกออกให้เจ้าของตอนปิด (วันไหนเจ้าของไม่อยู่ = 0) */
+  toOwner: number
+  closedAt: string
+}
+
+/**
+ * เงินที่ควรเหลือในเก๊ะจากกะที่ปิดไปล่าสุด — ใช้เติมช่อง "เงินสดตั้งต้น" ให้ล่วงหน้า
+ * กะที่ปิดโดยไม่ได้นับเงิน (`closing_cash_counted` ว่าง) เทียบไม่ได้ คืน null
+ */
+export async function findCarryOver(supabase: Db = createClient()): Promise<CarryOver | null> {
+  const { data } = await supabase
+    .from('shifts')
+    .select('closed_at, closing_cash_counted, cash_to_owner')
+    .not('closed_at', 'is', null)
+    .order('closed_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  if (!data || data.closing_cash_counted == null) return null
+  const counted = Number(data.closing_cash_counted)
+  const toOwner = Number(data.cash_to_owner ?? 0)
+  return { amount: counted - toOwner, counted, toOwner, closedAt: data.closed_at as string }
+}
+
+/**
+ * ข้อความ audit ตอนเงินที่นับได้เช้านี้ไม่เท่ายอดยกมา — เขียนลง `shifts.notes`
+ * ส่วนต่างตรงนี้คือเงินที่หายหรือเกินระหว่างปิดกะเมื่อวานกับเปิดกะวันนี้ ต้องมีหลักฐานไว้
+ */
+export function carryNote(carry: CarryOver, openingCash: number, byName: string, reason = '') {
+  const diff = openingCash - carry.amount
+  const stamp = new Date().toLocaleString('th-TH', {
+    timeZone: 'Asia/Bangkok', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit',
+  })
+  return (
+    `[เงินตั้งต้นไม่ตรงยอดยกมา ${stamp} โดย ${byName || 'พนักงาน'}] ` +
+    `ยกมา ฿${money(carry.amount)} (ปิดกะ ${fmtTime(carry.closedAt)} นับได้ ฿${money(carry.counted)}` +
+    `${carry.toOwner ? ` − แยกให้เจ้าของ ฿${money(carry.toOwner)}` : ''}) · ` +
+    `เช้านี้นับได้ ฿${money(openingCash)} · ${diff > 0 ? 'เกิน' : 'ขาด'} ฿${money(Math.abs(diff))}` +
+    `${reason.trim() ? ` · ${reason.trim()}` : ''}`
+  )
+}
+
 /**
  * เปิดกะใหม่ — ส่ง `orphan` มาด้วยถ้าจะรวมบิลที่ขายก่อนเปิดกะ (ย้อน `opened_at` ไปที่บิลแรก)
  * คืน error เป็นข้อความไทยพร้อมโชว์ ไม่โยน throw
@@ -79,6 +130,10 @@ export async function openShift(
     openedBy: string
     openedByName?: string
     orphan?: OrphanSales | null
+    /** ยอดยกมาจากกะที่แล้ว — ส่งมาด้วยเพื่อบันทึกส่วนต่างถ้านับได้ไม่เท่ากัน */
+    carry?: CarryOver | null
+    /** เหตุผลที่คนเปิดกะกรอกไว้ตอนนับได้ไม่ตรงยอดยกมา */
+    carryReason?: string
   },
   supabase: Db = createClient(),
 ): Promise<{ error?: string }> {
@@ -86,10 +141,15 @@ export async function openShift(
     opening_cash: opts.openingCash,
     opened_by: opts.openedBy,
   }
+  const notes: string[] = []
   if (opts.orphan) {
     row.opened_at = opts.orphan.firstAt
-    row.notes = orphanNote(opts.orphan, opts.openedByName ?? '')
+    notes.push(orphanNote(opts.orphan, opts.openedByName ?? ''))
   }
+  if (opts.carry && opts.carry.amount !== opts.openingCash) {
+    notes.push(carryNote(opts.carry, opts.openingCash, opts.openedByName ?? '', opts.carryReason))
+  }
+  if (notes.length) row.notes = notes.join('\n')
   const { error } = await supabase.from('shifts').insert(row)
   if (error) return { error: error.code === '23505' ? 'มีกะที่เปิดอยู่แล้ว' : 'เปิดกะไม่สำเร็จ: ' + error.message }
   return {}

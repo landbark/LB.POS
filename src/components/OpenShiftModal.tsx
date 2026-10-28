@@ -1,13 +1,15 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { X, Wallet, AlertTriangle } from 'lucide-react'
+import { X, Wallet, AlertTriangle, ArrowRightLeft } from 'lucide-react'
 import toast from 'react-hot-toast'
-import { findOrphanSales, openShift, type OrphanSales } from '@/lib/shiftOpen'
+import { findCarryOver, findOrphanSales, openShift, type CarryOver, type OrphanSales } from '@/lib/shiftOpen'
 
 const money = (n: number) => n.toLocaleString('th-TH', { minimumFractionDigits: 2 })
 const fmtTime = (iso: string) =>
   new Date(iso).toLocaleTimeString('th-TH', { timeZone: 'Asia/Bangkok', hour: '2-digit', minute: '2-digit' })
+const fmtDay = (iso: string) =>
+  new Date(iso).toLocaleDateString('th-TH', { timeZone: 'Asia/Bangkok', day: 'numeric', month: 'short' })
 
 /**
  * เปิดกะได้จากทุกหน้า — หน้าขายเรียกจากแถบเตือน "ยังไม่ได้เปิดกะ" (ไม่ต้องทิ้งตะกร้าไปหน้าอื่น)
@@ -29,17 +31,26 @@ export default function OpenShiftModal({
   const [orphan, setOrphan] = useState<OrphanSales | null>(null)
   const [pullIn, setPullIn] = useState(true)
   const [loadingOrphan, setLoadingOrphan] = useState(true)
+  // ยอดที่ควรเหลือข้ามคืนจากกะที่แล้ว — เติมใส่ช่องให้ก่อน คนนับได้ไม่ตรงค่อยแก้
+  const [carry, setCarry] = useState<CarryOver | null>(null)
+  const [carryReason, setCarryReason] = useState('')
   const [busy, setBusy] = useState(false)
 
   useEffect(() => {
     let cancelled = false
-    findOrphanSales().then((found) => {
+    Promise.all([findOrphanSales(), findCarryOver()]).then(([found, over]) => {
       if (cancelled) return
       setOrphan(found)
+      setCarry(over)
+      if (over) setCash(String(over.amount))
       setLoadingOrphan(false)
     })
     return () => { cancelled = true }
   }, [])
+
+  const typed = parseFloat(cash || '0')
+  // ต่างจากยอดยกมาเท่าไหร่ — ค่านี้จะถูกเขียนลง shifts.notes ตอนเปิดกะ
+  const carryDiff = carry && !Number.isNaN(typed) ? typed - carry.amount : 0
 
   async function submit() {
     const amount = parseFloat(cash || '0')
@@ -53,6 +64,8 @@ export default function OpenShiftModal({
       openedBy: userId,
       openedByName: userName,
       orphan: pullIn ? orphan : null,
+      carry,
+      carryReason,
     })
     setBusy(false)
     if (error) {
@@ -60,9 +73,11 @@ export default function OpenShiftModal({
       return
     }
     toast.success(
-      pullIn && orphan
-        ? `เปิดกะแล้ว — รวมบิลตั้งแต่ ${fmtTime(orphan.firstAt)} เข้ากะนี้`
-        : 'เปิดกะแล้ว',
+      carryDiff !== 0
+        ? `เปิดกะแล้ว — บันทึกส่วนต่างจากยอดยกมา ${carryDiff > 0 ? '+' : '−'}฿${money(Math.abs(carryDiff))} ไว้ในกะนี้`
+        : pullIn && orphan
+          ? `เปิดกะแล้ว — รวมบิลตั้งแต่ ${fmtTime(orphan.firstAt)} เข้ากะนี้`
+          : 'เปิดกะแล้ว',
     )
     onOpened()
   }
@@ -79,15 +94,54 @@ export default function OpenShiftModal({
 
         <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-3">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">เงินสดตั้งต้น (เงินทอนในเก๊ะ)</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">เงินสดตั้งต้น (นับเงินในเก๊ะจริง)</label>
             <input
               type="number" min={0} step="0.01" inputMode="decimal" autoFocus
               value={cash}
               onChange={(e) => setCash(e.target.value)}
               placeholder="0.00"
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#C4865A]"
+              className={`w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 ${
+                carryDiff !== 0
+                  ? 'border-amber-400 bg-amber-50 focus:ring-amber-400'
+                  : 'border-gray-300 focus:ring-[#C4865A]'
+              }`}
             />
           </div>
+
+          {carry && (
+            <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 space-y-1.5">
+              <p className="flex items-center gap-1.5 text-sm text-gray-700">
+                <ArrowRightLeft size={14} className="shrink-0 text-gray-400" />
+                ยอดยกมาจากกะ {fmtDay(carry.closedAt)} <b>฿{money(carry.amount)}</b>
+              </p>
+              <p className="text-xs text-gray-500">
+                ปิดกะ {fmtTime(carry.closedAt)} นับได้ ฿{money(carry.counted)}
+                {carry.toOwner > 0 && <> − แยกให้เจ้าของ ฿{money(carry.toOwner)}</>}
+              </p>
+              {carryDiff === 0 ? (
+                <p className="text-xs text-gray-500">เติมยอดนี้ให้แล้ว — นับเงินในเก๊ะดูก่อน ถ้าไม่เท่ากันให้แก้ตามที่นับได้จริง</p>
+              ) : (
+                <p className="text-xs font-medium text-amber-800">
+                  นับได้{carryDiff > 0 ? 'เกิน' : 'ขาด'}ไป ฿{money(Math.abs(carryDiff))} จากยอดยกมา
+                </p>
+              )}
+            </div>
+          )}
+
+          {carryDiff !== 0 && (
+            <div className="rounded-lg border-2 border-amber-300 bg-amber-50 p-3 space-y-2">
+              <p className="text-xs text-amber-900">
+                เปิดกะได้เลย ระบบจะใช้ยอดที่นับได้จริงเป็นตั้งต้น และ<b>บันทึกส่วนต่าง ฿{money(Math.abs(carryDiff))} ไว้ในกะนี้</b>{' '}
+                เพื่อให้ย้อนดูได้ว่าคืนก่อนนับผิดหรือเงินหายระหว่างคืน
+              </p>
+              <input
+                value={carryReason}
+                onChange={(e) => setCarryReason(e.target.value)}
+                placeholder="เช่น เมื่อคืนนับเหรียญสิบขาด / เจ้าของมาหยิบเพิ่มตอนดึก"
+                className="w-full border border-amber-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-amber-400"
+              />
+            </div>
+          )}
 
           {loadingOrphan && <p className="text-xs text-gray-400">กำลังดูบิลของวันนี้...</p>}
 
