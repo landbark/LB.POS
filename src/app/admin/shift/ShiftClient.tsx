@@ -4,6 +4,7 @@ import { Fragment, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { expectedCash as computeExpectedCash, splitShiftBills, type ShiftBill } from '@/lib/shiftCash'
+import { planOwnerTake } from '@/lib/shiftFloat'
 import { Wallet, Lock, Unlock, Pencil, StickyNote } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { confirmDialog } from '@/lib/confirm'
@@ -59,12 +60,15 @@ export default function ShiftClient({
   currentUserId,
   currentUserName,
   canEditClosed,
+  floatTarget,
 }: {
   openShift: ShiftRow | null
   history: ShiftRow[]
   currentUserId: string
   currentUserName: string
   canEditClosed: boolean
+  /** เงินทอนที่ต้องเหลือไว้ทุกเช้า — null = ร้านยังไม่ได้ตั้ง (ตั้งได้ที่หน้าตั้งค่า) */
+  floatTarget: number | null
 }) {
   const router = useRouter()
   const [showOpenShift, setShowOpenShift] = useState(false)
@@ -148,6 +152,15 @@ export default function ShiftClient({
   const ownerExceeds = BANKNOTES.filter((d) => qtyOf(ownerCounts, d.value) > qtyOf(counts, d.value))
   const leftover = counted - cashToOwner
   const difference = counted - expectedCash
+  // เงินทอนตั้งต้นคงที่: คิดให้ว่าต้องแยกแบงค์ไหนออกบ้างถึงจะเหลือเท่าเป้าพอดี
+  const floatPlan = floatTarget != null && hasCount
+    ? planOwnerTake(
+        Object.fromEntries(DENOMS.map((d) => [d.value, qtyOf(counts, d.value)])),
+        floatTarget,
+        BANKNOTES.map((d) => d.value),
+      )
+    : null
+  const floatGap = floatTarget == null ? null : leftover - floatTarget
 
   async function addMovement() {
     if (!openShift) return
@@ -404,6 +417,11 @@ export default function ShiftClient({
               </button>
             )}
           </p>
+          {floatTarget != null && openShift.opening_cash !== floatTarget && (
+            <p className="text-xs text-amber-700 font-medium mb-1">
+              เงินทอนตั้งต้นที่ตั้งไว้คือ ฿{money(floatTarget)} — กะนี้เริ่มด้วย ฿{money(openShift.opening_cash)}
+            </p>
+          )}
           {openingCarry != null && (
             <p className={`text-xs mb-4 ${openingCarry === openShift.opening_cash ? 'text-gray-400' : 'text-amber-700 font-medium'}`}>
               ยกมาจากกะที่แล้ว ฿{money(openingCarry)}
@@ -587,7 +605,17 @@ export default function ShiftClient({
 
           <div className="flex items-center justify-between mb-2">
             <label className="block text-xs font-medium text-gray-600">แยกเงินให้เจ้าของ (วันไหนไม่ได้ให้ ปล่อยว่างไว้)</label>
-            {qtyOf(counts, 1000) > 0 && (
+            {floatPlan && floatPlan.taken > 0 ? (
+              <button
+                type="button"
+                onClick={() => setOwnerCounts(
+                  Object.fromEntries(BANKNOTES.map((d) => [d.value, floatPlan.take[d.value] ? String(floatPlan.take[d.value]) : ''])),
+                )}
+                className="text-xs font-medium text-blue-600 hover:text-blue-700"
+              >
+                ใส่ให้อัตโนมัติ — แยกออก ฿{money(floatPlan.taken)}
+              </button>
+            ) : qtyOf(counts, 1000) > 0 ? (
               <button
                 type="button"
                 onClick={() => setOwnerCounts((c) => ({ ...c, 1000: counts[1000] }))}
@@ -595,8 +623,24 @@ export default function ShiftClient({
               >
                 แบงค์พันทั้งหมด ({qtyOf(counts, 1000)} ใบ)
               </button>
-            )}
+            ) : null}
           </div>
+          {floatPlan && (
+            <p className="text-xs text-gray-500 mb-2">
+              {floatPlan.short > 0 ? (
+                <span className="text-red-600 font-medium">
+                  นับได้น้อยกว่าเงินทอนตั้งต้น ฿{money(floatTarget!)} อยู่ ฿{money(floatPlan.short)} — ยังไม่ต้องแยกให้เจ้าของ ต้องเติมเงินทอนก่อนเปิดกะหน้า
+                </span>
+              ) : (
+                <>
+                  เงินทอนตั้งต้น ฿{money(floatTarget!)} → แยกออกให้เจ้าของ ฿{money(floatPlan.taken)} เหลือในลิ้นชัก ฿{money(floatPlan.leftover)}
+                  {floatPlan.over > 0 && (
+                    <span className="text-amber-600"> · เกินเป้า ฿{money(floatPlan.over)} เพราะเศษนี้เป็นเหรียญ แตกเป็นแบงค์ไม่ได้</span>
+                  )}
+                </>
+              )}
+            </p>
+          )}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1.5 mb-3">
             {BANKNOTES.map((d) => {
               const qty = qtyOf(ownerCounts, d.value)
@@ -631,6 +675,13 @@ export default function ShiftClient({
             <div className="flex justify-between font-medium text-gray-900 pt-1 border-t border-gray-200">
               <span>เหลือในลิ้นชัก (เงินตั้งต้นกะถัดไป)</span><span>฿{money(leftover)}</span>
             </div>
+            {floatGap != null && hasCount && (
+              <p className={`text-xs font-medium ${floatGap === 0 ? 'text-green-600' : 'text-amber-600'}`}>
+                {floatGap === 0
+                  ? `ตรงเงินทอนตั้งต้น ฿${money(floatTarget!)} พอดี`
+                  : `${floatGap > 0 ? 'เกิน' : 'ขาด'}เงินทอนตั้งต้น ฿${money(floatTarget!)} อยู่ ฿${money(Math.abs(floatGap))}`}
+              </p>
+            )}
           </div>
 
           <label className="flex items-center gap-2 mt-3 text-sm text-gray-700 cursor-pointer">

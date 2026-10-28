@@ -202,6 +202,8 @@ export interface StoreSettings {
   /** ยอดซื้อขั้นต่ำที่ส่งฟรี (null = ไม่มี) */
   free_shipping_min: number | null
   rounding_mode: RoundingMode
+  /** เงินทอนที่ต้องเหลือไว้ในลิ้นชักทุกเช้า (null = ไม่ได้ตั้ง ใช้ยอดที่เหลือจริงแบบเดิม) */
+  float_target: number | null
   updated_at: string
 }
 

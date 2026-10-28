@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { X, Wallet, AlertTriangle, ArrowRightLeft } from 'lucide-react'
 import toast from 'react-hot-toast'
+import { createClient } from '@/lib/supabase/client'
 import { findCarryOver, findOrphanSales, openShift, type CarryOver, type OrphanSales } from '@/lib/shiftOpen'
 
 const money = (n: number) => n.toLocaleString('th-TH', { minimumFractionDigits: 2 })
@@ -34,14 +35,21 @@ export default function OpenShiftModal({
   // ยอดที่ควรเหลือข้ามคืนจากกะที่แล้ว — เติมใส่ช่องให้ก่อน คนนับได้ไม่ตรงค่อยแก้
   const [carry, setCarry] = useState<CarryOver | null>(null)
   const [carryReason, setCarryReason] = useState('')
+  // เงินทอนตั้งต้นคงที่ที่ร้านตั้งไว้ — null = ไม่ได้ตั้ง (ยอดยกมาลอยไปตามที่เหลือจริง)
+  const [floatTarget, setFloatTarget] = useState<number | null>(null)
   const [busy, setBusy] = useState(false)
 
   useEffect(() => {
     let cancelled = false
-    Promise.all([findOrphanSales(), findCarryOver()]).then(([found, over]) => {
+    Promise.all([
+      findOrphanSales(),
+      findCarryOver(),
+      createClient().from('store_settings').select('float_target').limit(1).maybeSingle(),
+    ]).then(([found, over, store]) => {
       if (cancelled) return
       setOrphan(found)
       setCarry(over)
+      setFloatTarget(store.data?.float_target != null ? Number(store.data.float_target) : null)
       if (over) setCash(String(over.amount))
       setLoadingOrphan(false)
     })
@@ -118,6 +126,12 @@ export default function OpenShiftModal({
                 ปิดกะ {fmtTime(carry.closedAt)} นับได้ ฿{money(carry.counted)}
                 {carry.toOwner > 0 && <> − แยกให้เจ้าของ ฿{money(carry.toOwner)}</>}
               </p>
+              {floatTarget != null && (
+                <p className={`text-xs ${carry.amount === floatTarget ? 'text-gray-500' : 'text-amber-700 font-medium'}`}>
+                  เงินทอนตั้งต้นคงที่ ฿{money(floatTarget)}
+                  {carry.amount !== floatTarget && <> — กะที่แล้วเหลือไว้ไม่ตรงยอดนี้ ฿{money(Math.abs(carry.amount - floatTarget))}</>}
+                </p>
+              )}
               {carryDiff === 0 ? (
                 <p className="text-xs text-gray-500">เติมยอดนี้ให้แล้ว — นับเงินในเก๊ะดูก่อน ถ้าไม่เท่ากันให้แก้ตามที่นับได้จริง</p>
               ) : (

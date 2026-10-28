@@ -21,6 +21,7 @@ export default function StoreSection({ config }: { config: StoreSettings | null 
     vat_registered: config?.vat_registered ?? false,
     vat_rate: config?.vat_rate?.toString() ?? '7',
     rounding_mode: (config?.rounding_mode ?? 'none') as RoundingMode,
+    float_target: config?.float_target?.toString() ?? '',
   })
   const [logoBlob, setLogoBlob] = useState<Blob | null>(null)
   const [logoPreview, setLogoPreview] = useState<string | null>(config?.logo_url ?? null)
@@ -117,6 +118,7 @@ export default function StoreSection({ config }: { config: StoreSettings | null 
         vat_rate: parseFloat(form.vat_rate) || 7,
         promptpay_id: form.promptpay_id.trim() || null,
         rounding_mode: form.rounding_mode,
+        float_target: form.float_target.trim() === '' ? null : parseFloat(form.float_target) || 0,
         payment_qr_url: qrUrl,
         logo_url: logoUrl,
         updated_at: new Date().toISOString(),
@@ -241,6 +243,18 @@ export default function StoreSection({ config }: { config: StoreSettings | null 
               </label>
             ))}
           </div>
+
+          <label className={labelClass}>เงินทอนตั้งต้นคงที่ (ไม่บังคับ)</label>
+          <input
+            type="number" min="0" step="100" inputMode="decimal"
+            value={form.float_target}
+            onChange={(e) => set('float_target', e.target.value)}
+            className={`${inputClass} mb-1.5`} placeholder="เช่น 3000 — เว้นว่าง = ไม่ใช้"
+          />
+          <p className="text-xs text-gray-500 mb-4">
+            ตั้งไว้แล้วตอนปิดกะระบบจะคิดให้ว่าต้องแยกแบงค์ไหนออกให้เจ้าของบ้าง ถึงจะเหลือในลิ้นชักเท่านี้พอดี
+            เช้ามานับได้ไม่เท่ายอดนี้เมื่อไหร่ = รู้ทันทีว่ามีอะไรผิด ไม่ต้องไปเปิดดูว่าเมื่อวานปิดเท่าไหร่
+          </p>
 
           <label className={labelClass}>PromptPay ID (ไม่บังคับ)</label>
           <input

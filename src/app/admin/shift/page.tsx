@@ -11,7 +11,7 @@ export default async function ShiftPage() {
     .eq('id', user?.id ?? '')
     .maybeSingle()
 
-  const [{ data: openShift }, { data: history }] = await Promise.all([
+  const [{ data: openShift }, { data: history }, { data: store }] = await Promise.all([
     supabase
       .from('shifts')
       .select(`
@@ -34,6 +34,7 @@ export default async function ShiftPage() {
       .not('closed_at', 'is', null)
       .order('closed_at', { ascending: false })
       .limit(20),
+    supabase.from('store_settings').select('float_target').limit(1).maybeSingle(),
   ])
 
   return (
@@ -43,6 +44,7 @@ export default async function ShiftPage() {
       currentUserId={user?.id ?? ''}
       currentUserName={profile?.name ?? ''}
       canEditClosed={profile?.role === 'admin'}
+      floatTarget={store?.float_target != null ? Number(store.float_target) : null}
     />
   )
 }
