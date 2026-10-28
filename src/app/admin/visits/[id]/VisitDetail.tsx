@@ -61,7 +61,8 @@ const fracOf = (dose: number | null) => {
   return FRACTIONS.find((f) => f.value > 0 && Math.abs(f.value - rest) < 0.02)?.value ?? 0
 }
 
-const inputClass = 'w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500'
+const fieldClass = 'border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500'
+const inputClass = `w-full ${fieldClass}`
 const labelClass = 'block text-xs font-medium text-gray-600 mb-1'
 
 export default function VisitDetail({
@@ -1015,15 +1016,21 @@ export default function VisitDetail({
           </div>
           <div>
             <label className={labelClass}>Follow-up Date</label>
-            <div className="flex items-center gap-2">
-              <input type="date" value={form.follow_up_date} onChange={(e) => set('follow_up_date', e.target.value)} className={inputClass} />
+            <div className="flex flex-wrap items-center gap-2">
+              {/* ช่องวันที่/เวลาของ Chrome มีความกว้างในตัว ถ้าปล่อย w-full มันจะดันล้นออกนอกการ์ด — ให้ย่อได้แล้วตกบรรทัดแทน */}
+              <input
+                type="date"
+                value={form.follow_up_date}
+                onChange={(e) => set('follow_up_date', e.target.value)}
+                className={`${fieldClass} flex-1 min-w-[9rem]`}
+              />
               <input
                 type="time"
                 value={followUpTime}
                 onChange={(e) => setFollowUpTime(e.target.value)}
                 disabled={!canEdit}
                 title="เวลานัด"
-                className={`${inputClass} w-28 shrink-0`}
+                className={`${fieldClass} w-28 shrink-0`}
               />
               {form.follow_up_date && (
                 <button

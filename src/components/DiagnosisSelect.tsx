@@ -26,8 +26,9 @@ export default function DiagnosisSelect({ value, onChange, catalog, disabled = f
   const [saving, setSaving] = useState(false)
 
   const selectedIds = new Set(value.map((d) => d.id))
-  const matches = searchDiagnoses(list, query).filter((d) => !selectedIds.has(d.id))
   const typed = query.trim()
+  // รายการขึ้นต่อเมื่อพิมพ์แล้วเท่านั้น — ไม่งั้นลิสต์ทั้งแคตตาล็อกจะกางทับช่องอื่นตั้งแต่คลิกเข้าช่อง
+  const matches = typed ? searchDiagnoses(list, query).filter((d) => !selectedIds.has(d.id)) : []
   // พิมพ์ตรงกับชื่อที่มีอยู่แล้วเป๊ะๆ ไม่ต้องเสนอให้เพิ่มใหม่ (unique index เป็น lower(name) อยู่แล้ว)
   const exact = typed ? findByName(list, typed) : null
 
@@ -104,6 +105,7 @@ export default function DiagnosisSelect({ value, onChange, catalog, disabled = f
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               onKeyDown={(e) => {
+                if (e.key === 'Escape') { setQuery(''); return }
                 if (e.key !== 'Enter') return
                 e.preventDefault()
                 if (matches.length > 0) add(matches[0])
@@ -115,7 +117,7 @@ export default function DiagnosisSelect({ value, onChange, catalog, disabled = f
             />
           </div>
 
-          {(matches.length > 0 || (typed && !exact)) && (
+          {typed && (matches.length > 0 || !exact) && (
             <div className="absolute z-10 left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg overflow-hidden max-h-64 overflow-y-auto">
               {matches.map((d) => (
                 <button
