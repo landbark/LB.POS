@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { expectedCash as computeExpectedCash, splitShiftBills, type ShiftBill } from '@/lib/shiftCash'
 import { BANKNOTES, COINS, DENOMS, planByDenom, planOwnerTake } from '@/lib/shiftFloat'
-import { Wallet, Lock, Unlock, Pencil, StickyNote } from 'lucide-react'
+import { Wallet, Lock, Unlock, Pencil, StickyNote, ArrowRightLeft } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { confirmDialog } from '@/lib/confirm'
 import OpenShiftModal from '@/components/OpenShiftModal'
@@ -22,14 +22,35 @@ const PAYMENT_LABELS: Record<string, string> = { cash: 'เงินสด', tra
 // คอลัมน์ใหม่จาก supabase-migration-shift-denominations.sql (ยังไม่อยู่ใน type Shift กลาง)
 type ShiftRow = Shift & {
   opening_denominations?: Record<string, number> | null
+  carry_denominations?: Record<string, number> | null
+  carry_adjusted_at?: string | null
   closing_denominations?: Record<string, number> | null
   cash_to_owner?: number | null
   owner_denominations?: Record<string, number> | null
 }
 
-// เงินที่กะหนึ่งต้องส่งต่อให้กะถัดไป = ที่นับได้ตอนปิด − ที่แยกให้เจ้าของ (ปิดโดยไม่นับ = เทียบไม่ได้)
-const carryOf = (s: ShiftRow | undefined) =>
-  s && s.closing_cash_counted != null ? Number(s.closing_cash_counted) - Number(s.cash_to_owner ?? 0) : null
+// ใบนับเงินทอนที่กะหนึ่งส่งต่อให้กะถัดไป — เจ้าของจัดทีหลังแล้วใช้ของที่จัด ไม่งั้นใช้ที่เหลือตอนปิด
+const carryDenomsOf = (s: ShiftRow | undefined): Record<number, number> | null => {
+  if (!s) return null
+  if (s.carry_denominations) {
+    const adj = s.carry_denominations
+    return Object.fromEntries(DENOMS.map((d) => [d.value, adj[d.value] ?? 0]))
+  }
+  if (!s.closing_denominations) return null
+  const close = s.closing_denominations
+  const owner = s.owner_denominations ?? {}
+  return Object.fromEntries(DENOMS.map((d) => [d.value, (close[d.value] ?? 0) - (owner[d.value] ?? 0)]))
+}
+
+// เงินที่กะหนึ่งต้องส่งต่อให้กะถัดไป (ปิดโดยไม่นับ = เทียบไม่ได้)
+const carryOf = (s: ShiftRow | undefined) => {
+  if (!s) return null
+  if (s.carry_denominations) {
+    const adj = s.carry_denominations
+    return DENOMS.reduce((sum, d) => sum + d.value * (adj[d.value] ?? 0), 0)
+  }
+  return s.closing_cash_counted != null ? Number(s.closing_cash_counted) - Number(s.cash_to_owner ?? 0) : null
+}
 
 // สรุปรายละเอียดแบงค์เป็นข้อความ เช่น "แบงค์พัน × 3\nแบงค์ร้อย × 5" (ใช้เป็น tooltip ในประวัติกะ)
 const denomTitle = (den: Record<string, number> | null | undefined) =>
@@ -86,6 +107,11 @@ export default function ShiftClient({
   const [moveAmount, setMoveAmount] = useState('')
   const [moveReason, setMoveReason] = useState('')
   const [moveBusy, setMoveBusy] = useState(false)
+  // จัดเงินทอนหลังปิดกะ — เจ้าของมาแลก/เติมทีหลังตอนพนักงานกลับไปแล้ว (เจ้าของเท่านั้น)
+  const lastClosed = history[0] as ShiftRow | undefined
+  const carryBefore = carryDenomsOf(lastClosed)
+  const [adjust, setAdjust] = useState<Record<number, string> | null>(null)
+  const [adjustNote, setAdjustNote] = useState('')
   // แก้เงินตั้งต้นของกะที่เปิดอยู่ (เจ้าของเท่านั้น)
   const [editOpening, setEditOpening] = useState(false)
   const [openingEdit, setOpeningEdit] = useState('')
@@ -160,6 +186,15 @@ export default function ShiftClient({
     ? DENOMS.reduce((s, d) => s + d.value * (floatTargetDenoms[d.value] ?? 0), 0)
     : floatTarget
   const floatGap = floatTotal == null ? null : leftover - floatTotal
+  // การ์ดจัดเงินทอนหลังปิดกะ
+  const adjustQty = (v: number) => parseInt(adjust?.[v] || '0', 10) || 0
+  const adjustTotal = DENOMS.reduce((sum, d) => sum + d.value * adjustQty(d.value), 0)
+  const adjustDiff = adjustTotal - (carryOf(lastClosed) ?? 0)
+  // กองที่เงินทอนในเก๊ะยังไม่ครบชุด — ตัวที่เจ้าของต้องไปแลกมาเติม
+  const carryShortages = floatTargetDenoms && carryBefore
+    ? DENOMS.filter((d) => (floatTargetDenoms[d.value] ?? 0) > (carryBefore[d.value] ?? 0))
+        .map((d) => ({ ...d, need: (floatTargetDenoms[d.value] ?? 0) - (carryBefore[d.value] ?? 0) }))
+    : []
 
   async function addMovement() {
     if (!openShift) return
@@ -203,6 +238,53 @@ export default function ShiftClient({
       return
     }
     setMovements((prev) => prev.filter((x) => x.id !== m.id))
+  }
+
+  /**
+   * บันทึกใบนับเงินทอนหลังเจ้าของมาจัด — ไม่แตะใบนับของพนักงานตอนปิดกะ เก็บแยกคนละช่อง
+   * ยอดยกมาของกะถัดไปจะอ่านจากตรงนี้แทน เช้ามาเทียบกับของจริงถึงจะไม่ขึ้นว่ากองไม่ตรงฟรี ๆ
+   */
+  async function saveCarry() {
+    if (!lastClosed || !adjust) return
+    const qty = (v: number) => parseInt(adjust[v] || '0', 10) || 0
+    const after = DENOMS.reduce((sum, d) => sum + d.value * qty(d.value), 0)
+    const before = carryOf(lastClosed) ?? 0
+    const diff = after - before
+    const changed = DENOMS.filter((d) => qty(d.value) !== (carryBefore?.[d.value] ?? 0))
+    if (!changed.length) {
+      toast.error('ยังไม่ได้เปลี่ยนอะไรเลย')
+      return
+    }
+    const stamp = new Date().toLocaleString('th-TH', {
+      timeZone: 'Asia/Bangkok', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit',
+    })
+    const auditLine =
+      `[จัดเงินทอนหลังปิดกะ ${stamp} โดย ${currentUserName || 'เจ้าของ'}] ` +
+      `฿${money(before)} → ฿${money(after)} · ` +
+      `${diff === 0 ? 'แลกเฉย ๆ ยอดเท่าเดิม' : diff > 0 ? `เติมเข้า ฿${money(diff)}` : `หยิบออก ฿${money(-diff)}`} · ` +
+      `${changed.map((d) => `${d.label} ${carryBefore?.[d.value] ?? 0}→${qty(d.value)}`).join(' · ')}` +
+      `${adjustNote.trim() ? ` · ${adjustNote.trim()}` : ''}`
+
+    setLoading(true)
+    const supabase = createClient()
+    const { error } = await supabase
+      .from('shifts')
+      .update({
+        carry_denominations: Object.fromEntries(DENOMS.filter((d) => qty(d.value) > 0).map((d) => [d.value, qty(d.value)])),
+        carry_adjusted_at: new Date().toISOString(),
+        carry_adjusted_by: currentUserId,
+        notes: [lastClosed.notes?.trim(), auditLine].filter(Boolean).join('\n'),
+      })
+      .eq('id', lastClosed.id)
+    setLoading(false)
+    if (error) {
+      toast.error('บันทึกไม่สำเร็จ: ' + error.message)
+      return
+    }
+    toast.success(`บันทึกแล้ว — พรุ่งนี้เช้าเปิดกะด้วย ฿${money(after)}`)
+    setAdjust(null)
+    setAdjustNote('')
+    router.refresh()
   }
 
   // แก้เงินตั้งต้นของกะที่เปิดอยู่ — เช้ามานับเงินในเก๊ะแล้วไม่ตรงกับที่ระบบยกมาให้
@@ -383,20 +465,123 @@ export default function ShiftClient({
       <p className="text-sm text-gray-500 mb-6">กะเดียวรวมของร้าน ใครขายช่วงไหนก็รวมเข้ากะที่เปิดอยู่ ไม่บังคับเปิดกะก่อนขาย</p>
 
       {!openShift ? (
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 max-w-sm">
-          <div className="flex items-center gap-2 mb-4">
-            <Unlock size={18} className="text-gray-400" />
-            <h2 className="font-semibold text-gray-900">เปิดกะใหม่</h2>
+        <div className="flex flex-wrap items-start gap-6 mb-8">
+          <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 w-full max-w-sm">
+            <div className="flex items-center gap-2 mb-4">
+              <Unlock size={18} className="text-gray-400" />
+              <h2 className="font-semibold text-gray-900">เปิดกะใหม่</h2>
+            </div>
+            <p className="text-xs text-gray-500 mb-3">
+              ใส่เงินทอนตั้งต้นในเก๊ะ · ถ้าวันนี้ขายไปแล้วตอนยังไม่เปิดกะ ระบบจะถามว่าจะรวมบิลพวกนั้นเข้ากะนี้ไหม
+            </p>
+            <button
+              onClick={() => setShowOpenShift(true)}
+              className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-4 py-2 rounded-lg"
+            >
+              <Wallet size={15} /> เปิดกะ
+            </button>
           </div>
-          <p className="text-xs text-gray-500 mb-3">
-            ใส่เงินทอนตั้งต้นในเก๊ะ · ถ้าวันนี้ขายไปแล้วตอนยังไม่เปิดกะ ระบบจะถามว่าจะรวมบิลพวกนั้นเข้ากะนี้ไหม
-          </p>
-          <button
-            onClick={() => setShowOpenShift(true)}
-            className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-4 py-2 rounded-lg"
-          >
-            <Wallet size={15} /> เปิดกะ
-          </button>
+
+          {canEditClosed && lastClosed && carryBefore && (
+            <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 w-full max-w-sm">
+              <div className="flex items-center gap-2 mb-1">
+                <ArrowRightLeft size={18} className="text-[#C4865A]" />
+                <h2 className="font-semibold text-gray-900">จัดเงินทอนหลังปิดกะ</h2>
+              </div>
+              <p className="text-xs text-gray-500 mb-3">
+                พนักงานกลับไปแล้วแต่เพิ่งมาแลกแบงค์/เติมเหรียญให้ครบชุด — ลงตรงนี้ ใบนับของพนักงานตอนปิดกะไม่ถูกแก้
+                {lastClosed.carry_adjusted_at && (
+                  <> · <span className="text-[#C4865A] font-medium">จัดไปแล้วเมื่อ {fmtDate(lastClosed.carry_adjusted_at)}</span></>
+                )}
+              </p>
+
+              {adjust === null ? (
+                <>
+                  <div className="bg-gray-50 rounded-lg p-3 mb-3 text-sm space-y-1">
+                    <div className="flex justify-between font-medium text-gray-900">
+                      <span>เงินทอนในเก๊ะตอนนี้</span><span>฿{money(carryOf(lastClosed) ?? 0)}</span>
+                    </div>
+                    {floatTargetDenoms && (
+                      <p className={`text-xs font-medium ${carryShortages.length ? 'text-red-600' : 'text-green-600'}`}>
+                        {carryShortages.length
+                          ? `ยังขาด: ${carryShortages.map((sh) => `${sh.label} อีก ${sh.need}`).join(' · ')}`
+                          : 'ครบตามชุดเงินทอนที่ตั้งไว้'}
+                      </p>
+                    )}
+                  </div>
+                  <button
+                    onClick={() => setAdjust(Object.fromEntries(
+                      DENOMS.map((d) => [d.value, carryBefore[d.value] ? String(carryBefore[d.value]) : '']),
+                    ))}
+                    className="w-full flex items-center justify-center gap-2 border-2 border-[#C4865A] text-[#7A4E2D] hover:bg-[#C4865A]/10 text-sm font-medium px-4 py-2 rounded-lg"
+                  >
+                    <Pencil size={15} /> แลก / เติมเงินทอน
+                  </button>
+                </>
+              ) : (
+                <>
+                  <div className="space-y-1.5 mb-3">
+                    {DENOMS.map((d) => {
+                      const qty = parseInt(adjust[d.value] || '0', 10) || 0
+                      const was = carryBefore[d.value] ?? 0
+                      const want = floatTargetDenoms?.[d.value] ?? 0
+                      return (
+                        <div key={d.value} className="flex items-center gap-2">
+                          <span className="text-sm text-gray-600 w-[5.5rem] shrink-0">{d.label}</span>
+                          <input
+                            type="number" min={0} step={1} inputMode="numeric"
+                            value={adjust[d.value] ?? ''}
+                            onChange={(e) => setAdjust((c) => ({ ...c!, [d.value]: e.target.value }))}
+                            className={`w-16 border rounded-lg px-2 py-1.5 text-sm text-right focus:outline-none focus:ring-2 ${
+                              want > qty ? 'border-red-300 focus:ring-red-400' : 'border-gray-300 focus:ring-[#C4865A]'
+                            }`}
+                            placeholder="0"
+                          />
+                          <span className="text-xs text-gray-400 flex-1 tabular-nums">
+                            {qty !== was ? `เดิม ${was}` : ''}
+                            {want > 0 && <span className={want > qty ? ' text-red-500 font-medium' : ''}> · ต้องการ {want}</span>}
+                          </span>
+                        </div>
+                      )
+                    })}
+                  </div>
+                  <div className="bg-gray-50 rounded-lg p-3 mb-3 text-sm space-y-1">
+                    <div className="flex justify-between font-bold text-gray-900">
+                      <span>รวมเงินทอนใหม่</span><span>฿{money(adjustTotal)}</span>
+                    </div>
+                    <p className={`text-xs font-medium ${adjustDiff === 0 ? 'text-gray-500' : adjustDiff > 0 ? 'text-blue-600' : 'text-amber-600'}`}>
+                      {adjustDiff === 0
+                        ? `แลกเฉย ๆ ยอดเท่าเดิม ฿${money(carryOf(lastClosed) ?? 0)}`
+                        : adjustDiff > 0
+                          ? `เติมเงินเข้าเก๊ะ ฿${money(adjustDiff)}`
+                          : `หยิบออกจากเก๊ะ ฿${money(-adjustDiff)}`}
+                    </p>
+                  </div>
+                  <input
+                    value={adjustNote}
+                    onChange={(e) => setAdjustNote(e.target.value)}
+                    placeholder="เหตุผล (ไม่ใส่ก็ได้) เช่น แลกร้อยเป็นยี่สิบ"
+                    className={inputClass + ' mb-3'}
+                  />
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => { setAdjust(null); setAdjustNote('') }}
+                      className="flex-1 py-2 rounded-lg border border-gray-300 text-sm text-gray-600 hover:bg-gray-50"
+                    >
+                      ยกเลิก
+                    </button>
+                    <button
+                      onClick={saveCarry}
+                      disabled={loading}
+                      className="flex-[2] py-2 rounded-lg bg-[#C4865A] hover:bg-[#7A4E2D] disabled:opacity-50 text-white text-sm font-medium"
+                    >
+                      {loading ? 'กำลังบันทึก...' : 'บันทึกเงินทอน'}
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
         </div>
       ) : (
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 max-w-xl mb-8">

@@ -259,6 +259,31 @@ async function main() {
       )
     }
 
+    // --- 10) เจ้าของมาจัดเงินทอนหลังปิดกะ → ยอดยกมาต้องคิดจากใบนับหลังจัด ไม่ใช่ตอนปิด
+    const { error: carryCol } = await supabase.from('shifts').select('carry_denominations').limit(1)
+    if (carryCol) {
+      console.log('⚠️  ยังไม่ได้รัน migration จัดเงินทอนหลังปิดกะ — ข้ามเทสต์ส่วนนั้น')
+    } else {
+      // แลกแบงค์ร้อย 0 ใบเป็นยี่สิบเพิ่ม 5 ใบ + เติมเหรียญห้าอีก 10 → ฿700 เป็น ฿850
+      await supabase
+        .from('shifts')
+        .update({
+          carry_denominations: { 500: 1, 20: 10, 10: 8, 5: 14 },
+          carry_adjusted_at: new Date().toISOString(),
+          carry_adjusted_by: userId,
+        })
+        .eq('id', closedShift!.id)
+      const after = await findCarryOver(db)
+      check(after?.amount === 850, 'ยอดยกมาคิดจากใบนับหลังเจ้าของจัด ไม่ใช่ที่เหลือตอนปิดกะ (฿700 → ฿850)', `฿${after?.amount}`)
+      check(after?.denoms?.[20] === 10 && after?.denoms?.[5] === 14, 'ใบนับที่ยกมาเป็นของหลังจัด', JSON.stringify(after?.denoms))
+      check(after?.counted === 1000 && after?.toOwner === 300, 'ใบนับของพนักงานตอนปิดกะไม่ถูกแก้', `นับได้ ฿${after?.counted}`)
+      check(after?.adjustedAt != null, 'รู้ว่าจัดเมื่อไหร่ (ไว้บอกคนเปิดกะว่าทำไมยอดยกมาไม่เท่าตอนปิด)')
+
+      // เช้ามานับได้ตรงกับที่เจ้าของจัดไว้ → ต้องไม่ขึ้นว่ากองไหนไม่ตรง
+      const asLeft = { 1000: 0, 500: 1, 100: 0, 50: 0, 20: 10, 10: 8, 5: 14, 2: 0, 1: 0 }
+      check(denomDiffs(after!, asLeft).length === 0, 'นับเช้าได้ตรงกับที่เจ้าของจัดไว้ → ไม่ขึ้นว่ากองไม่ตรง')
+    }
+
     // คอลัมน์ยังไม่มี (deploy ขึ้นก่อนรัน SQL) ก็ต้องเปิดกะได้ ไม่งั้นเช้ามาขายไม่ได้ทั้งวัน
     if (!hasOpenDenoms) {
       await supabase.from('shifts').delete().eq('id', sameRow!.id)

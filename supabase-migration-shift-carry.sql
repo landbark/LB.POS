@@ -1,0 +1,12 @@
+-- LANDBARK POS — Migration: จัดเงินทอนหลังปิดกะ (เจ้าของมาแลก/เติมทีหลัง)
+-- รันใน Supabase SQL Editor (รันซ้ำได้ ไม่พังของเดิม)
+
+-- พนักงานปิดกะกลับบ้านไปแล้ว เจ้าของค่อยมาแลกแบงค์ร้อยเป็นยี่สิบ/เติมเหรียญให้เงินทอนครบชุด
+-- เดิมปิดกะแล้วใบนับล็อก ของที่เจ้าของจัดทีหลังเลยไม่มีที่ลง เช้ามาระบบจะหาว่า "กองไม่ตรง"
+-- ทั้งที่ไม่มีใครผิด — และถ้ามันไม่ตรงเพราะเงินหายจริง ก็จะถูกกลบไปกับเหตุผลนี้ด้วย
+--
+-- เก็บแยกจาก closing_denominations เพราะเป็นคนละเหตุการณ์: ใบนับของพนักงานตอนปิดต้องไม่ถูกแก้
+-- ยอดยกมาของกะถัดไปจะอ่านจาก carry_denominations ก่อน ถ้าไม่มีค่อยใช้ (ที่นับได้ − ที่ให้เจ้าของ)
+ALTER TABLE shifts ADD COLUMN IF NOT EXISTS carry_denominations JSONB;
+ALTER TABLE shifts ADD COLUMN IF NOT EXISTS carry_adjusted_at TIMESTAMPTZ;
+ALTER TABLE shifts ADD COLUMN IF NOT EXISTS carry_adjusted_by UUID REFERENCES profiles(id) ON DELETE SET NULL;

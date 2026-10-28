@@ -83,8 +83,10 @@ export interface CarryOver {
   /** ยอดที่แยกออกให้เจ้าของตอนปิด (วันไหนเจ้าของไม่อยู่ = 0) */
   toOwner: number
   closedAt: string
-  /** จำนวนใบ/เหรียญที่ควรเหลือข้ามคืน = ที่นับตอนปิด − ที่แยกให้เจ้าของ · null = กะที่แล้วไม่ได้นับแยก */
+  /** จำนวนใบ/เหรียญที่ควรเหลือข้ามคืน · null = กะที่แล้วไม่ได้นับแยก */
   denoms: Record<number, number> | null
+  /** เจ้าของมาจัดเงินทอนหลังปิดกะเมื่อไหร่ · null = ยังไม่ได้จัด (ยกใบนับตอนปิดมาตรง ๆ) */
+  adjustedAt: string | null
 }
 
 /**
@@ -92,22 +94,43 @@ export interface CarryOver {
  * กะที่ปิดโดยไม่ได้นับเงิน (`closing_cash_counted` ว่าง) เทียบไม่ได้ คืน null
  */
 export async function findCarryOver(supabase: Db = createClient()): Promise<CarryOver | null> {
-  const { data } = await supabase
-    .from('shifts')
-    .select('closed_at, closing_cash_counted, cash_to_owner, closing_denominations, owner_denominations')
-    .not('closed_at', 'is', null)
-    .order('closed_at', { ascending: false })
-    .limit(1)
-    .maybeSingle()
-  if (!data || data.closing_cash_counted == null) return null
-  const counted = Number(data.closing_cash_counted)
-  const toOwner = Number(data.cash_to_owner ?? 0)
-  const closing = data.closing_denominations as Record<string, number> | null
-  const owner = (data.owner_denominations ?? {}) as Record<string, number>
-  const denoms = closing
-    ? Object.fromEntries(DENOMS.map((d) => [d.value, (closing[d.value] ?? 0) - (owner[d.value] ?? 0)]))
-    : null
-  return { amount: counted - toOwner, counted, toOwner, closedAt: data.closed_at as string, denoms }
+  const lastClosed = (cols: string) =>
+    supabase
+      .from('shifts')
+      .select(cols)
+      .not('closed_at', 'is', null)
+      .order('closed_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+
+  const full = 'closed_at, closing_cash_counted, cash_to_owner, closing_denominations, owner_denominations, carry_denominations, carry_adjusted_at'
+  const first = await lastClosed(full)
+  let data = first.data
+  // ยังไม่ได้รัน migration จัดเงินทอนหลังปิดกะ — ยอดยกมาต้องยังทำงาน แค่ไม่มีส่วนที่เจ้าของจัด
+  if (first.error && first.error.message.includes('carry_')) {
+    ;({ data } = await lastClosed('closed_at, closing_cash_counted, cash_to_owner, closing_denominations, owner_denominations'))
+  }
+  const row = data as Record<string, unknown> | null
+  if (!row || row.closing_cash_counted == null) return null
+  const counted = Number(row.closing_cash_counted)
+  const toOwner = Number(row.cash_to_owner ?? 0)
+  const closing = row.closing_denominations as Record<string, number> | null
+  const owner = (row.owner_denominations ?? {}) as Record<string, number>
+  // เจ้าของมาจัดเงินทอนหลังปิดกะแล้ว → ใบนับหลังจัดคือของจริงที่รอเช้าวันรุ่งขึ้นอยู่
+  const adjusted = (row.carry_denominations ?? null) as Record<string, number> | null
+  const denoms = adjusted
+    ? Object.fromEntries(DENOMS.map((d) => [d.value, adjusted[d.value] ?? 0]))
+    : closing
+      ? Object.fromEntries(DENOMS.map((d) => [d.value, (closing[d.value] ?? 0) - (owner[d.value] ?? 0)]))
+      : null
+  const amount = adjusted
+    ? DENOMS.reduce((sum, d) => sum + d.value * (adjusted[d.value] ?? 0), 0)
+    : counted - toOwner
+  return {
+    amount, counted, toOwner, denoms,
+    closedAt: row.closed_at as string,
+    adjustedAt: (row.carry_adjusted_at as string | null) ?? null,
+  }
 }
 
 /** กองที่นับได้เช้านี้ไม่ตรงกับที่กะที่แล้วเหลือไว้ — ตัวที่บอกว่าคืนก่อนนับผิดกองไหน */

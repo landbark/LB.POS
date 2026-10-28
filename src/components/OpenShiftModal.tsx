@@ -215,6 +215,11 @@ export default function OpenShiftModal({
                 ปิดกะ {fmtTime(carry.closedAt)} นับได้ ฿{money(carry.counted)}
                 {carry.toOwner > 0 && <> − แยกให้เจ้าของ ฿{money(carry.toOwner)}</>}
               </p>
+              {carry.adjustedAt && (
+                <p className="text-xs text-[#7A4E2D]">
+                  เจ้าของจัดเงินทอนหลังปิดกะแล้วเมื่อ {fmtTime(carry.adjustedAt)} — ยอดยกมาข้างบนคิดจากใบนับหลังจัด
+                </p>
+              )}
               {floatTarget != null && (
                 <p className={`text-xs ${carry.amount === floatTarget ? 'text-gray-500' : 'text-amber-700 font-medium'}`}>
                   เงินทอนตั้งต้นคงที่ ฿{money(floatTarget)}
