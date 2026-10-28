@@ -1,6 +1,7 @@
 import { notFound } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { fetchAll } from '@/lib/supabase/fetch-all'
+import { boothPrice, hasBoothPrice } from '@/lib/booth'
 import BoothSheetView, { type BoothSheetLine } from './BoothSheetView'
 
 export default async function BoothSheetPage({ params }: { params: Promise<{ id: string }> }) {
@@ -12,7 +13,7 @@ export default async function BoothSheetPage({ params }: { params: Promise<{ id:
     supabase.from('store_settings').select('*').limit(1).single(),
     supabase
       .from('booth_trip_items')
-      .select('product_id, taken_quantity, returned_quantity, products(name, sku, unit)')
+      .select('product_id, taken_quantity, returned_quantity, products(name, sku, unit, price, booth_price)')
       .eq('trip_id', id)
       .order('created_at'),
     fetchAll<{ product_id: string | null; base_quantity: number }>((from, to) =>
@@ -35,11 +36,16 @@ export default async function BoothSheetPage({ params }: { params: Promise<{ id:
   }
 
   const lines: BoothSheetLine[] = (items ?? []).map((it) => {
-    const product = it.products as unknown as { name: string; sku: string | null; unit: string } | null
+    const product = it.products as unknown as
+      | { name: string; sku: string | null; unit: string; price: number; booth_price: number | null }
+      | null
     return {
       name: product?.name ?? '—',
       sku: product?.sku ?? null,
       unit: product?.unit ?? '',
+      price: product ? boothPrice(product) : null,
+      // ติดดาวให้รู้ว่าตัวนี้ราคางานไม่เท่าหน้าร้าน จะได้ไม่เผลอคิดราคาร้าน
+      boothPriced: product ? hasBoothPrice(product) : false,
       taken: it.taken_quantity,
       returned: it.returned_quantity,
       sold: soldByProduct.get(it.product_id) ?? 0,

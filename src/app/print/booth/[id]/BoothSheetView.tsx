@@ -8,12 +8,18 @@ export interface BoothSheetLine {
   name: string
   sku: string | null
   unit: string
+  /** ราคาขายที่งาน (booth_price ไม่ได้ตั้งก็ราคาหน้าร้าน) — null = หาสินค้าไม่เจอ */
+  price: number | null
+  /** ราคางานต่างจากหน้าร้าน — ติดดาวไว้ให้คนขายรู้ */
+  boothPriced: boolean
   taken: number
   returned: number | null
   sold: number
 }
 
 type PaperSize = 'a4' | 'a5'
+
+const money = (n: number) => n.toLocaleString('th-TH', { maximumFractionDigits: 2 })
 
 const PAPER_CONFIG: Record<PaperSize, { page: string; margin: string; width: string; font: string }> = {
   a4: { page: 'A4', margin: '15mm', width: '650px', font: '14px' },
@@ -37,6 +43,9 @@ export default function BoothSheetView({
   const totalTaken = lines.reduce((s, l) => s + l.taken, 0)
   const totalSold = lines.reduce((s, l) => s + l.sold, 0)
   const totalReturned = lines.reduce((s, l) => s + (l.returned ?? 0), 0)
+  // มูลค่าของที่ยกไป — ไว้เช็กคร่าวๆ ว่าของในรถเท่าไร
+  const totalValue = lines.reduce((s, l) => s + (l.price ?? 0) * l.taken, 0)
+  const hasBoothPriced = lines.some((l) => l.boothPriced)
 
   return (
     <div className="min-h-screen bg-gray-100 print:bg-white">
@@ -115,6 +124,9 @@ export default function BoothSheetView({
               <tr className="bg-gray-100">
                 <th className="border border-gray-300 px-2 py-1.5 text-left w-8">#</th>
                 <th className="border border-gray-300 px-2 py-1.5 text-left">สินค้า</th>
+                {sheet === 'take' && (
+                  <th className="border border-gray-300 px-2 py-1.5 text-right w-20">ราคา</th>
+                )}
                 <th className="border border-gray-300 px-2 py-1.5 text-right w-16">เอาไป</th>
                 {sheet === 'return' && (
                   <>
@@ -133,6 +145,12 @@ export default function BoothSheetView({
                     {l.name}
                     {l.sku && <span className="text-gray-400 ml-1" style={{ fontSize: '0.85em' }}>({l.sku})</span>}
                   </td>
+                  {sheet === 'take' && (
+                    <td className="border border-gray-300 px-2 py-1.5 text-right whitespace-nowrap">
+                      {l.price == null ? '—' : `฿${money(l.price)}`}
+                      {l.boothPriced && <span className="text-gray-500">*</span>}
+                    </td>
+                  )}
                   <td className="border border-gray-300 px-2 py-1.5 text-right">{l.taken} {l.unit}</td>
                   {sheet === 'return' && (
                     <>
@@ -148,7 +166,7 @@ export default function BoothSheetView({
               ))}
               {lines.length === 0 && (
                 <tr>
-                  <td colSpan={sheet === 'return' ? 6 : 4} className="border border-gray-300 px-2 py-6 text-center text-gray-400">
+                  <td colSpan={sheet === 'return' ? 6 : 5} className="border border-gray-300 px-2 py-6 text-center text-gray-400">
                     ยังไม่มีรายการในใบเบิก
                   </td>
                 </tr>
@@ -158,6 +176,11 @@ export default function BoothSheetView({
               <tfoot>
                 <tr className="bg-gray-50 font-semibold">
                   <td className="border border-gray-300 px-2 py-1.5" colSpan={2}>รวม {lines.length} รายการ</td>
+                  {sheet === 'take' && (
+                    <td className="border border-gray-300 px-2 py-1.5 text-right whitespace-nowrap">
+                      ฿{money(totalValue)}
+                    </td>
+                  )}
                   <td className="border border-gray-300 px-2 py-1.5 text-right">{totalTaken}</td>
                   {sheet === 'return' && (
                     <>
@@ -172,6 +195,12 @@ export default function BoothSheetView({
               </tfoot>
             )}
           </table>
+
+          {sheet === 'take' && hasBoothPriced && (
+            <p className="text-gray-500 mt-2" style={{ fontSize: '0.8em' }}>
+              * ราคาเฉพาะงานออกบูธ (ไม่เท่าราคาหน้าร้าน)
+            </p>
+          )}
 
           <div className="flex justify-between gap-6 mt-10" style={{ fontSize: '0.85em' }}>
             <div className="flex-1 text-center">
