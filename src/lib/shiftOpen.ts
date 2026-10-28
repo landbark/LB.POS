@@ -12,6 +12,7 @@
 
 import { createClient } from '@/lib/supabase/client'
 import { sumByMethod, type PaidTransaction } from '@/lib/payments'
+import { DENOMS } from '@/lib/shiftFloat'
 import { thaiDayRange } from '@/lib/thaiDate'
 
 /** ใช้ client ของเบราว์เซอร์เป็นค่าเริ่มต้น — สคริปต์ทดสอบส่ง client ของ service role เข้ามาแทนได้ */
@@ -82,6 +83,8 @@ export interface CarryOver {
   /** ยอดที่แยกออกให้เจ้าของตอนปิด (วันไหนเจ้าของไม่อยู่ = 0) */
   toOwner: number
   closedAt: string
+  /** จำนวนใบ/เหรียญที่ควรเหลือข้ามคืน = ที่นับตอนปิด − ที่แยกให้เจ้าของ · null = กะที่แล้วไม่ได้นับแยก */
+  denoms: Record<number, number> | null
 }
 
 /**
@@ -91,7 +94,7 @@ export interface CarryOver {
 export async function findCarryOver(supabase: Db = createClient()): Promise<CarryOver | null> {
   const { data } = await supabase
     .from('shifts')
-    .select('closed_at, closing_cash_counted, cash_to_owner')
+    .select('closed_at, closing_cash_counted, cash_to_owner, closing_denominations, owner_denominations')
     .not('closed_at', 'is', null)
     .order('closed_at', { ascending: false })
     .limit(1)
@@ -99,15 +102,38 @@ export async function findCarryOver(supabase: Db = createClient()): Promise<Carr
   if (!data || data.closing_cash_counted == null) return null
   const counted = Number(data.closing_cash_counted)
   const toOwner = Number(data.cash_to_owner ?? 0)
-  return { amount: counted - toOwner, counted, toOwner, closedAt: data.closed_at as string }
+  const closing = data.closing_denominations as Record<string, number> | null
+  const owner = (data.owner_denominations ?? {}) as Record<string, number>
+  const denoms = closing
+    ? Object.fromEntries(DENOMS.map((d) => [d.value, (closing[d.value] ?? 0) - (owner[d.value] ?? 0)]))
+    : null
+  return { amount: counted - toOwner, counted, toOwner, closedAt: data.closed_at as string, denoms }
+}
+
+/** กองที่นับได้เช้านี้ไม่ตรงกับที่กะที่แล้วเหลือไว้ — ตัวที่บอกว่าคืนก่อนนับผิดกองไหน */
+export function denomDiffs(carry: CarryOver, counted: Record<number, number> | null) {
+  if (!carry.denoms || !counted) return []
+  return DENOMS.filter((d) => (counted[d.value] ?? 0) !== (carry.denoms![d.value] ?? 0)).map((d) => ({
+    value: d.value,
+    label: d.label,
+    was: carry.denoms![d.value] ?? 0,
+    now: counted[d.value] ?? 0,
+  }))
 }
 
 /**
  * ข้อความ audit ตอนเงินที่นับได้เช้านี้ไม่เท่ายอดยกมา — เขียนลง `shifts.notes`
  * ส่วนต่างตรงนี้คือเงินที่หายหรือเกินระหว่างปิดกะเมื่อวานกับเปิดกะวันนี้ ต้องมีหลักฐานไว้
  */
-export function carryNote(carry: CarryOver, openingCash: number, byName: string, reason = '') {
+export function carryNote(
+  carry: CarryOver,
+  openingCash: number,
+  byName: string,
+  reason = '',
+  counted: Record<number, number> | null = null,
+) {
   const diff = openingCash - carry.amount
+  const diffs = denomDiffs(carry, counted)
   const stamp = new Date().toLocaleString('th-TH', {
     timeZone: 'Asia/Bangkok', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit',
   })
@@ -116,6 +142,7 @@ export function carryNote(carry: CarryOver, openingCash: number, byName: string,
     `ยกมา ฿${money(carry.amount)} (ปิดกะ ${fmtTime(carry.closedAt)} นับได้ ฿${money(carry.counted)}` +
     `${carry.toOwner ? ` − แยกให้เจ้าของ ฿${money(carry.toOwner)}` : ''}) · ` +
     `เช้านี้นับได้ ฿${money(openingCash)} · ${diff > 0 ? 'เกิน' : 'ขาด'} ฿${money(Math.abs(diff))}` +
+    `${diffs.length ? ` · กองที่ไม่ตรง: ${diffs.map((x) => `${x.label} ${x.was}→${x.now}`).join(' · ')}` : ''}` +
     `${reason.trim() ? ` · ${reason.trim()}` : ''}`
   )
 }
@@ -134,6 +161,8 @@ export async function openShift(
     carry?: CarryOver | null
     /** เหตุผลที่คนเปิดกะกรอกไว้ตอนนับได้ไม่ตรงยอดยกมา */
     carryReason?: string
+    /** จำนวนใบ/เหรียญที่นับได้ตอนเปิดกะ — ไม่ส่งมา = เปิดกะแบบใส่ยอดรวมอย่างเดียว */
+    openingDenoms?: Record<number, number> | null
   },
   supabase: Db = createClient(),
 ): Promise<{ error?: string }> {
@@ -141,16 +170,25 @@ export async function openShift(
     opening_cash: opts.openingCash,
     opened_by: opts.openedBy,
   }
+  if (opts.openingDenoms) row.opening_denominations = opts.openingDenoms
   const notes: string[] = []
   if (opts.orphan) {
     row.opened_at = opts.orphan.firstAt
     notes.push(orphanNote(opts.orphan, opts.openedByName ?? ''))
   }
   if (opts.carry && opts.carry.amount !== opts.openingCash) {
-    notes.push(carryNote(opts.carry, opts.openingCash, opts.openedByName ?? '', opts.carryReason))
+    notes.push(carryNote(
+      opts.carry, opts.openingCash, opts.openedByName ?? '', opts.carryReason, opts.openingDenoms ?? null,
+    ))
   }
   if (notes.length) row.notes = notes.join('\n')
-  const { error } = await supabase.from('shifts').insert(row)
+  let { error } = await supabase.from('shifts').insert(row)
+  // ยังไม่ได้รัน migration ใบนับเปิดกะ — เปิดกะต้องไม่พังเพราะคอลัมน์เสริมที่ยังไม่มี
+  // (deploy ขึ้นก่อนรัน SQL แล้วเช้ามาเปิดกะไม่ได้ = ขายไม่ได้ทั้งวัน)
+  if (error && row.opening_denominations && error.message.includes('opening_denominations')) {
+    delete row.opening_denominations
+    ;({ error } = await supabase.from('shifts').insert(row))
+  }
   if (error) return { error: error.code === '23505' ? 'มีกะที่เปิดอยู่แล้ว' : 'เปิดกะไม่สำเร็จ: ' + error.message }
   return {}
 }

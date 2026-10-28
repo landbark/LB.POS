@@ -17,7 +17,7 @@ export default async function ShiftPage() {
       .select(`
         id, opened_at, opened_by, opening_cash, closed_at, closed_by,
         expected_cash, closing_cash_counted, cash_difference, notes,
-        closing_denominations, cash_to_owner, owner_denominations,
+        closing_denominations, cash_to_owner, owner_denominations, opening_denominations,
         opener:profiles!shifts_opened_by_fkey(name)
       `)
       .is('closed_at', null)
@@ -27,7 +27,7 @@ export default async function ShiftPage() {
       .select(`
         id, opened_at, opened_by, opening_cash, closed_at, closed_by,
         expected_cash, closing_cash_counted, cash_difference, notes,
-        closing_denominations, cash_to_owner, owner_denominations,
+        closing_denominations, cash_to_owner, owner_denominations, opening_denominations,
         opener:profiles!shifts_opened_by_fkey(name),
         closer:profiles!shifts_closed_by_fkey(name)
       `)

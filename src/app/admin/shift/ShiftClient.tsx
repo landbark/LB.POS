@@ -21,6 +21,7 @@ const PAYMENT_LABELS: Record<string, string> = { cash: 'เงินสด', tra
 
 // คอลัมน์ใหม่จาก supabase-migration-shift-denominations.sql (ยังไม่อยู่ใน type Shift กลาง)
 type ShiftRow = Shift & {
+  opening_denominations?: Record<string, number> | null
   closing_denominations?: Record<string, number> | null
   cash_to_owner?: number | null
   owner_denominations?: Record<string, number> | null
@@ -404,7 +405,13 @@ export default function ShiftClient({
             <h2 className="font-semibold text-gray-900">กะกำลังเปิดอยู่</h2>
           </div>
           <p className="text-sm text-gray-500 mb-1">
-            เปิดเมื่อ {fmtDate(openShift.opened_at)} โดย {openShift.opener?.name ?? '—'} · เงินสดตั้งต้น ฿{money(openShift.opening_cash)}
+            เปิดเมื่อ {fmtDate(openShift.opened_at)} โดย {openShift.opener?.name ?? '—'} ·{' '}
+            <span
+              className={openShift.opening_denominations ? 'underline decoration-dotted underline-offset-2' : undefined}
+              title={denomTitle(openShift.opening_denominations)}
+            >
+              เงินสดตั้งต้น ฿{money(openShift.opening_cash)}
+            </span>
             {canEditClosed && !editOpening && (
               <button
                 onClick={() => { setEditOpening(true); setOpeningEdit(String(openShift.opening_cash)) }}
@@ -795,7 +802,7 @@ export default function ShiftClient({
                 <td className="px-4 py-3 text-sm text-gray-600">
                   {s.opener?.name ?? '—'} / {s.closer?.name ?? '—'}
                 </td>
-                <td className="px-4 py-3 text-sm text-right text-gray-700">
+                <td className="px-4 py-3 text-sm text-right text-gray-700" title={denomTitle(s.opening_denominations)}>
                   ฿{money(s.opening_cash)}
                   {carryDiff != null && carryDiff !== 0 && (
                     <span

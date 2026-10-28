@@ -4,7 +4,8 @@ import { useEffect, useState } from 'react'
 import { X, Wallet, AlertTriangle, ArrowRightLeft } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { createClient } from '@/lib/supabase/client'
-import { findCarryOver, findOrphanSales, openShift, type CarryOver, type OrphanSales } from '@/lib/shiftOpen'
+import { BANKNOTES, COINS, DENOMS } from '@/lib/shiftFloat'
+import { denomDiffs, findCarryOver, findOrphanSales, openShift, type CarryOver, type OrphanSales } from '@/lib/shiftOpen'
 
 const money = (n: number) => n.toLocaleString('th-TH', { minimumFractionDigits: 2 })
 const fmtTime = (iso: string) =>
@@ -15,6 +16,9 @@ const fmtDay = (iso: string) =>
 /**
  * เปิดกะได้จากทุกหน้า — หน้าขายเรียกจากแถบเตือน "ยังไม่ได้เปิดกะ" (ไม่ต้องทิ้งตะกร้าไปหน้าอื่น)
  * ถ้าวันนี้ขายไปแล้วตอนไม่มีกะเปิด จะเสนอรวมบิลพวกนั้นเข้ากะนี้ให้ด้วย
+ *
+ * ช่องนับเงินเติมใบนับที่กะที่แล้วเหลือไว้มาให้ก่อน คนเปิดกะแก้เฉพาะกองที่ไม่ตรง — ได้ทั้ง
+ * ยอดตั้งต้นที่ถูกและคำตอบว่า "กองไหนไม่ตรง" ซึ่งบอกได้ว่าคืนก่อนนับผิดหรือเงินหายจริง
  */
 export default function OpenShiftModal({
   userId,
@@ -37,6 +41,10 @@ export default function OpenShiftModal({
   const [carryReason, setCarryReason] = useState('')
   // เงินทอนตั้งต้นคงที่ที่ร้านตั้งไว้ — null = ไม่ได้ตั้ง (ยอดยกมาลอยไปตามที่เหลือจริง)
   const [floatTarget, setFloatTarget] = useState<number | null>(null)
+  const [floatDenoms, setFloatDenoms] = useState<Record<number, number> | null>(null)
+  // นับแยกใบ/เหรียญ (ค่าเริ่มต้นถ้ากะที่แล้วนับแยกไว้) หรือใส่ยอดรวมก้อนเดียวแบบเดิม
+  const [byDenom, setByDenom] = useState(false)
+  const [counts, setCounts] = useState<Record<number, string>>({})
   const [busy, setBusy] = useState(false)
 
   useEffect(() => {
@@ -44,24 +52,40 @@ export default function OpenShiftModal({
     Promise.all([
       findOrphanSales(),
       findCarryOver(),
-      createClient().from('store_settings').select('float_target').limit(1).maybeSingle(),
+      createClient().from('store_settings').select('float_target, float_denoms').limit(1).maybeSingle(),
     ]).then(([found, over, store]) => {
       if (cancelled) return
       setOrphan(found)
       setCarry(over)
       setFloatTarget(store.data?.float_target != null ? Number(store.data.float_target) : null)
+      const fd = store.data?.float_denoms as Record<string, number> | null | undefined
+      setFloatDenoms(fd ? Object.fromEntries(Object.entries(fd).map(([v, q]) => [Number(v), Number(q) || 0])) : null)
       if (over) setCash(String(over.amount))
+      // กะที่แล้วนับแยกไว้ → เติมใบนับนั้นมาให้ แก้เฉพาะกองที่ไม่ตรงก็พอ
+      if (over?.denoms) {
+        setByDenom(true)
+        setCounts(Object.fromEntries(DENOMS.map((d) => [d.value, over.denoms![d.value] ? String(over.denoms![d.value]) : ''])))
+      }
       setLoadingOrphan(false)
     })
     return () => { cancelled = true }
   }, [])
 
-  const typed = parseFloat(cash || '0')
+  const qtyOf = (v: number) => parseInt(counts[v] || '0', 10) || 0
+  const countedDenoms: Record<number, number> = Object.fromEntries(DENOMS.map((d) => [d.value, qtyOf(d.value)]))
+  const denomTotal = DENOMS.reduce((s, d) => s + d.value * qtyOf(d.value), 0)
+  const typed = byDenom ? denomTotal : parseFloat(cash || '0')
   // ต่างจากยอดยกมาเท่าไหร่ — ค่านี้จะถูกเขียนลง shifts.notes ตอนเปิดกะ
   const carryDiff = carry && !Number.isNaN(typed) ? typed - carry.amount : 0
+  const diffs = byDenom && carry ? denomDiffs(carry, countedDenoms) : []
+  // กองที่เงินทอนไม่พอตั้งแต่ก่อนเปิดร้าน — ตัวที่เคยทำให้ต้องวิ่งหาเงินทอนตอนบ่าย
+  const shortages = byDenom && floatDenoms
+    ? DENOMS.filter((d) => (floatDenoms[d.value] ?? 0) > qtyOf(d.value))
+        .map((d) => ({ ...d, need: (floatDenoms[d.value] ?? 0) - qtyOf(d.value) }))
+    : []
 
   async function submit() {
-    const amount = parseFloat(cash || '0')
+    const amount = byDenom ? denomTotal : parseFloat(cash || '0')
     if (Number.isNaN(amount) || amount < 0) {
       toast.error('กรุณาใส่เงินสดตั้งต้น')
       return
@@ -74,6 +98,7 @@ export default function OpenShiftModal({
       orphan: pullIn ? orphan : null,
       carry,
       carryReason,
+      openingDenoms: byDenom ? countedDenoms : null,
     })
     setBusy(false)
     if (error) {
@@ -92,7 +117,7 @@ export default function OpenShiftModal({
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-2xl w-full max-w-sm shadow-2xl max-h-[92dvh] flex flex-col overflow-hidden">
+      <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl max-h-[92dvh] flex flex-col overflow-hidden">
         <div className="shrink-0 flex items-center justify-between px-4 py-3 border-b border-gray-100">
           <h2 className="font-bold text-gray-900">เปิดกะ</h2>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
@@ -102,19 +127,83 @@ export default function OpenShiftModal({
 
         <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-3">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">เงินสดตั้งต้น (นับเงินในเก๊ะจริง)</label>
-            <input
-              type="number" min={0} step="0.01" inputMode="decimal" autoFocus
-              value={cash}
-              onChange={(e) => setCash(e.target.value)}
-              placeholder="0.00"
-              className={`w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 ${
-                carryDiff !== 0
-                  ? 'border-amber-400 bg-amber-50 focus:ring-amber-400'
-                  : 'border-gray-300 focus:ring-[#C4865A]'
-              }`}
-            />
+            <div className="flex items-center justify-between mb-1">
+              <label className="block text-sm font-medium text-gray-700">เงินสดตั้งต้น (นับเงินในเก๊ะจริง)</label>
+              <button
+                type="button"
+                onClick={() => {
+                  if (byDenom) setCash(String(denomTotal))
+                  setByDenom((v) => !v)
+                }}
+                className="text-xs font-medium text-blue-600 hover:text-blue-700"
+              >
+                {byDenom ? 'ใส่ยอดรวมแทน' : 'นับแยกใบ/เหรียญ'}
+              </button>
+            </div>
+
+            {byDenom ? (
+              <>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-5 gap-y-1.5">
+                  {[BANKNOTES, COINS].map((group, gi) => (
+                    <div key={gi} className="space-y-1.5">
+                      {group.map((d) => {
+                        const qty = qtyOf(d.value)
+                        const want = floatDenoms?.[d.value] ?? 0
+                        return (
+                          <div key={d.value} className="flex items-center gap-2">
+                            <span className="text-sm text-gray-600 w-[5.5rem] shrink-0">{d.label}</span>
+                            <input
+                              type="number" min={0} step={1} inputMode="numeric"
+                              value={counts[d.value] ?? ''}
+                              onChange={(e) => setCounts((c) => ({ ...c, [d.value]: e.target.value }))}
+                              className={`w-16 border rounded-lg px-2 py-1.5 text-sm text-right focus:outline-none focus:ring-2 ${
+                                want > qty ? 'border-red-300 focus:ring-red-400' : 'border-gray-300 focus:ring-[#C4865A]'
+                              }`}
+                              placeholder="0"
+                            />
+                            <span className={`text-sm text-right flex-1 tabular-nums ${qty > 0 ? 'text-gray-900 font-medium' : 'text-gray-300'}`}>
+                              ฿{(d.value * qty).toLocaleString('th-TH')}
+                            </span>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  ))}
+                </div>
+                <p className={`mt-2 text-sm font-bold ${carryDiff !== 0 ? 'text-amber-700' : 'text-gray-900'}`}>
+                  รวมนับได้ ฿{money(denomTotal)}
+                </p>
+              </>
+            ) : (
+              <input
+                type="number" min={0} step="0.01" inputMode="decimal" autoFocus
+                value={cash}
+                onChange={(e) => setCash(e.target.value)}
+                placeholder="0.00"
+                className={`w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 ${
+                  carryDiff !== 0
+                    ? 'border-amber-400 bg-amber-50 focus:ring-amber-400'
+                    : 'border-gray-300 focus:ring-[#C4865A]'
+                }`}
+              />
+            )}
           </div>
+
+          {shortages.length > 0 && (
+            <div className="rounded-lg border-2 border-red-300 bg-red-50 p-3">
+              <p className="text-sm font-medium text-red-800">เงินทอนไม่พอตั้งแต่เปิดร้าน</p>
+              <div className="mt-1 space-y-0.5">
+                {shortages.map((sh) => (
+                  <p key={sh.value} className="text-xs text-red-700">
+                    {sh.label} มี {qtyOf(sh.value)} ต้องการ {floatDenoms![sh.value]} — ขาดอีก <b>{sh.need}</b>
+                  </p>
+                ))}
+              </div>
+              <p className="mt-1.5 text-xs text-red-600">
+                แลกมาเติมก่อนเริ่มขาย ไม่งั้นต้องมาวิ่งหาเงินทอนกลางวัน · เติมแล้วแก้ตัวเลขข้างบนให้ตรงด้วย
+              </p>
+            </div>
+          )}
 
           {carry && (
             <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 space-y-1.5">
@@ -133,11 +222,28 @@ export default function OpenShiftModal({
                 </p>
               )}
               {carryDiff === 0 ? (
-                <p className="text-xs text-gray-500">เติมยอดนี้ให้แล้ว — นับเงินในเก๊ะดูก่อน ถ้าไม่เท่ากันให้แก้ตามที่นับได้จริง</p>
+                <p className="text-xs text-gray-500">
+                  {byDenom
+                    ? 'เติมใบนับของกะที่แล้วให้แล้ว — นับในเก๊ะแล้วแก้เฉพาะกองที่ไม่ตรง'
+                    : 'เติมยอดนี้ให้แล้ว — นับเงินในเก๊ะดูก่อน ถ้าไม่เท่ากันให้แก้ตามที่นับได้จริง'}
+                </p>
               ) : (
                 <p className="text-xs font-medium text-amber-800">
                   นับได้{carryDiff > 0 ? 'เกิน' : 'ขาด'}ไป ฿{money(Math.abs(carryDiff))} จากยอดยกมา
                 </p>
+              )}
+              {diffs.length > 0 && (
+                <div className="pt-1.5 border-t border-gray-200 space-y-0.5">
+                  <p className="text-xs font-medium text-gray-600">กองที่ไม่ตรงกับใบนับเมื่อคืน</p>
+                  {diffs.map((x) => (
+                    <p key={x.value} className="text-xs text-gray-600 tabular-nums">
+                      {x.label} <span className="text-gray-400">เมื่อคืน {x.was} → เช้านี้ {x.now}</span>{' '}
+                      <b className={x.now > x.was ? 'text-blue-600' : 'text-red-600'}>
+                        {x.now > x.was ? '+' : '−'}฿{money(Math.abs((x.now - x.was) * x.value))}
+                      </b>
+                    </p>
+                  ))}
+                </div>
               )}
             </div>
           )}
@@ -145,8 +251,8 @@ export default function OpenShiftModal({
           {carryDiff !== 0 && (
             <div className="rounded-lg border-2 border-amber-300 bg-amber-50 p-3 space-y-2">
               <p className="text-xs text-amber-900">
-                เปิดกะได้เลย ระบบจะใช้ยอดที่นับได้จริงเป็นตั้งต้น และ<b>บันทึกส่วนต่าง ฿{money(Math.abs(carryDiff))} ไว้ในกะนี้</b>{' '}
-                เพื่อให้ย้อนดูได้ว่าคืนก่อนนับผิดหรือเงินหายระหว่างคืน
+                เปิดกะได้เลย ระบบจะใช้ยอดที่นับได้จริงเป็นตั้งต้น และ<b>บันทึกส่วนต่าง ฿{money(Math.abs(carryDiff))} ไว้ในกะนี้</b>
+                {diffs.length > 0 && <> พร้อมกองที่ไม่ตรง</>} เพื่อให้ย้อนดูได้ว่าคืนก่อนนับผิดหรือเงินหายระหว่างคืน
               </p>
               <input
                 value={carryReason}

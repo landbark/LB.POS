@@ -10,7 +10,7 @@ import { createClient } from '@supabase/supabase-js'
 import { readFileSync } from 'node:fs'
 import { resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { carryNote, findCarryOver, findOrphanSales, openShift, orphanNote } from '../src/lib/shiftOpen'
+import { carryNote, denomDiffs, findCarryOver, findOrphanSales, openShift, orphanNote } from '../src/lib/shiftOpen'
 import { sumByMethod, type PaidTransaction } from '../src/lib/payments'
 import { thaiDayRange } from '../src/lib/thaiDate'
 
@@ -193,14 +193,27 @@ async function main() {
         opened_by: userId, opening_cash: 100,
         closed_at: new Date(Date.now() - 60_000).toISOString(), closed_by: userId,
         expected_cash: 1000, closing_cash_counted: 1000, cash_difference: 0,
-        cash_to_owner: 300, notes: 'กะทดสอบ verify-shift-open',
+        // ฿1,000 = 500×1 + 100×3 + 20×5 + 10×8 + 5×4 · แยกให้เจ้าของ 100×3 → ยกมา ฿700
+        closing_denominations: { 500: 1, 100: 3, 20: 5, 10: 8, 5: 4 },
+        cash_to_owner: 300, owner_denominations: { 100: 3 },
+        notes: 'กะทดสอบ verify-shift-open',
       })
       .select('id').single()
     madeShifts.push(closedShift!.id)
 
+    // คอลัมน์ใบนับเปิดกะมาจาก supabase-migration-shift-open-denoms.sql — ยังไม่รันก็เทสต์ที่เหลือได้
+    const { error: denomCol } = await supabase.from('shifts').select('opening_denominations').limit(1)
+    const hasOpenDenoms = !denomCol
+    if (!hasOpenDenoms) console.log('⚠️  ยังไม่ได้รัน migration ใบนับเปิดกะ — ข้ามเทสต์ส่วนนั้น\n')
+
     const carry = await findCarryOver(db)
     check(carry?.amount === 700, 'ยอดยกมา = นับได้ ฿1,000 − แยกให้เจ้าของ ฿300 = ฿700', `฿${carry?.amount}`)
     check(carry?.counted === 1000 && carry?.toOwner === 300, 'คืนที่มาของยอดมาด้วย (ไว้โชว์ให้คนเปิดกะเห็น)')
+    check(
+      carry?.denoms?.[500] === 1 && carry?.denoms?.[100] === 0 && carry?.denoms?.[10] === 8,
+      'ใบนับที่ยกมา = ที่นับตอนปิด − ที่แยกให้เจ้าของ (แบงค์ร้อย 3−3 = 0)',
+      JSON.stringify(carry?.denoms),
+    )
 
     // นับได้เท่ายอดยกมา → ไม่ต้องจดอะไร
     const same = await openShift({ openingCash: 700, openedBy: userId, openedByName: 'สคริปต์ทดสอบ', carry }, db)
@@ -211,8 +224,19 @@ async function main() {
     await supabase.from('shifts').delete().eq('id', sameRow!.id)
 
     // นับได้เกินยอดยกมา 15 (เคสจริง 2026-10-28) → ต้องเขียนไว้ ไม่ให้หายเงียบ
+    // เช้านี้นับแยกใบได้ เหรียญสิบ 9 (เมื่อคืน 8) · เหรียญห้า 5 (เมื่อคืน 4) = เกิน ฿15
+    const morning = { 1000: 0, 500: 1, 100: 0, 50: 0, 20: 5, 10: 9, 5: 5, 2: 0, 1: 0 }
+    const d = denomDiffs(carry!, morning)
+    check(
+      d.length === 2 && d[0].value === 10 && d[0].was === 8 && d[0].now === 9 && d[1].value === 5,
+      'ชี้ได้ว่ากองไหนไม่ตรง — เหรียญสิบ 8→9 · เหรียญห้า 4→5 (ไม่ใช่รู้แค่ว่าต่าง ฿15)',
+      d.map((x) => `${x.label} ${x.was}→${x.now}`).join(' · '),
+    )
     const off = await openShift(
-      { openingCash: 715, openedBy: userId, openedByName: 'สคริปต์ทดสอบ', carry, carryReason: 'เมื่อคืนนับเหรียญขาด' },
+      {
+        openingCash: 715, openedBy: userId, openedByName: 'สคริปต์ทดสอบ', carry,
+        carryReason: 'เมื่อคืนนับเหรียญขาด', openingDenoms: hasOpenDenoms ? morning : null,
+      },
       db,
     )
     check(!off.error, 'เปิดกะด้วยยอดที่นับได้จริงได้ แม้ไม่ตรงยอดยกมา', off.error ?? '')
@@ -222,7 +246,35 @@ async function main() {
     check((sameRow?.notes ?? '').startsWith('[เงินตั้งต้นไม่ตรงยอดยกมา'), 'เขียน audit line ส่วนต่างลง notes', sameRow?.notes ?? '')
     check((sameRow?.notes ?? '').includes('เกิน ฿15.00'), 'audit line บอกว่าเกินเท่าไหร่')
     check((sameRow?.notes ?? '').includes('เมื่อคืนนับเหรียญขาด'), 'audit line เก็บเหตุผลที่คนเปิดกะกรอก')
-    check(sameRow?.notes === carryNote(carry!, 715, 'สคริปต์ทดสอบ', 'เมื่อคืนนับเหรียญขาด'), 'audit line ตรงกับ carryNote()')
+    check(
+      sameRow?.notes === carryNote(carry!, 715, 'สคริปต์ทดสอบ', 'เมื่อคืนนับเหรียญขาด', hasOpenDenoms ? morning : null),
+      'audit line ตรงกับ carryNote()',
+    )
+    if (hasOpenDenoms) {
+      check((sameRow?.notes ?? '').includes('เหรียญสิบ 8→9'), 'audit line บอกกองที่ไม่ตรงไว้ด้วย', sameRow?.notes ?? '')
+      check(
+        (sameRow?.opening_denominations as Record<string, number> | null)?.['10'] === 9,
+        'เก็บใบนับตอนเปิดกะไว้ในฐานข้อมูล',
+        JSON.stringify(sameRow?.opening_denominations),
+      )
+    }
+
+    // คอลัมน์ยังไม่มี (deploy ขึ้นก่อนรัน SQL) ก็ต้องเปิดกะได้ ไม่งั้นเช้ามาขายไม่ได้ทั้งวัน
+    if (!hasOpenDenoms) {
+      await supabase.from('shifts').delete().eq('id', sameRow!.id)
+      const fallback = await openShift({ openingCash: 715, openedBy: userId, carry, openingDenoms: morning }, db)
+      const { data: fbRow } = await supabase.from('shifts').select('*').is('closed_at', null).maybeSingle()
+      if (fbRow) madeShifts.push(fbRow.id)
+      check(!fallback.error && fbRow?.opening_cash === 715, 'ยังไม่ได้รัน migration ก็เปิดกะได้ (ตัดใบนับทิ้งแทนที่จะพัง)', fallback.error ?? '')
+      sameRow = fbRow
+    }
+
+    // เปิดกะแบบใส่ยอดรวมอย่างเดียวยังทำได้ ไม่บังคับให้นับแยก
+    await supabase.from('shifts').delete().eq('id', sameRow!.id)
+    await openShift({ openingCash: 700, openedBy: userId, carry }, db)
+    const { data: plainRow } = await supabase.from('shifts').select('*').is('closed_at', null).maybeSingle()
+    if (plainRow) madeShifts.push(plainRow.id)
+    check(plainRow?.opening_denominations == null, 'ไม่นับแยกก็เปิดกะได้ ไม่เขียน opening_denominations')
 
     await cleanup()
     madeShifts.length = 0
