@@ -6,6 +6,7 @@ import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { PackageCheck, ArrowLeft, Plus, Trash2 } from 'lucide-react'
 import toast from 'react-hot-toast'
+import DateField from '@/components/DateField'
 import { ProductPicker, UnitSelect, findUnitChoice, useUnitAdder, type ProductOption } from '../../pickers'
 
 interface ReceiveItem {
@@ -381,7 +382,12 @@ export default function ReceiveClient({
                       <input type="text" value={r.supplierLot} onChange={(e) => setRow(i, 'supplierLot', e.target.value)} className={inputClass} placeholder="ถ้ามี" />
                     </td>
                     <td className="pr-2 py-1.5">
-                      <input type="date" value={r.expiryDate} onChange={(e) => setRow(i, 'expiryDate', e.target.value)} className={inputClass} />
+                      <DateField
+                        value={r.expiryDate}
+                        onChange={(v) => setRow(i, 'expiryDate', v)}
+                        className={inputClass}
+                        aria-label="วันหมดอายุ"
+                      />
                     </td>
                     <td className="pr-2 py-1.5 text-sm text-right font-medium text-gray-900">
                       {rowTotal > 0 ? `฿${rowTotal.toFixed(2)}` : '—'}

@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 import { ScanLine, ScanSearch, Search, Trash2, Check, X, ChevronDown, ChevronUp, AlertTriangle } from 'lucide-react'
 import toast from 'react-hot-toast'
 import BarcodeScanner, { type ScanFeedback } from '@/components/BarcodeScanner'
+import DateField from '@/components/DateField'
 import { confirmDialog } from '@/lib/confirm'
 import { findByBarcode } from '@/lib/productUnits'
 import {
@@ -545,7 +546,12 @@ export default function CountClient({
                 {canStampExpiry(picked, lotId) && (
                   <label className="flex items-center gap-1.5 text-xs text-gray-500 shrink-0">
                     หมดอายุ
-                    <input type="date" value={expiry} onChange={(e) => setExpiry(e.target.value)} className={inputClass} />
+                    <DateField
+                      value={expiry}
+                      onChange={setExpiry}
+                      className={`${inputClass} w-36`}
+                      aria-label="วันหมดอายุ"
+                    />
                   </label>
                 )}
                 <input
@@ -636,11 +642,11 @@ export default function CountClient({
                     {!locked && p && (canStampExpiry(p, r.product_lot_id) ? (
                       <label className="mt-1 inline-flex items-center gap-1 text-xs text-gray-400">
                         หมดอายุ
-                        <input
-                          type="date"
-                          defaultValue={r.expiry_date ?? ''}
-                          onChange={(e) => editExpiry(r, e.target.value)}
-                          className="border border-gray-200 rounded-lg px-2 py-0.5 text-xs text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        <DateField
+                          value={r.expiry_date ?? ''}
+                          onChange={(v) => editExpiry(r, v)}
+                          className="w-28 border border-gray-200 rounded-lg px-2 py-0.5 text-xs text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          aria-label="วันหมดอายุ"
                         />
                       </label>
                     ) : (

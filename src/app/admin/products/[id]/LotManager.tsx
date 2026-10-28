@@ -7,6 +7,7 @@ import { Plus, Trash2, Pencil } from 'lucide-react'
 import toast from 'react-hot-toast'
 import type { ProductLot } from '@/lib/types'
 import { confirmDialog } from '@/lib/confirm'
+import DateField from '@/components/DateField'
 
 interface Props {
   productId: string
@@ -298,10 +299,9 @@ export default function LotManager({ productId, lots, unit, userId }: Props) {
             </div>
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">วันหมดอายุ</label>
-              <input
-                type="date"
+              <DateField
                 value={form.expiry_date}
-                onChange={(e) => setForm({ ...form, expiry_date: e.target.value })}
+                onChange={(v) => setForm({ ...form, expiry_date: v })}
                 className={inputClass}
               />
             </div>
@@ -402,11 +402,12 @@ export default function LotManager({ productId, lots, unit, userId }: Props) {
                   </div>
                   <div className="flex items-center gap-2">
                     <label className="text-xs text-gray-500 shrink-0 w-20">วันหมดอายุ</label>
-                    <input
-                      type="date"
+                    <DateField
                       value={editExpiry}
-                      onChange={(e) => setEditExpiry(e.target.value)}
+                      onChange={setEditExpiry}
                       className={inputClass}
+                      wrapClass="relative flex-1 min-w-0"
+                      aria-label="วันหมดอายุ"
                     />
                     {editExpiry && (
                       <button
