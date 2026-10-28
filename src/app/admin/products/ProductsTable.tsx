@@ -2,15 +2,17 @@
 
 import { useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Search, X, Receipt } from 'lucide-react'
+import { Search, X, Receipt, ScanLine } from 'lucide-react'
 import toast from 'react-hot-toast'
 import ProductRow from './ProductRow'
 import ProductCard from './ProductCard'
+import BarcodeScanner, { type ScanFeedback } from '@/components/BarcodeScanner'
 import { createClient } from '@/lib/supabase/client'
 import { confirmDialog } from '@/lib/confirm'
 import { isVatApplicable } from '@/lib/vat'
 import { hasBoothPrice } from '@/lib/booth'
 import { buildHaystacks } from '@/lib/productSearch'
+import { findByBarcode } from '@/lib/productUnits'
 import type { Product } from '@/lib/types'
 
 // แสดงทีละชุด — ร้านมีสินค้าสองพันกว่าตัว วาดทั้งตารางทีเดียวหน้าหนืด
@@ -34,6 +36,7 @@ export default function ProductsTable({ products }: { products: Product[] }) {
   // '' = ทุกตัว, 'yes' = เฉพาะที่ตั้งราคาบูธไว้ (ไว้ไล่ตรวจราคาก่อนออกงาน)
   const [boothFilter, setBoothFilter] = useState<'' | 'yes' | 'no'>('')
   const [shown, setShown] = useState(PAGE)
+  const [scanning, setScanning] = useState(false)
 
   // กองคำค้นชุดเดียวกับหน้าขาย (ชื่อ/รหัส/บาร์โค้ด/คำค้นสำรอง) บวกหมวดกับหน่วยที่ใช้แต่ในตารางนี้
   // — ค้นในหน้าสินค้าต้องเจอด้วยคำเดียวกับที่พนักงานใช้หน้าร้าน ไม่งั้นตามแก้ของที่เขาหาไม่เจอไม่ถูก
@@ -70,6 +73,24 @@ export default function ProductsTable({ products }: { products: Product[] }) {
   function search(value: string) {
     setQuery(value)
     setShown(PAGE) // ค้นใหม่แล้วกลับไปเริ่มที่ชุดแรก ไม่ค้างอยู่หน้าลึกๆ ของผลเก่า
+  }
+
+  /**
+   * ยิงบาร์โค้ดแทนการพิมพ์ค้นหา — ของทั้งร้านโหลดมาอยู่ในหน้านี้แล้ว หาในเครื่องได้เลย
+   *
+   * เจอแล้วปิดกล้องทันที เพราะยิงมาเพื่อจะดู/แก้สินค้าตัวนั้น ไม่ใช่ไล่ยิงทีละกล่อง
+   * ส่วนที่ยิงแล้วไม่เจอ ก็ยังใส่รหัสลงช่องค้นหาให้ จะได้เห็นว่ายังไม่มีในระบบแล้วกดเพิ่มสินค้าต่อ
+   */
+  function handleScan(code: string): ScanFeedback {
+    const hit = findByBarcode(products, code)
+    search(code.trim())
+    // ตัวกรองที่ค้างอยู่อาจบังสินค้าที่เพิ่งยิงเจอ — ปลดให้หมด ไม่งั้นงงว่ายิงติดแล้วทำไมไม่ขึ้น
+    setHideStopped(false)
+    setVatFilter('')
+    setBoothFilter('')
+    if (!hit) return { ok: false, message: `ไม่พบสินค้าที่ใช้บาร์โค้ด ${code}` }
+    setScanning(false)
+    return { ok: true, message: hit.unit ? `${hit.product.name} (${hit.unit.unit_name})` : hit.product.name }
   }
 
   function toggleOne(id: string) {
@@ -202,7 +223,9 @@ export default function ProductsTable({ products }: { products: Product[] }) {
   const allVisiblePicked = visible.length > 0 && visible.every((p) => picked.has(p.id))
   const emptyText = products.length === 0
     ? 'ยังไม่มีสินค้า — กด "เพิ่มสินค้า" เพื่อเริ่มต้น'
-    : `ไม่เจอสินค้าที่ตรงกับ "${query}"`
+    : query
+      ? `ไม่เจอสินค้าที่ตรงกับ "${query}"`
+      : 'ไม่มีสินค้าที่ตรงกับตัวกรองนี้'
 
   /** ติ๊ก/ปลดทั้งชุดที่กำลังแสดงอยู่ */
   function toggleVisible() {
@@ -215,23 +238,35 @@ export default function ProductsTable({ products }: { products: Product[] }) {
   return (
     <>
       <div className="flex flex-wrap items-center gap-3 mb-4">
-        <div className="relative w-full min-w-0 sm:w-auto sm:flex-1 sm:min-w-64">
-          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-          <input
-            value={query}
-            onChange={(e) => search(e.target.value)}
-            placeholder="ค้นหาชื่อสินค้า / SKU / บาร์โค้ด / หมวด"
-            className="w-full pl-9 pr-9 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400"
-          />
-          {query && (
-            <button
-              onClick={() => search('')}
-              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-              title="ล้างคำค้น"
-            >
-              <X size={15} />
-            </button>
-          )}
+        <div className="flex w-full min-w-0 items-center gap-2 sm:w-auto sm:flex-1 sm:min-w-64">
+          <div className="relative min-w-0 flex-1">
+            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+            <input
+              value={query}
+              onChange={(e) => search(e.target.value)}
+              placeholder="ค้นหาชื่อสินค้า / SKU / บาร์โค้ด / หมวด"
+              className="w-full pl-9 pr-9 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400"
+            />
+            {query && (
+              <button
+                onClick={() => search('')}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                title="ล้างคำค้น"
+              >
+                <X size={15} />
+              </button>
+            )}
+          </div>
+          {/* กล้องตัวเดียวกับหน้าขาย — ยิงกล่องที่ถืออยู่แล้วเปิดสินค้าตัวนั้นแก้ได้เลย */}
+          <button
+            type="button"
+            onClick={() => setScanning(true)}
+            title="ยิงบาร์โค้ดเพื่อค้นหาสินค้า"
+            className="flex shrink-0 items-center gap-1.5 rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+          >
+            <ScanLine size={16} />
+            <span className="max-sm:sr-only">ยิงบาร์โค้ด</span>
+          </button>
         </div>
         {/* จอเล็กให้สองตัวนี้อยู่แถวของมันเอง ไม่งั้นโดนบีบจนอ่านไม่ออกว่ากรองอะไรอยู่
             — sm:contents ทำให้ div นี้หายไปบนจอใหญ่ แถวเดิมจึงไม่เปลี่ยน */}
@@ -278,6 +313,15 @@ export default function ProductsTable({ products }: { products: Product[] }) {
           )}
         </p>
       </div>
+
+      {scanning && (
+        <BarcodeScanner
+          onDetect={handleScan}
+          onClose={() => setScanning(false)}
+          title="ยิงหาสินค้า"
+          hint="จ่อบาร์โค้ดให้อยู่ในกรอบ — เจอแล้วจะปิดกล้องแล้วกรอกรหัสลงช่องค้นหาให้"
+        />
+      )}
 
       {picked.size > 0 && (
         <div className="sticky top-14 md:top-0 z-10 mb-3 flex flex-wrap items-center gap-2 rounded-xl border border-blue-200 bg-blue-50 px-3 py-2.5 md:px-4">

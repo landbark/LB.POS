@@ -13,7 +13,7 @@ const COLUMNS = `
   is_service, on_shopee, online_available, image_url, weight_grams, clinic_only, vat_applicable,
   categories(name, clinic_only, vat_applicable),
   product_lots(id, lot_number, expiry_date, quantity),
-  product_units!product_units_product_id_fkey(id, unit_name, factor, price, sellable_pos, active)
+  product_units!product_units_product_id_fkey(id, unit_name, factor, price, barcode, sellable_pos, active)
 `
 
 export default async function ProductsPage() {
