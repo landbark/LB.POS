@@ -6,7 +6,7 @@
  * โจทย์: ปิดกะแล้วต้องแยกแบงค์ไหนออกให้เจ้าของบ้าง ถึงจะเหลือในลิ้นชักเท่าเงินทอนตั้งต้นพอดี
  * และเหรียญ/แบงค์เล็กต้องไม่ถูกหยิบออก เพราะนั่นคือเงินทอนที่ต้องใช้เปิดร้านเช้าวันถัดไป
  */
-import { planOwnerTake, type FloatPlan } from '../src/lib/shiftFloat'
+import { planByDenom, planOwnerTake, SUGGESTED_FLOAT, type FloatPlan } from '../src/lib/shiftFloat'
 
 const NOTES = [1000, 500, 100, 50, 20]
 
@@ -60,6 +60,44 @@ check(e.taken === 1020 && e.leftover === 15, 'เป้า ฿0 → หยิบ
 // นับได้เท่าเป้าพอดี
 const f = planOwnerTake({ 100: 30 }, 3000, NOTES)
 check(f.taken === 0 && f.over === 0 && f.short === 0 && f.leftover === 3000, 'นับได้เท่าเป้าพอดี → ไม่ต้องทำอะไร', show(f))
+
+// ---------- กำหนดเงินทอนรายชนิด (planByDenom) ----------
+console.log('\n--- กำหนดเงินทอนรายชนิด ---')
+
+const kit = SUGGESTED_FLOAT
+const kitTotal = Object.entries(kit).reduce((s, [v, q]) => s + Number(v) * q, 0)
+check(kitTotal === 3000, 'ชุดแนะนำรวม ฿3,000', `฿${kitTotal}`)
+
+// ใบนับจริง 28 ต.ค. เทียบกับชุดแนะนำ
+const g = planByDenom(real, kit, NOTES)
+console.log(`\nใบนับจริง 28 ต.ค. เทียบชุดแนะนำ → ${show(g)}`)
+check(g.take[1000] === 3 && g.take[500] === 2, 'หยิบแบงค์พัน/ห้าร้อยออกหมด (ชุดแนะนำไม่เก็บไว้เลย)', JSON.stringify(g.take))
+check(g.take[100] === 2 && g.take[20] === 68, 'หยิบเฉพาะส่วนที่เกินเป้าของแต่ละกอง (ร้อย 17−15 · ยี่สิบ 108−40)', JSON.stringify(g.take))
+check(!g.take[50], 'กองที่ขาดอยู่แล้วไม่หยิบออกอีก (ห้าสิบมี 1 ใบ เป้า 6)', JSON.stringify(g.take))
+check(g.taken === 5560, 'แยกออกให้เจ้าของ ฿5,560', `฿${g.taken}`)
+check(g.leftover === 3788, 'เหลือในลิ้นชัก ฿3,788', `฿${g.leftover}`)
+check(g.keep[100] === 15 && g.keep[20] === 40, 'กองแบงค์เหลือเท่าเป้าพอดี', JSON.stringify(g.keep))
+check(g.keep[10] === 69 && g.keep[1] === 208, 'เหรียญหยิบออกไม่ได้ ส่วนเกินคาไว้ในลิ้นชัก', JSON.stringify(g.keep))
+check(g.over === 788 && g.short === 0, 'เหลือเกินเป้ารวม ฿788 = เหรียญเกิน ฿1,038 − ห้าสิบที่ขาด ฿250', `฿${g.over}`)
+check(
+  g.shortages.length === 1 && g.shortages[0].value === 50 && g.shortages[0].need === 5,
+  'บอกว่าต้องแลกแบงค์ห้าสิบมาเติมอีก 5 ใบ ก่อนเปิดร้าน',
+  JSON.stringify(g.shortages),
+)
+
+// นับได้ตรงชุดพอดี → ไม่ต้องทำอะไร
+const h = planByDenom({ ...kit }, kit, NOTES)
+check(h.taken === 0 && h.over === 0 && h.short === 0 && h.shortages.length === 0, 'นับได้ตรงชุดพอดี → ไม่หยิบ ไม่ขาด ไม่เกิน', show(h))
+
+// ขาดหลายกอง → ไล่เรียงจากใบใหญ่ไปเล็ก
+const i = planByDenom({ 100: 10, 20: 5, 1: 10 }, kit, NOTES)
+check(
+  i.shortages.map((x) => x.value).join(',') === '100,50,20,10,5,1',
+  'เรียงกองที่ขาดจากใบใหญ่ไปเล็ก',
+  i.shortages.map((x) => `${x.value}×${x.need}`).join(' '),
+)
+check(i.taken === 0, 'ไม่มีกองไหนเกินเป้า → ไม่หยิบออกเลย', `฿${i.taken}`)
+check(i.short === 3000 - (1000 + 100 + 10), 'บอกว่าเงินทอนรวมขาดเท่าไหร่', `฿${i.short}`)
 
 console.log(`\nผ่าน ${passed} · ไม่ผ่าน ${failed}`)
 if (failed) process.exit(1)

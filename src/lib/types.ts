@@ -204,6 +204,8 @@ export interface StoreSettings {
   rounding_mode: RoundingMode
   /** เงินทอนที่ต้องเหลือไว้ในลิ้นชักทุกเช้า (null = ไม่ได้ตั้ง ใช้ยอดที่เหลือจริงแบบเดิม) */
   float_target: number | null
+  /** เงินทอนแยกรายชนิด เช่น {"100":15,"20":40} — ตั้งไว้แล้วจะคุมได้ว่าเหลือเป็นแบงค์อะไรด้วย */
+  float_denoms: Record<string, number> | null
   updated_at: string
 }
 

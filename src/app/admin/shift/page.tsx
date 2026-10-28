@@ -34,7 +34,7 @@ export default async function ShiftPage() {
       .not('closed_at', 'is', null)
       .order('closed_at', { ascending: false })
       .limit(20),
-    supabase.from('store_settings').select('float_target').limit(1).maybeSingle(),
+    supabase.from('store_settings').select('float_target, float_denoms').limit(1).maybeSingle(),
   ])
 
   return (
@@ -45,6 +45,7 @@ export default async function ShiftPage() {
       currentUserName={profile?.name ?? ''}
       canEditClosed={profile?.role === 'admin'}
       floatTarget={store?.float_target != null ? Number(store.float_target) : null}
+      floatDenoms={(store?.float_denoms as Record<string, number> | null) ?? null}
     />
   )
 }

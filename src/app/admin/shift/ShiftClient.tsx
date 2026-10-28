@@ -4,7 +4,7 @@ import { Fragment, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { expectedCash as computeExpectedCash, splitShiftBills, type ShiftBill } from '@/lib/shiftCash'
-import { planOwnerTake } from '@/lib/shiftFloat'
+import { BANKNOTES, COINS, DENOMS, planByDenom, planOwnerTake } from '@/lib/shiftFloat'
 import { Wallet, Lock, Unlock, Pencil, StickyNote } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { confirmDialog } from '@/lib/confirm'
@@ -18,22 +18,6 @@ const fmtTime = (iso: string) =>
   new Date(iso).toLocaleTimeString('th-TH', { timeZone: 'Asia/Bangkok', hour: '2-digit', minute: '2-digit' })
 
 const PAYMENT_LABELS: Record<string, string> = { cash: 'เงินสด', transfer: 'โอนเงิน', card: 'บัตรเครดิต', qr: 'QR Code' }
-
-// ชนิดธนบัตร/เหรียญสำหรับนับเงินปิดกะ
-const BANKNOTES = [
-  { value: 1000, label: 'แบงค์พัน' },
-  { value: 500, label: 'แบงค์ห้าร้อย' },
-  { value: 100, label: 'แบงค์ร้อย' },
-  { value: 50, label: 'แบงค์ห้าสิบ' },
-  { value: 20, label: 'แบงค์ยี่สิบ' },
-]
-const COINS = [
-  { value: 10, label: 'เหรียญสิบ' },
-  { value: 5, label: 'เหรียญห้า' },
-  { value: 2, label: 'เหรียญสอง' },
-  { value: 1, label: 'เหรียญบาท' },
-]
-const DENOMS = [...BANKNOTES, ...COINS]
 
 // คอลัมน์ใหม่จาก supabase-migration-shift-denominations.sql (ยังไม่อยู่ใน type Shift กลาง)
 type ShiftRow = Shift & {
@@ -61,6 +45,7 @@ export default function ShiftClient({
   currentUserName,
   canEditClosed,
   floatTarget,
+  floatDenoms,
 }: {
   openShift: ShiftRow | null
   history: ShiftRow[]
@@ -69,6 +54,8 @@ export default function ShiftClient({
   canEditClosed: boolean
   /** เงินทอนที่ต้องเหลือไว้ทุกเช้า — null = ร้านยังไม่ได้ตั้ง (ตั้งได้ที่หน้าตั้งค่า) */
   floatTarget: number | null
+  /** เงินทอนแยกรายชนิด — ตั้งไว้แล้วจะคิดให้ว่าต้องหยิบชนิดไหนออกกี่ใบ แทนการคิดจากยอดรวม */
+  floatDenoms: Record<string, number> | null
 }) {
   const router = useRouter()
   const [showOpenShift, setShowOpenShift] = useState(false)
@@ -152,15 +139,26 @@ export default function ShiftClient({
   const ownerExceeds = BANKNOTES.filter((d) => qtyOf(ownerCounts, d.value) > qtyOf(counts, d.value))
   const leftover = counted - cashToOwner
   const difference = counted - expectedCash
-  // เงินทอนตั้งต้นคงที่: คิดให้ว่าต้องแยกแบงค์ไหนออกบ้างถึงจะเหลือเท่าเป้าพอดี
-  const floatPlan = floatTarget != null && hasCount
-    ? planOwnerTake(
-        Object.fromEntries(DENOMS.map((d) => [d.value, qtyOf(counts, d.value)])),
-        floatTarget,
-        BANKNOTES.map((d) => d.value),
-      )
+  // เงินทอนตั้งต้นคงที่ — กำหนดรายชนิดจะคิดทีละกอง (คุมได้ว่าเหลือเป็นแบงค์อะไร)
+  // ตั้งแค่ยอดรวมก็ยังใช้ได้ แต่ไล่หยิบใบใหญ่ลงมาเฉย ๆ ไม่รู้ว่าเหลือแล้วทอนได้จริงไหม
+  const floatTargetDenoms: Record<number, number> | null = floatDenoms
+    ? Object.fromEntries(Object.entries(floatDenoms).map(([v, q]) => [Number(v), Number(q) || 0]))
     : null
-  const floatGap = floatTarget == null ? null : leftover - floatTarget
+  const countedDenoms: Record<number, number> = Object.fromEntries(
+    DENOMS.map((d) => [d.value, qtyOf(counts, d.value)]),
+  )
+  const takeable = BANKNOTES.map((d) => d.value)
+  const floatPlan = !hasCount
+    ? null
+    : floatTargetDenoms
+      ? planByDenom(countedDenoms, floatTargetDenoms, takeable)
+      : floatTarget != null
+        ? planOwnerTake(countedDenoms, floatTarget, takeable)
+        : null
+  const floatTotal = floatTargetDenoms
+    ? DENOMS.reduce((s, d) => s + d.value * (floatTargetDenoms[d.value] ?? 0), 0)
+    : floatTarget
+  const floatGap = floatTotal == null ? null : leftover - floatTotal
 
   async function addMovement() {
     if (!openShift) return
@@ -417,9 +415,9 @@ export default function ShiftClient({
               </button>
             )}
           </p>
-          {floatTarget != null && openShift.opening_cash !== floatTarget && (
+          {floatTotal != null && openShift.opening_cash !== floatTotal && (
             <p className="text-xs text-amber-700 font-medium mb-1">
-              เงินทอนตั้งต้นที่ตั้งไว้คือ ฿{money(floatTarget)} — กะนี้เริ่มด้วย ฿{money(openShift.opening_cash)}
+              เงินทอนตั้งต้นที่ตั้งไว้คือ ฿{money(floatTotal)} — กะนี้เริ่มด้วย ฿{money(openShift.opening_cash)}
             </p>
           )}
           {openingCarry != null && (
@@ -629,18 +627,62 @@ export default function ShiftClient({
             <p className="text-xs text-gray-500 mb-2">
               {floatPlan.short > 0 ? (
                 <span className="text-red-600 font-medium">
-                  นับได้น้อยกว่าเงินทอนตั้งต้น ฿{money(floatTarget!)} อยู่ ฿{money(floatPlan.short)} — ยังไม่ต้องแยกให้เจ้าของ ต้องเติมเงินทอนก่อนเปิดกะหน้า
+                  นับได้น้อยกว่าเงินทอนตั้งต้น ฿{money(floatTotal!)} อยู่ ฿{money(floatPlan.short)} — ยังไม่ต้องแยกให้เจ้าของ ต้องเติมเงินทอนก่อนเปิดกะหน้า
                 </span>
               ) : (
                 <>
-                  เงินทอนตั้งต้น ฿{money(floatTarget!)} → แยกออกให้เจ้าของ ฿{money(floatPlan.taken)} เหลือในลิ้นชัก ฿{money(floatPlan.leftover)}
+                  เงินทอนตั้งต้น ฿{money(floatTotal!)} → แยกออกให้เจ้าของ ฿{money(floatPlan.taken)} เหลือในลิ้นชัก ฿{money(floatPlan.leftover)}
                   {floatPlan.over > 0 && (
-                    <span className="text-amber-600"> · เกินเป้า ฿{money(floatPlan.over)} เพราะเศษนี้เป็นเหรียญ แตกเป็นแบงค์ไม่ได้</span>
+                    <span className="text-amber-600"> · เกินเป้า ฿{money(floatPlan.over)} เพราะเศษนี้เป็นเหรียญ หยิบออกไม่ได้</span>
                   )}
                 </>
               )}
             </p>
           )}
+          {floatPlan && floatTargetDenoms && (floatPlan.taken > 0 || floatPlan.shortages.length > 0) && (
+            <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 mb-3 text-xs space-y-2">
+              {floatPlan.taken > 0 && (
+                <div>
+                  <p className="font-medium text-gray-700 mb-1">ควรหยิบออกให้เจ้าของ</p>
+                  <div className="grid grid-cols-2 gap-x-6 gap-y-0.5">
+                    {BANKNOTES.filter((d) => floatPlan.take[d.value]).map((d) => (
+                      <div key={d.value} className="flex justify-between text-gray-600">
+                        <span>{d.label}</span>
+                        <span className="tabular-nums">
+                          {floatPlan.take[d.value]} ใบ · ฿{money(d.value * floatPlan.take[d.value])}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              <div>
+                <p className="font-medium text-gray-700 mb-1">เหลือไว้เป็นเงินทอนพรุ่งนี้</p>
+                <div className="grid grid-cols-2 gap-x-6 gap-y-0.5">
+                  {DENOMS.filter((d) => floatPlan.keep[d.value] || floatTargetDenoms[d.value]).map((d) => {
+                    const keep = floatPlan.keep[d.value] ?? 0
+                    const want = floatTargetDenoms[d.value] ?? 0
+                    return (
+                      <div key={d.value} className={`flex justify-between ${keep < want ? 'text-red-600 font-medium' : 'text-gray-600'}`}>
+                        <span>{d.label}</span>
+                        <span className="tabular-nums">{keep}{want > 0 && ` / ${want}`}</span>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+              {floatPlan.shortages.length > 0 && (
+                <p className="text-red-600 font-medium">
+                  ต้องแลกมาเติมก่อนเปิดร้าน:{' '}
+                  {floatPlan.shortages.map((sh) => {
+                    const label = DENOMS.find((d) => d.value === sh.value)?.label ?? sh.value
+                    return `${label} อีก ${sh.need}`
+                  }).join(' · ')}
+                </p>
+              )}
+            </div>
+          )}
+
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1.5 mb-3">
             {BANKNOTES.map((d) => {
               const qty = qtyOf(ownerCounts, d.value)
@@ -678,8 +720,8 @@ export default function ShiftClient({
             {floatGap != null && hasCount && (
               <p className={`text-xs font-medium ${floatGap === 0 ? 'text-green-600' : 'text-amber-600'}`}>
                 {floatGap === 0
-                  ? `ตรงเงินทอนตั้งต้น ฿${money(floatTarget!)} พอดี`
-                  : `${floatGap > 0 ? 'เกิน' : 'ขาด'}เงินทอนตั้งต้น ฿${money(floatTarget!)} อยู่ ฿${money(Math.abs(floatGap))}`}
+                  ? `ตรงเงินทอนตั้งต้น ฿${money(floatTotal!)} พอดี`
+                  : `${floatGap > 0 ? 'เกิน' : 'ขาด'}เงินทอนตั้งต้น ฿${money(floatTotal!)} อยู่ ฿${money(Math.abs(floatGap))}`}
               </p>
             )}
           </div>

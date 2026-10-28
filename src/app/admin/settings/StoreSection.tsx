@@ -8,6 +8,7 @@ import toast from 'react-hot-toast'
 import ImageInput from '@/components/ImageInput'
 import type { StoreSettings, RoundingMode } from '@/lib/types'
 import { ROUNDING_OPTIONS } from '@/lib/rounding'
+import { DENOMS, SUGGESTED_FLOAT } from '@/lib/shiftFloat'
 
 export default function StoreSection({ config }: { config: StoreSettings | null }) {
   const router = useRouter()
@@ -21,8 +22,13 @@ export default function StoreSection({ config }: { config: StoreSettings | null 
     vat_registered: config?.vat_registered ?? false,
     vat_rate: config?.vat_rate?.toString() ?? '7',
     rounding_mode: (config?.rounding_mode ?? 'none') as RoundingMode,
-    float_target: config?.float_target?.toString() ?? '',
   })
+  // เงินทอนตั้งต้นแยกรายชนิด — ว่างทุกช่อง = ไม่ใช้ (เก๊ะยกยอดที่เหลือจริงไปเหมือนเดิม)
+  const [floatCounts, setFloatCounts] = useState<Record<number, string>>(() =>
+    Object.fromEntries(DENOMS.map((d) => [d.value, config?.float_denoms?.[d.value]?.toString() ?? ''])),
+  )
+  const floatQty = (v: number) => parseInt(floatCounts[v] || '0', 10) || 0
+  const floatTotal = DENOMS.reduce((sum, d) => sum + d.value * floatQty(d.value), 0)
   const [logoBlob, setLogoBlob] = useState<Blob | null>(null)
   const [logoPreview, setLogoPreview] = useState<string | null>(config?.logo_url ?? null)
 
@@ -118,7 +124,10 @@ export default function StoreSection({ config }: { config: StoreSettings | null 
         vat_rate: parseFloat(form.vat_rate) || 7,
         promptpay_id: form.promptpay_id.trim() || null,
         rounding_mode: form.rounding_mode,
-        float_target: form.float_target.trim() === '' ? null : parseFloat(form.float_target) || 0,
+        float_target: floatTotal > 0 ? floatTotal : null,
+        float_denoms: floatTotal > 0
+          ? Object.fromEntries(DENOMS.filter((d) => floatQty(d.value) > 0).map((d) => [d.value, floatQty(d.value)]))
+          : null,
         payment_qr_url: qrUrl,
         logo_url: logoUrl,
         updated_at: new Date().toISOString(),
@@ -244,16 +253,56 @@ export default function StoreSection({ config }: { config: StoreSettings | null 
             ))}
           </div>
 
-          <label className={labelClass}>เงินทอนตั้งต้นคงที่ (ไม่บังคับ)</label>
-          <input
-            type="number" min="0" step="100" inputMode="decimal"
-            value={form.float_target}
-            onChange={(e) => set('float_target', e.target.value)}
-            className={`${inputClass} mb-1.5`} placeholder="เช่น 3000 — เว้นว่าง = ไม่ใช้"
-          />
+          <div className="flex items-center justify-between mb-1">
+            <label className={labelClass + ' mb-0'}>เงินทอนตั้งต้นคงที่ (ไม่บังคับ)</label>
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={() => setFloatCounts(Object.fromEntries(
+                  DENOMS.map((d) => [d.value, SUGGESTED_FLOAT[d.value] ? String(SUGGESTED_FLOAT[d.value]) : '']),
+                ))}
+                className="text-xs font-medium text-blue-600 hover:text-blue-700"
+              >
+                ใช้ชุดแนะนำ
+              </button>
+              {floatTotal > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setFloatCounts(Object.fromEntries(DENOMS.map((d) => [d.value, ''])))}
+                  className="text-xs font-medium text-gray-400 hover:text-gray-600"
+                >
+                  ล้าง
+                </button>
+              )}
+            </div>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1.5 mb-2">
+            {DENOMS.map((d) => (
+              <div key={d.value} className="flex items-center gap-2">
+                <span className="text-sm text-gray-600 w-[5.5rem] shrink-0">{d.label}</span>
+                <input
+                  type="number" min={0} step={1} inputMode="numeric"
+                  value={floatCounts[d.value] ?? ''}
+                  onChange={(e) => setFloatCounts((c) => ({ ...c, [d.value]: e.target.value }))}
+                  className="w-16 border border-gray-300 rounded-lg px-2 py-1.5 text-sm text-right focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="0"
+                />
+                <span className={`text-sm text-right flex-1 tabular-nums ${floatQty(d.value) > 0 ? 'text-gray-900 font-medium' : 'text-gray-300'}`}>
+                  ฿{(d.value * floatQty(d.value)).toLocaleString('th-TH')}
+                </span>
+              </div>
+            ))}
+          </div>
+          <p className="text-sm font-semibold text-gray-900 mb-1.5">
+            รวมเงินทอน ฿{floatTotal.toLocaleString('th-TH')}
+            {floatTotal === 0 && <span className="font-normal text-gray-400"> — เว้นว่างทุกช่อง = ไม่ใช้</span>}
+          </p>
           <p className="text-xs text-gray-500 mb-4">
-            ตั้งไว้แล้วตอนปิดกะระบบจะคิดให้ว่าต้องแยกแบงค์ไหนออกให้เจ้าของบ้าง ถึงจะเหลือในลิ้นชักเท่านี้พอดี
-            เช้ามานับได้ไม่เท่ายอดนี้เมื่อไหร่ = รู้ทันทีว่ามีอะไรผิด ไม่ต้องไปเปิดดูว่าเมื่อวานปิดเท่าไหร่
+            ตั้งไว้แล้วตอนปิดกะระบบจะบอกว่าต้องหยิบแบงค์ไหนออกให้เจ้าของกี่ใบ ถึงจะเหลือเงินทอนตามนี้
+            และบอกด้วยว่ากองไหนขาด ต้องแลกมาเติมก่อนเปิดร้าน ·{' '}
+            <span className="text-gray-400">
+              กำหนดทีละชนิดเพราะยอดรวมอย่างเดียวไม่พอ — เหลือ ฿3,000 ที่เป็นแบงค์ร้อยล้วนก็ทอนไม่ได้สักบาท
+            </span>
           </p>
 
           <label className={labelClass}>PromptPay ID (ไม่บังคับ)</label>
