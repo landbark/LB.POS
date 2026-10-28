@@ -68,6 +68,7 @@ export default function ShiftClient({
   canEditClosed,
   floatTarget,
   floatDenoms,
+  floatKeep,
 }: {
   openShift: ShiftRow | null
   history: ShiftRow[]
@@ -78,6 +79,8 @@ export default function ShiftClient({
   floatTarget: number | null
   /** เงินทอนแยกรายชนิด — ตั้งไว้แล้วจะคิดให้ว่าต้องหยิบชนิดไหนออกกี่ใบ แทนการคิดจากยอดรวม */
   floatDenoms: Record<string, number> | null
+  /** ชนิดที่เก็บไว้ทั้งหมด — ไม่หยิบออก ไม่เตือนว่าขาด (แบงค์ห้าสิบที่แลกมาไม่ได้) */
+  floatKeep: number[] | null
 }) {
   const router = useRouter()
   const [showOpenShift, setShowOpenShift] = useState(false)
@@ -175,24 +178,37 @@ export default function ShiftClient({
     DENOMS.map((d) => [d.value, qtyOf(counts, d.value)]),
   )
   const takeable = BANKNOTES.map((d) => d.value)
+  const keepAll = floatKeep ?? []
   const floatPlan = !hasCount
     ? null
     : floatTargetDenoms
-      ? planByDenom(countedDenoms, floatTargetDenoms, takeable)
+      ? planByDenom(countedDenoms, floatTargetDenoms, takeable, keepAll)
       : floatTarget != null
         ? planOwnerTake(countedDenoms, floatTarget, takeable)
         : null
   const floatTotal = floatTargetDenoms
     ? DENOMS.reduce((s, d) => s + d.value * (floatTargetDenoms[d.value] ?? 0), 0)
     : floatTarget
-  const floatGap = floatTotal == null ? null : leftover - floatTotal
+  // ชนิดที่เก็บไว้ทั้งหมดลอยไปตามที่รับมาจากลูกค้า — รวมเข้าเป้าตามที่นับได้ ไม่งั้นขึ้นว่าเกินทุกวัน
+  const floatExpected = floatTotal == null
+    ? null
+    : floatTotal + keepAll.reduce((s, d) => s + d * qtyOf(counts, d), 0)
+  const floatGap = floatExpected == null ? null : leftover - floatExpected
   // การ์ดจัดเงินทอนหลังปิดกะ
   const adjustQty = (v: number) => parseInt(adjust?.[v] || '0', 10) || 0
   const adjustTotal = DENOMS.reduce((sum, d) => sum + d.value * adjustQty(d.value), 0)
   const adjustDiff = adjustTotal - (carryOf(lastClosed) ?? 0)
+  const keptLabels = DENOMS.filter((d) => keepAll.includes(d.value)).map((d) => d.label).join('/')
+  // เงินตั้งต้นของกะที่เปิดอยู่ ห่างจากชุดเงินทอนที่ตั้งไว้เท่าไหร่ — ชนิดที่เก็บทั้งหมดคิดตามที่นับได้เช้านั้น
+  // ไม่ได้นับแยกตอนเปิดกะและมีชนิดที่เก็บทั้งหมดอยู่ = เทียบไม่ได้ ไม่ต้องเตือน
+  const openingDenoms = openShift?.opening_denominations ?? null
+  const openingVsFloat =
+    floatTotal == null || (keepAll.length > 0 && !openingDenoms) || !openShift
+      ? null
+      : openShift.opening_cash - (floatTotal + keepAll.reduce((s, d) => s + d * (openingDenoms?.[d] ?? 0), 0))
   // กองที่เงินทอนในเก๊ะยังไม่ครบชุด — ตัวที่เจ้าของต้องไปแลกมาเติม
   const carryShortages = floatTargetDenoms && carryBefore
-    ? DENOMS.filter((d) => (floatTargetDenoms[d.value] ?? 0) > (carryBefore[d.value] ?? 0))
+    ? DENOMS.filter((d) => !keepAll.includes(d.value) && (floatTargetDenoms[d.value] ?? 0) > (carryBefore[d.value] ?? 0))
         .map((d) => ({ ...d, need: (floatTargetDenoms[d.value] ?? 0) - (carryBefore[d.value] ?? 0) }))
     : []
 
@@ -607,9 +623,10 @@ export default function ShiftClient({
               </button>
             )}
           </p>
-          {floatTotal != null && openShift.opening_cash !== floatTotal && (
+          {openingVsFloat != null && openingVsFloat !== 0 && (
             <p className="text-xs text-amber-700 font-medium mb-1">
-              เงินทอนตั้งต้นที่ตั้งไว้คือ ฿{money(floatTotal)} — กะนี้เริ่มด้วย ฿{money(openShift.opening_cash)}
+              เงินทอนตั้งต้นที่ตั้งไว้คือ ฿{money(openShift.opening_cash - openingVsFloat)}
+              {keptLabels && <> (รวม{keptLabels}ที่มีอยู่แล้ว)</>} — กะนี้เริ่มด้วย ฿{money(openShift.opening_cash)}
             </p>
           )}
           {openingCarry != null && (
@@ -823,7 +840,9 @@ export default function ShiftClient({
                 </span>
               ) : (
                 <>
-                  เงินทอนตั้งต้น ฿{money(floatTotal!)} → แยกออกให้เจ้าของ ฿{money(floatPlan.taken)} เหลือในลิ้นชัก ฿{money(floatPlan.leftover)}
+                  เงินทอนตั้งต้น ฿{money(floatTotal!)}
+                  {floatPlan.kept > 0 && <> + {keptLabels} ที่มี ฿{money(floatPlan.kept)}</>}
+                  {' '}→ แยกออกให้เจ้าของ ฿{money(floatPlan.taken)} เหลือในลิ้นชัก ฿{money(floatPlan.leftover)}
                   {floatPlan.over > 0 && (
                     <span className="text-amber-600"> · เกินเป้า ฿{money(floatPlan.over)} เพราะเศษนี้เป็นเหรียญ หยิบออกไม่ได้</span>
                   )}
@@ -851,13 +870,14 @@ export default function ShiftClient({
               <div>
                 <p className="font-medium text-gray-700 mb-1">เหลือไว้เป็นเงินทอนพรุ่งนี้</p>
                 <div className="grid grid-cols-2 gap-x-6 gap-y-0.5">
-                  {DENOMS.filter((d) => floatPlan.keep[d.value] || floatTargetDenoms[d.value]).map((d) => {
+                  {DENOMS.filter((d) => floatPlan.keep[d.value] || floatTargetDenoms[d.value] || keepAll.includes(d.value)).map((d) => {
                     const keep = floatPlan.keep[d.value] ?? 0
                     const want = floatTargetDenoms[d.value] ?? 0
+                    const kept = keepAll.includes(d.value)
                     return (
-                      <div key={d.value} className={`flex justify-between ${keep < want ? 'text-red-600 font-medium' : 'text-gray-600'}`}>
+                      <div key={d.value} className={`flex justify-between ${!kept && keep < want ? 'text-red-600 font-medium' : 'text-gray-600'}`}>
                         <span>{d.label}</span>
-                        <span className="tabular-nums">{keep}{want > 0 && ` / ${want}`}</span>
+                        <span className="tabular-nums">{keep}{kept ? ' (เก็บไว้ทั้งหมด)' : want > 0 ? ` / ${want}` : ''}</span>
                       </div>
                     )
                   })}
@@ -912,8 +932,8 @@ export default function ShiftClient({
             {floatGap != null && hasCount && (
               <p className={`text-xs font-medium ${floatGap === 0 ? 'text-green-600' : 'text-amber-600'}`}>
                 {floatGap === 0
-                  ? `ตรงเงินทอนตั้งต้น ฿${money(floatTotal!)} พอดี`
-                  : `${floatGap > 0 ? 'เกิน' : 'ขาด'}เงินทอนตั้งต้น ฿${money(floatTotal!)} อยู่ ฿${money(Math.abs(floatGap))}`}
+                  ? `ตรงเงินทอนตั้งต้น ฿${money(floatExpected!)} พอดี`
+                  : `${floatGap > 0 ? 'เกิน' : 'ขาด'}เงินทอนตั้งต้น ฿${money(floatExpected!)} อยู่ ฿${money(Math.abs(floatGap))}`}
               </p>
             )}
           </div>

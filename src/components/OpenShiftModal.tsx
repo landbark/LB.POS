@@ -42,6 +42,8 @@ export default function OpenShiftModal({
   // เงินทอนตั้งต้นคงที่ที่ร้านตั้งไว้ — null = ไม่ได้ตั้ง (ยอดยกมาลอยไปตามที่เหลือจริง)
   const [floatTarget, setFloatTarget] = useState<number | null>(null)
   const [floatDenoms, setFloatDenoms] = useState<Record<number, number> | null>(null)
+  // ชนิดที่เก็บไว้ทั้งหมด (เช่น แบงค์ห้าสิบ) — ไม่เตือนว่าขาด และไม่นับเป็นส่วนเกินของเป้า
+  const [floatKeep, setFloatKeep] = useState<number[]>([])
   // นับแยกใบ/เหรียญ (ค่าเริ่มต้นถ้ากะที่แล้วนับแยกไว้) หรือใส่ยอดรวมก้อนเดียวแบบเดิม
   const [byDenom, setByDenom] = useState(false)
   const [counts, setCounts] = useState<Record<number, string>>({})
@@ -52,7 +54,7 @@ export default function OpenShiftModal({
     Promise.all([
       findOrphanSales(),
       findCarryOver(),
-      createClient().from('store_settings').select('float_target, float_denoms').limit(1).maybeSingle(),
+      createClient().from('store_settings').select('float_target, float_denoms, float_keep').limit(1).maybeSingle(),
     ]).then(([found, over, store]) => {
       if (cancelled) return
       setOrphan(found)
@@ -60,6 +62,7 @@ export default function OpenShiftModal({
       setFloatTarget(store.data?.float_target != null ? Number(store.data.float_target) : null)
       const fd = store.data?.float_denoms as Record<string, number> | null | undefined
       setFloatDenoms(fd ? Object.fromEntries(Object.entries(fd).map(([v, q]) => [Number(v), Number(q) || 0])) : null)
+      setFloatKeep((store.data?.float_keep as number[] | null) ?? [])
       if (over) setCash(String(over.amount))
       // กะที่แล้วนับแยกไว้ → เติมใบนับนั้นมาให้ แก้เฉพาะกองที่ไม่ตรงก็พอ
       if (over?.denoms) {
@@ -80,9 +83,16 @@ export default function OpenShiftModal({
   const diffs = byDenom && carry ? denomDiffs(carry, countedDenoms) : []
   // กองที่เงินทอนไม่พอตั้งแต่ก่อนเปิดร้าน — ตัวที่เคยทำให้ต้องวิ่งหาเงินทอนตอนบ่าย
   const shortages = byDenom && floatDenoms
-    ? DENOMS.filter((d) => (floatDenoms[d.value] ?? 0) > qtyOf(d.value))
+    ? DENOMS.filter((d) => !floatKeep.includes(d.value) && (floatDenoms[d.value] ?? 0) > qtyOf(d.value))
         .map((d) => ({ ...d, need: (floatDenoms[d.value] ?? 0) - qtyOf(d.value) }))
     : []
+
+  // ชนิดที่เก็บไว้ทั้งหมดลอยไปตามที่รับมาจากลูกค้า — บวกตามที่กะที่แล้วเหลือไว้ ไม่งั้นขึ้นว่าไม่ตรงทุกวัน
+  const keptLabels = DENOMS.filter((d) => floatKeep.includes(d.value)).map((d) => d.label).join('/')
+  const floatExpected =
+    floatTarget == null || (floatKeep.length > 0 && !carry?.denoms)
+      ? null
+      : floatTarget + floatKeep.reduce((s, d) => s + d * (carry?.denoms?.[d] ?? 0), 0)
 
   async function submit() {
     const amount = byDenom ? denomTotal : parseFloat(cash || '0')
@@ -148,7 +158,7 @@ export default function OpenShiftModal({
                     <div key={gi} className="space-y-1.5">
                       {group.map((d) => {
                         const qty = qtyOf(d.value)
-                        const want = floatDenoms?.[d.value] ?? 0
+                        const want = floatKeep.includes(d.value) ? 0 : floatDenoms?.[d.value] ?? 0
                         return (
                           <div key={d.value} className="flex items-center gap-2">
                             <span className="text-sm text-gray-600 w-[5.5rem] shrink-0">{d.label}</span>
@@ -220,10 +230,11 @@ export default function OpenShiftModal({
                   เจ้าของจัดเงินทอนหลังปิดกะแล้วเมื่อ {fmtTime(carry.adjustedAt)} — ยอดยกมาข้างบนคิดจากใบนับหลังจัด
                 </p>
               )}
-              {floatTarget != null && (
-                <p className={`text-xs ${carry.amount === floatTarget ? 'text-gray-500' : 'text-amber-700 font-medium'}`}>
-                  เงินทอนตั้งต้นคงที่ ฿{money(floatTarget)}
-                  {carry.amount !== floatTarget && <> — กะที่แล้วเหลือไว้ไม่ตรงยอดนี้ ฿{money(Math.abs(carry.amount - floatTarget))}</>}
+              {floatExpected != null && (
+                <p className={`text-xs ${carry.amount === floatExpected ? 'text-gray-500' : 'text-amber-700 font-medium'}`}>
+                  เงินทอนตั้งต้นคงที่ ฿{money(floatExpected)}
+                  {keptLabels && <> (รวม{keptLabels}ที่มีอยู่)</>}
+                  {carry.amount !== floatExpected && <> — กะที่แล้วเหลือไว้ไม่ตรงยอดนี้ ฿{money(Math.abs(carry.amount - floatExpected))}</>}
                 </p>
               )}
               {carryDiff === 0 ? (

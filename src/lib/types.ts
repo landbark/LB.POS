@@ -206,6 +206,8 @@ export interface StoreSettings {
   float_target: number | null
   /** เงินทอนแยกรายชนิด เช่น {"100":15,"20":40} — ตั้งไว้แล้วจะคุมได้ว่าเหลือเป็นแบงค์อะไรด้วย */
   float_denoms: Record<string, number> | null
+  /** ชนิดที่เก็บไว้ทั้งหมด เช่น [50] — มีเท่าไหร่เก็บเท่านั้น ไม่หยิบออก ไม่เตือนว่าขาด */
+  float_keep: number[] | null
   updated_at: string
 }
 

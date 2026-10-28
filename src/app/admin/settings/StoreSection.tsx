@@ -8,7 +8,7 @@ import toast from 'react-hot-toast'
 import ImageInput from '@/components/ImageInput'
 import type { StoreSettings, RoundingMode } from '@/lib/types'
 import { ROUNDING_OPTIONS } from '@/lib/rounding'
-import { DENOMS, SUGGESTED_FLOAT } from '@/lib/shiftFloat'
+import { DENOMS, SUGGESTED_FLOAT, SUGGESTED_KEEP } from '@/lib/shiftFloat'
 
 export default function StoreSection({ config }: { config: StoreSettings | null }) {
   const router = useRouter()
@@ -27,8 +27,13 @@ export default function StoreSection({ config }: { config: StoreSettings | null 
   const [floatCounts, setFloatCounts] = useState<Record<number, string>>(() =>
     Object.fromEntries(DENOMS.map((d) => [d.value, config?.float_denoms?.[d.value]?.toString() ?? ''])),
   )
-  const floatQty = (v: number) => parseInt(floatCounts[v] || '0', 10) || 0
+  // ชนิดที่ "เก็บไว้ทั้งหมด" — ไม่กำหนดจำนวน ไม่หยิบออก (เช่น แบงค์ห้าสิบที่แลกมาไม่ได้)
+  const [floatKeep, setFloatKeep] = useState<number[]>(config?.float_keep ?? [])
+  const floatQty = (v: number) => (floatKeep.includes(v) ? 0 : parseInt(floatCounts[v] || '0', 10) || 0)
   const floatTotal = DENOMS.reduce((sum, d) => sum + d.value * floatQty(d.value), 0)
+  const floatOn = floatTotal > 0 || floatKeep.length > 0
+  const toggleKeep = (v: number) =>
+    setFloatKeep((k) => (k.includes(v) ? k.filter((x) => x !== v) : [...k, v]))
   const [logoBlob, setLogoBlob] = useState<Blob | null>(null)
   const [logoPreview, setLogoPreview] = useState<string | null>(config?.logo_url ?? null)
 
@@ -124,10 +129,11 @@ export default function StoreSection({ config }: { config: StoreSettings | null 
         vat_rate: parseFloat(form.vat_rate) || 7,
         promptpay_id: form.promptpay_id.trim() || null,
         rounding_mode: form.rounding_mode,
-        float_target: floatTotal > 0 ? floatTotal : null,
-        float_denoms: floatTotal > 0
+        float_target: floatOn ? floatTotal : null,
+        float_denoms: floatOn
           ? Object.fromEntries(DENOMS.filter((d) => floatQty(d.value) > 0).map((d) => [d.value, floatQty(d.value)]))
           : null,
+        float_keep: floatOn && floatKeep.length > 0 ? floatKeep : null,
         payment_qr_url: qrUrl,
         logo_url: logoUrl,
         updated_at: new Date().toISOString(),
@@ -258,17 +264,23 @@ export default function StoreSection({ config }: { config: StoreSettings | null 
             <div className="flex gap-3">
               <button
                 type="button"
-                onClick={() => setFloatCounts(Object.fromEntries(
-                  DENOMS.map((d) => [d.value, SUGGESTED_FLOAT[d.value] ? String(SUGGESTED_FLOAT[d.value]) : '']),
-                ))}
+                onClick={() => {
+                  setFloatCounts(Object.fromEntries(
+                    DENOMS.map((d) => [d.value, SUGGESTED_FLOAT[d.value] ? String(SUGGESTED_FLOAT[d.value]) : '']),
+                  ))
+                  setFloatKeep([...SUGGESTED_KEEP])
+                }}
                 className="text-xs font-medium text-blue-600 hover:text-blue-700"
               >
                 ใช้ชุดแนะนำ
               </button>
-              {floatTotal > 0 && (
+              {floatOn && (
                 <button
                   type="button"
-                  onClick={() => setFloatCounts(Object.fromEntries(DENOMS.map((d) => [d.value, ''])))}
+                  onClick={() => {
+                    setFloatCounts(Object.fromEntries(DENOMS.map((d) => [d.value, ''])))
+                    setFloatKeep([])
+                  }}
                   className="text-xs font-medium text-gray-400 hover:text-gray-600"
                 >
                   ล้าง
@@ -276,30 +288,50 @@ export default function StoreSection({ config }: { config: StoreSettings | null 
               )}
             </div>
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1.5 mb-2">
-            {DENOMS.map((d) => (
-              <div key={d.value} className="flex items-center gap-2">
-                <span className="text-sm text-gray-600 w-[5.5rem] shrink-0">{d.label}</span>
-                <input
-                  type="number" min={0} step={1} inputMode="numeric"
-                  value={floatCounts[d.value] ?? ''}
-                  onChange={(e) => setFloatCounts((c) => ({ ...c, [d.value]: e.target.value }))}
-                  className="w-16 border border-gray-300 rounded-lg px-2 py-1.5 text-sm text-right focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="0"
-                />
-                <span className={`text-sm text-right flex-1 tabular-nums ${floatQty(d.value) > 0 ? 'text-gray-900 font-medium' : 'text-gray-300'}`}>
-                  ฿{(d.value * floatQty(d.value)).toLocaleString('th-TH')}
-                </span>
-              </div>
-            ))}
+          <div className="space-y-1.5 mb-2">
+            {DENOMS.map((d) => {
+              const kept = floatKeep.includes(d.value)
+              return (
+                <div key={d.value} className="flex items-center gap-2">
+                  <span className="text-sm text-gray-600 w-[5.5rem] shrink-0">{d.label}</span>
+                  <input
+                    type="number" min={0} step={1} inputMode="numeric"
+                    value={kept ? '' : floatCounts[d.value] ?? ''}
+                    disabled={kept}
+                    onChange={(e) => setFloatCounts((c) => ({ ...c, [d.value]: e.target.value }))}
+                    className="w-16 border border-gray-300 rounded-lg px-2 py-1.5 text-sm text-right disabled:bg-gray-100 disabled:border-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="0"
+                  />
+                  <span className={`text-sm w-20 text-right tabular-nums ${floatQty(d.value) > 0 ? 'text-gray-900 font-medium' : 'text-gray-300'}`}>
+                    {kept ? '—' : `฿${(d.value * floatQty(d.value)).toLocaleString('th-TH')}`}
+                  </span>
+                  <label className="flex items-center gap-1.5 text-xs text-gray-500 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={kept}
+                      onChange={() => toggleKeep(d.value)}
+                      className="w-3.5 h-3.5 accent-blue-600"
+                    />
+                    เก็บไว้ทั้งหมด
+                  </label>
+                </div>
+              )
+            })}
           </div>
           <p className="text-sm font-semibold text-gray-900 mb-1.5">
             รวมเงินทอน ฿{floatTotal.toLocaleString('th-TH')}
-            {floatTotal === 0 && <span className="font-normal text-gray-400"> — เว้นว่างทุกช่อง = ไม่ใช้</span>}
+            {floatKeep.length > 0 && (
+              <span className="font-normal text-gray-500">
+                {' '}+ {DENOMS.filter((d) => floatKeep.includes(d.value)).map((d) => d.label).join(' / ')}ที่มีอยู่
+              </span>
+            )}
+            {!floatOn && <span className="font-normal text-gray-400"> — เว้นว่างทุกช่อง = ไม่ใช้</span>}
           </p>
           <p className="text-xs text-gray-500 mb-4">
             ตั้งไว้แล้วตอนปิดกะระบบจะบอกว่าต้องหยิบแบงค์ไหนออกให้เจ้าของกี่ใบ ถึงจะเหลือเงินทอนตามนี้
             และบอกด้วยว่ากองไหนขาด ต้องแลกมาเติมก่อนเปิดร้าน ·{' '}
+            <b>เก็บไว้ทั้งหมด</b> = มีเท่าไหร่เก็บเท่านั้น ไม่หยิบออก ไม่เตือนว่าขาด สำหรับชนิดที่แลกมาไม่ได้
+            อย่างแบงค์ห้าสิบ ·{' '}
             <span className="text-gray-400">
               กำหนดทีละชนิดเพราะยอดรวมอย่างเดียวไม่พอ — เหลือ ฿3,000 ที่เป็นแบงค์ร้อยล้วนก็ทอนไม่ได้สักบาท
             </span>

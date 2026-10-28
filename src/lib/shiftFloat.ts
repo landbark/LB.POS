@@ -6,6 +6,9 @@
 //
 // หยิบออกเฉพาะแบงค์ — เหรียญคือเงินทอน หยิบออกไม่ได้
 //
+// บางชนิดกำหนดเป้าไม่ได้เลย: แบงค์ห้าสิบแลกจากธนาคารแทบไม่ได้ ที่มีคือรับมาจากลูกค้าล้วน ๆ
+// ชนิดพวกนี้ใส่ไว้ใน `keepAll` — มีเท่าไหร่เก็บไว้เท่านั้น ไม่หยิบออก ไม่เตือนว่าขาด
+//
 // กำหนดได้สองแบบ: กำหนดรายชนิด (ร้อย 15 · ยี่สิบ 40 · เหรียญบาท 50 ...) ใช้ planByDenom
 // หรือกำหนดแค่ยอดรวมแล้วให้ไล่หยิบใบใหญ่ลงมา ใช้ planOwnerTake
 // รายชนิดดีกว่า เพราะยอดรวมคุมแค่ว่าเหลือเท่าไหร่ ไม่ได้คุมว่าเหลือเป็นแบงค์อะไร —
@@ -41,6 +44,8 @@ export interface FloatPlan {
   short: number
   /** กองที่เหลือไม่ถึงเป้า ต้องแลกมาเติมก่อนเปิดร้าน (เฉพาะแบบกำหนดรายชนิด) */
   shortages: { value: number; need: number }[]
+  /** มูลค่าของชนิดที่เก็บไว้ทั้งหมด — ส่วนนี้ลอยไปตามที่รับมาจากลูกค้า ไม่นับเป็นเกินเป้า */
+  kept: number
   /** จำนวนที่จะเหลือในลิ้นชักหลังแยกออก แยกตามชนิด */
   keep: Record<number, number>
 }
@@ -59,7 +64,7 @@ export function planOwnerTake(
 ): FloatPlan {
   const total = sumOf(counts)
   if (total <= floatTarget) {
-    return { take: {}, taken: 0, leftover: total, over: 0, short: floatTarget - total, shortages: [], keep: { ...counts } }
+    return { take: {}, taken: 0, leftover: total, over: 0, short: floatTarget - total, shortages: [], kept: 0, keep: { ...counts } }
   }
   let remaining = total - floatTarget
   const take: Record<number, number> = {}
@@ -75,7 +80,7 @@ export function planOwnerTake(
     Object.entries(counts).map(([v, q]) => [Number(v), (q || 0) - (take[Number(v)] ?? 0)]),
   )
   // เศษที่แตกแบงค์ไม่ลงตัวคาอยู่ในลิ้นชัก เหลือจึงมากกว่าเป้าเท่านั้น
-  return { take, taken, leftover: total - taken, over: remaining, short: 0, shortages: [], keep }
+  return { take, taken, leftover: total - taken, over: remaining, short: 0, shortages: [], kept: 0, keep }
 }
 
 /**
@@ -87,11 +92,12 @@ export function planByDenom(
   counts: Record<number, number>,
   target: Record<number, number>,
   takeable: number[],
+  keepAll: number[] = [],
 ): FloatPlan {
   const total = sumOf(counts)
-  const targetTotal = sumOf(target)
   const take: Record<number, number> = {}
   for (const d of takeable) {
+    if (keepAll.includes(d)) continue
     const extra = (counts[d] ?? 0) - (target[d] ?? 0)
     if (extra > 0) take[d] = extra
   }
@@ -102,15 +108,25 @@ export function planByDenom(
   )
   const shortages = Object.keys(target)
     .map(Number)
-    .filter((d) => (target[d] ?? 0) - (counts[d] ?? 0) > 0)
+    .filter((d) => !keepAll.includes(d) && (target[d] ?? 0) - (counts[d] ?? 0) > 0)
     .sort((a, b) => b - a)
     .map((d) => ({ value: d, need: (target[d] ?? 0) - (counts[d] ?? 0) }))
+  // ชนิดที่เก็บไว้ทั้งหมดลอยไปตามที่รับมาจากลูกค้า — บวกเข้าไปในเป้า ไม่งั้นจะขึ้นว่าเกินทุกวัน
+  const kept = keepAll.reduce((sum, d) => sum + d * (counts[d] ?? 0), 0)
+  const expected = sumOf(target) + kept
   return {
-    take, taken, leftover, keep, shortages,
-    over: Math.max(0, leftover - targetTotal),
-    short: Math.max(0, targetTotal - leftover),
+    take, taken, leftover, keep, shortages, kept,
+    over: Math.max(0, leftover - expected),
+    short: Math.max(0, expected - leftover),
   }
 }
 
-/** ชุดเงินทอนที่คำนวณจากใบนับปิดกะย้อนหลังของร้าน — ใช้เป็นค่าเริ่มต้นให้กดเลือกได้ */
-export const SUGGESTED_FLOAT: Record<number, number> = { 100: 15, 50: 6, 20: 40, 10: 20, 5: 30, 1: 50 }
+/**
+ * ชุดเงินทอนที่คำนวณจากใบนับปิดกะย้อนหลังของร้าน — ใช้เป็นค่าเริ่มต้นให้กดเลือกได้
+ * ไม่มีแบงค์พัน/ห้าร้อย เพราะไม่เคยถูกจ่ายเป็นเงินทอนเลยสักวันใน 8 วันที่ข้อมูลเชื่อถือได้
+ * ไม่มีแบงค์ห้าสิบ เพราะแลกมาไม่ได้ — อยู่ใน SUGGESTED_KEEP แทน ใช้แบงค์ร้อยคุมส่วนนั้น
+ */
+export const SUGGESTED_FLOAT: Record<number, number> = { 100: 18, 20: 40, 10: 20, 5: 30, 1: 50 }
+
+/** ชนิดที่แนะนำให้ "เก็บไว้ทั้งหมด" — กำหนดเป้าไปก็เติมไม่ได้ */
+export const SUGGESTED_KEEP: number[] = [50]

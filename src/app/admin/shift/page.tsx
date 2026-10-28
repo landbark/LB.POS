@@ -38,7 +38,7 @@ export default async function ShiftPage() {
       .is('closed_at', null)
       .maybeSingle(),
     historyQuery(', carry_denominations, carry_adjusted_at'),
-    supabase.from('store_settings').select('float_target, float_denoms').limit(1).maybeSingle(),
+    supabase.from('store_settings').select('float_target, float_denoms, float_keep').limit(1).maybeSingle(),
   ])
   // ยังไม่ได้รัน migration จัดเงินทอนหลังปิดกะ — ประวัติกะต้องยังขึ้น แค่ไม่มีคอลัมน์นั้น
   const history = historyRes.error ? (await historyQuery('')).data : historyRes.data
@@ -52,6 +52,7 @@ export default async function ShiftPage() {
       canEditClosed={profile?.role === 'admin'}
       floatTarget={store?.float_target != null ? Number(store.float_target) : null}
       floatDenoms={(store?.float_denoms as Record<string, number> | null) ?? null}
+      floatKeep={(store?.float_keep as number[] | null) ?? null}
     />
   )
 }
