@@ -9,10 +9,10 @@ export default async function ReceiptPrintPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>
-  searchParams: Promise<{ from?: string }>
+  searchParams: Promise<{ from?: string; embed?: string }>
 }) {
   const { id } = await params
-  const { from } = await searchParams
+  const { from, embed } = await searchParams
   const supabase = createAdminClient()
 
   const [{ data: tx }, { data: store }] = await Promise.all([
@@ -34,5 +34,15 @@ export default async function ReceiptPrintPage({
   if (!tx) notFound()
 
   const isCustomer = from === 'member'
-  return <ReceiptView tx={tx as never} store={store} backHref={isCustomer ? '/member' : '/pos'} isCustomer={isCustomer} />
+  // embed=1 = หน้าขายโหลดไว้ใน iframe ซ่อนเพื่อสั่งพิมพ์ทันที (useReceiptPrint)
+  const isEmbed = embed === '1'
+  return (
+    <ReceiptView
+      tx={tx as never}
+      store={store}
+      backHref={isCustomer ? '/member' : '/pos'}
+      isCustomer={isCustomer}
+      isEmbed={isEmbed}
+    />
+  )
 }

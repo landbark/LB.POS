@@ -10,6 +10,7 @@ import { deductStock } from '@/lib/deductStock'
 import { baseQty } from '@/lib/productUnits'
 import { SALES_CHANNELS, isOnlineChannel } from '@/lib/salesChannel'
 import { POS_DISPLAY_CHANNEL, type PosDisplayMessage } from '@/lib/posDisplay'
+import { useReceiptPrint } from '@/lib/use-receipt-print'
 import { isVatApplicable } from '@/lib/vat'
 
 interface Props {
@@ -68,14 +69,20 @@ export default function PaymentModal({
   // หลังบันทึกสำเร็จ เปลี่ยนเป็นหน้าเลือก เสร็จสิ้น/พิมพ์ใบเสร็จ แทนที่จะปิด modal ทันที
   const [completedTxId, setCompletedTxId] = useState<string | null>(null)
   const displayChannelRef = useRef<BroadcastChannel | null>(null)
+  const { preload: preloadReceipt, print: printReceipt, ready: receiptReady } = useReceiptPrint()
 
   useEffect(() => {
     displayChannelRef.current = new BroadcastChannel(POS_DISPLAY_CHANNEL)
     return () => displayChannelRef.current?.close()
   }, [])
 
+  // โหลดใบเสร็จไว้ใน iframe ซ่อนทันทีที่บันทึกบิลเสร็จ — ตอนกดพิมพ์จะไม่ต้องรอโหลดอีก
+  useEffect(() => {
+    if (completedTxId) preloadReceipt(completedTxId)
+  }, [completedTxId, preloadReceipt])
+
   function openReceipt() {
-    if (completedTxId) window.open(`/print/receipt/${completedTxId}`, '_blank')
+    printReceipt()
   }
 
   const manualDiscountValue = parseFloat(manualDiscountInput || '0') || 0
@@ -407,7 +414,7 @@ export default function PaymentModal({
               className="w-full flex items-center justify-center gap-2 border-2 border-gray-200 hover:border-gray-300 text-gray-700 font-medium py-2.5 rounded-xl text-sm transition-colors"
             >
               <Printer size={16} />
-              พิมพ์ใบเสร็จ
+              {receiptReady ? 'พิมพ์ใบเสร็จ' : 'กำลังเตรียมใบเสร็จ…'}
             </button>
             <button
               onClick={() => { openReceipt(); onSuccess() }}

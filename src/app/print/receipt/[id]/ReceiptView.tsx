@@ -61,11 +61,14 @@ export default function ReceiptView({
   store,
   backHref,
   isCustomer = false,
+  isEmbed = false,
 }: {
   tx: ReceiptTx
   store: StoreSettings | null
   backHref: string
   isCustomer?: boolean
+  /** โหลดอยู่ใน iframe ซ่อนของหน้าขาย — ตัดแถบเครื่องมือกับพื้นหลังหน้าเว็บออก เหลือแต่ตัวใบเสร็จ */
+  isEmbed?: boolean
 }) {
   const [size, setSize] = useState<PaperSize>('80mm')
   const cfg = PAPER_CONFIG[size]
@@ -79,7 +82,7 @@ export default function ReceiptView({
   }, [isCustomer])
 
   return (
-    <div className="min-h-screen bg-gray-100 print:bg-white">
+    <div className={isEmbed ? 'bg-white' : 'min-h-screen bg-gray-100 print:bg-white'}>
       <style>{`
         @page { size: ${cfg.page}; margin: ${cfg.margin}; }
         @media print {
@@ -88,26 +91,28 @@ export default function ReceiptView({
         }
       `}</style>
 
-      <PrintToolbar
-        backHref={backHref}
-        // ลูกค้าเปิดจากหน้าเช็คแต้มในแท็บเดิม — ให้ปุ่มพากลับ ไม่ใช่ปิดแท็บ
-        variant={isCustomer ? 'back' : 'close'}
-        size={size}
-        onSizeChange={(v) => setSize(v as PaperSize)}
-        sizes={
-          isCustomer
-            ? []
-            : [
-                { value: '80mm', label: '80mm (เครื่องพิมพ์ใบเสร็จ)' },
-                { value: 'a4', label: 'A4' },
-                { value: 'a5', label: 'A5' },
-              ]
-        }
-      />
+      {!isEmbed && (
+        <PrintToolbar
+          backHref={backHref}
+          // ลูกค้าเปิดจากหน้าเช็คแต้มในแท็บเดิม — ให้ปุ่มพากลับ ไม่ใช่ปิดแท็บ
+          variant={isCustomer ? 'back' : 'close'}
+          size={size}
+          onSizeChange={(v) => setSize(v as PaperSize)}
+          sizes={
+            isCustomer
+              ? []
+              : [
+                  { value: '80mm', label: '80mm (เครื่องพิมพ์ใบเสร็จ)' },
+                  { value: 'a4', label: 'A4' },
+                  { value: 'a5', label: 'A5' },
+                ]
+          }
+        />
+      )}
 
-      <div className="flex justify-center py-6 print:py-0">
+      <div className={isEmbed ? '' : 'flex justify-center py-6 print:py-0'}>
         <div
-          className="bg-white shadow-lg print:shadow-none p-4"
+          className={isEmbed ? 'bg-white p-4' : 'bg-white shadow-lg print:shadow-none p-4'}
           style={{ width: cfg.width, fontSize: cfg.font, maxWidth: '100%' }}
         >
           {tx.status === 'cancelled' && (
