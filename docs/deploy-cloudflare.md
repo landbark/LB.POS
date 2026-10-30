@@ -79,6 +79,16 @@ npx wrangler deploy
 - [ ] **LINE Login** — ต้องเพิ่ม Callback URL ของโดเมนใหม่ใน LINE Developers ก่อน
       ไม่งั้น LINE จะปฏิเสธตอน redirect กลับ (ฝั่งเราเด้งไป LINE ถูกแล้ว ตรวจเมื่อ 30 ต.ค.)
 
+### Supabase Auth — อาการที่หลอกคนมาแล้วหนึ่งรอบ
+
+ล็อกอิน Google บนโดเมนใหม่แล้ว **เด้งไปโผล่เว็บ Vercel** ทั้งที่โค้ดเราใช้ origin ของ request ทุกจุด
+เพราะ Supabase เทียบ `redirectTo` กับ allow-list ก่อน ถ้าไม่ตรง มัน**ไม่ฟ้อง error แต่ใช้ Site URL แทน**
+ซึ่งตั้งเป็นโดเมน Vercel ไว้ ผลคือล็อกอินผ่านแต่ไปอยู่ผิดเว็บโดยไม่รู้ตัว
+
+แก้ที่ Authentication → URL Configuration → **Redirect URLs** (เพิ่มเข้าไป ห้ามแก้ Site URL
+ตราบใดที่ Vercel ยังขายของอยู่) เพิ่ม `https://landbark-pos.arm-maniii.workers.dev/**` ไปแล้ว 30 ต.ค.
+วันย้ายโดเมนจริงต้องเพิ่มของโดเมนจริงด้วย แล้วค่อยเปลี่ยน Site URL ตอนตัด Vercel ทิ้ง
+
 ## วันที่ย้ายโดเมนจริง
 
 1. เพิ่ม `routes` ใน `wrangler.jsonc` (แบบ `custom_domain: true` เหมือน `jfk`) แล้วตัด `workers_dev` ออก
