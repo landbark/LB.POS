@@ -12,6 +12,7 @@ import { POS_DISPLAY_CHANNEL, type PosDisplayMessage } from '@/lib/posDisplay'
 import PaymentModal from './PaymentModal'
 import { confirmDialog } from '@/lib/confirm'
 import BarcodeScanner, { type ScanFeedback } from '@/components/BarcodeScanner'
+import ScanList from '@/components/ScanList'
 import OpenShiftModal from '@/components/OpenShiftModal'
 import { withBoothPrices, getBoothTrip, getBoothTripOnServer, setBoothTrip, subscribeBoothTrip } from '@/lib/booth'
 import { buildHaystacks, haystackOf, matchesTokens, scoreOf, tokenize } from '@/lib/productSearch'
@@ -97,6 +98,8 @@ export default function POSClient({ products: allProducts, booth, shiftOpen, pro
   const [showOpenShift, setShowOpenShift] = useState(false)
   const searchRef = useRef<HTMLInputElement>(null)
   const [showScanner, setShowScanner] = useState(false)
+  // บรรทัดที่เพิ่งยิงเข้ามา — ไฮไลต์ในรายการใต้กล้องให้เห็นว่าเลขไหนเพิ่งขยับ
+  const [lastScanKey, setLastScanKey] = useState<string | null>(null)
   // ปุ่มกล้องโชว์เฉพาะมือถือ/แท็บเล็ตที่เปิดกล้องได้
   const canScan = useSyncExternalStore(neverChanges, canScanOnThisDevice, noCameraOnServer)
 
@@ -531,10 +534,33 @@ export default function POSClient({ products: allProducts, booth, shiftOpen, pro
     const found = findExact(code)
     if (!found) return { ok: false, message: `ไม่พบสินค้าที่ใช้บาร์โค้ด ${code}` }
     addToCart(found.product, found.unit)
+    setLastScanKey(lineKey({ product: found.product, unit: found.unit }))
     return {
       ok: true,
       message: `+ ${found.product.name}${found.unit ? ` (1 ${found.unit.unit_name})` : ''}`,
     }
+  }
+
+  /** ตะกร้าในรูปแบบของแผงใต้กล้อง — ใหม่สุดอยู่บนสุด ติดใต้กล้อง ไม่ต้องเลื่อนหา */
+  const scanRows = cart
+    .map((item) => ({
+      key: lineKey(item),
+      name: item.product.name,
+      sub: `${unitNameOf(item.product, item.unit)} · ฿${item.unit_price.toLocaleString('th-TH')}`,
+      qty: item.quantity,
+      unit: unitNameOf(item.product, item.unit),
+    }))
+    .reverse()
+
+  function setScanQty(key: string, qty: number) {
+    const index = cart.findIndex((c) => lineKey(c) === key)
+    if (index >= 0) setQty(index, String(qty))
+  }
+
+  // ลบผ่าน changeQty เหมือนปุ่มกาในตะกร้า — โปรโมชั่นของทั้งตะกร้าจะถูกคิดใหม่ให้ด้วย
+  function removeScanLine(key: string) {
+    const index = cart.findIndex((c) => lineKey(c) === key)
+    if (index >= 0) changeQty(index, -cart[index].quantity)
   }
 
   // Enter ในช่องค้นหา: บาร์โค้ด/รหัสสินค้าตรง หรือผลค้นหาเหลือตัวเดียว → เข้าตะกร้าทันที
@@ -1251,7 +1277,20 @@ export default function POSClient({ products: allProducts, booth, shiftOpen, pro
       )}
 
       {showScanner && (
-        <BarcodeScanner onDetect={handleScannedCode} onClose={() => setShowScanner(false)} />
+        <BarcodeScanner
+          onDetect={handleScannedCode}
+          onClose={() => setShowScanner(false)}
+          hint="จ่อบาร์โค้ดให้อยู่ในกรอบ — ยิงต่อกันได้เรื่อยๆ · ยิงเกินก็แก้จำนวนที่รายการข้างล่างได้เลย"
+          panel={
+            <ScanList
+              rows={scanRows}
+              empty="ยังไม่ได้ยิงอะไร — ที่ยิงเข้าตะกร้าจะมาโชว์ที่นี่ แก้จำนวนได้เลย"
+              onSetQty={setScanQty}
+              onRemove={removeScanLine}
+              activeKey={lastScanKey}
+            />
+          }
+        />
       )}
     </div>
   )

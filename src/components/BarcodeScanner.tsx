@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { X, Flashlight, FlashlightOff, Loader2, SwitchCamera, Check } from 'lucide-react'
 import type { DecodeHintType } from '@zxing/library'
 
@@ -32,10 +32,22 @@ interface Props {
   title?: string
   /** คำแนะนำใต้กล้องตอนยังไม่ได้ยิงอะไร */
   hint?: string
+  /**
+   * รายการที่ยิงมาแล้ว (ดู ScanList) — ใส่มาแล้วกล้องจะหุบไปอยู่ครึ่งจอบน
+   * ที่เหลือเป็นของรายการนี้ แก้จำนวนได้ทันทีโดยไม่ต้องปิดกล้องแล้วเปิดใหม่
+   */
+  panel?: ReactNode
 }
 
-// ยิงซ้ำรหัสเดิมภายในเวลานี้ไม่นับ — กล้องอ่านบาร์โค้ดเดิมได้หลายสิบครั้งต่อวินาที
-const REPEAT_MS = 1500
+/**
+ * รหัสเดิมจะนับเป็นชิ้นใหม่ได้ ต้องหายไปจากเฟรมนานเท่านี้ก่อน
+ *
+ * ของเดิมจับเวลาจาก "ครั้งแรกที่เจอ" — ถือของจ่อกล้องค้างไว้สองวินาทีก็เด้งเป็นสองชิ้น
+ * ทั้งที่มีชิ้นเดียว (กล้องอ่านใบเดิมได้หลายสิบครั้งต่อวินาที) จึงเปลี่ยนมาจับจาก
+ * "ครั้งล่าสุดที่ยังเห็น": จ่อค้างนานแค่ไหนก็นับชิ้นเดียว ต้องเอาออกจากเฟรมแล้วเอาเข้ามาใหม่
+ * จึงนับเพิ่ม — ของจริงหลายชิ้นกดเพิ่มในรายการใต้กล้องได้เลย
+ */
+const GONE_MS = 1500
 
 // บาร์โค้ดที่เจอบนกล่องสินค้าในร้าน (EAN/UPC) + CODE_128/39 ของฉลากที่พิมพ์เอง
 const NATIVE_FORMATS = ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128', 'code_39', 'itf', 'codabar']
@@ -89,7 +101,7 @@ function pickBackCamera(cams: MediaDeviceInfo[]): string | null {
   return (good[0] ?? pool[0])?.deviceId ?? null
 }
 
-export default function BarcodeScanner({ onDetect, onClose, title, hint }: Props) {
+export default function BarcodeScanner({ onDetect, onClose, title, hint, panel }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null)
   const [starting, setStarting] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -106,7 +118,7 @@ export default function BarcodeScanner({ onDetect, onClose, title, hint }: Props
 
   const trackRef = useRef<MediaStreamTrack | null>(null)
   // เก็บรหัสล่าสุดไว้ใน ref — ลูปอ่านกล้องวิ่งอยู่นอก render จะเห็น state ไม่ทัน
-  const lastRef = useRef<{ code: string; at: number }>({ code: '', at: 0 })
+  const lastRef = useRef<{ code: string; seen: number }>({ code: '', seen: 0 })
   // onDetect มาจาก closure ของหน้าขาย (ตะกร้าเปลี่ยนทุกครั้งที่ยิง) — อ่านผ่าน ref ไม่ให้ลูปต้อง restart
   const onDetectRef = useRef(onDetect)
   useEffect(() => { onDetectRef.current = onDetect }, [onDetect])
@@ -115,8 +127,12 @@ export default function BarcodeScanner({ onDetect, onClose, title, hint }: Props
     const code = raw.trim()
     if (!code) return
     const now = Date.now()
-    if (code === lastRef.current.code && now - lastRef.current.at < REPEAT_MS) return
-    lastRef.current = { code, at: now }
+    // ยังเห็นรหัสเดิมอยู่เรื่อยๆ = ชิ้นเดิมที่จ่อค้างไว้ เลื่อนเวลา "เห็นล่าสุด" แล้วข้ามไป
+    if (code === lastRef.current.code && now - lastRef.current.seen < GONE_MS) {
+      lastRef.current.seen = now
+      return
+    }
+    lastRef.current = { code, seen: now }
     beep()
     navigator.vibrate?.(40)
     setFeedback(onDetectRef.current(code) ?? { ok: true, message: code })
@@ -306,7 +322,7 @@ export default function BarcodeScanner({ onDetect, onClose, title, hint }: Props
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-black">
-      <div className="flex items-center justify-between px-4 py-3 text-white">
+      <div className="flex shrink-0 items-center justify-between px-4 py-3 text-white">
         <span className="text-sm font-medium">{title ?? 'สแกนบาร์โค้ด'}</span>
         <div className="flex items-center gap-1">
           {cameras.length > 1 && (
@@ -333,7 +349,7 @@ export default function BarcodeScanner({ onDetect, onClose, title, hint }: Props
         </div>
       </div>
 
-      <div className="relative flex-1 overflow-hidden">
+      <div className={`relative overflow-hidden ${panel ? 'shrink-0 basis-[44%]' : 'flex-1'}`}>
         <video
           ref={videoRef}
           playsInline
@@ -384,21 +400,45 @@ export default function BarcodeScanner({ onDetect, onClose, title, hint }: Props
         )}
       </div>
 
-      <div className="px-4 pb-6 pt-3 text-center">
-        {feedback ? (
-          <p className={`text-sm font-medium ${feedback.ok ? 'text-green-400' : 'text-red-400'}`}>
-            {feedback.message}
-          </p>
-        ) : (
-          <p className="text-sm text-white/60">{hint ?? 'จ่อบาร์โค้ดให้อยู่ในกรอบ — ยิงต่อกันได้เรื่อยๆ'}</p>
-        )}
-        <button
-          onClick={onClose}
-          className="mt-3 w-full rounded-lg bg-white/15 py-3 text-sm font-medium text-white hover:bg-white/25"
-        >
-          เสร็จแล้ว
-        </button>
-      </div>
+      {panel ? (
+        <>
+          {/* มีรายการอยู่ใต้กล้องแล้ว ผลการยิงเหลือบรรทัดเดียวพอ */}
+          <div className="shrink-0 px-4 py-1.5 text-center">
+            {feedback ? (
+              <p className={`line-clamp-2 text-xs font-medium ${feedback.ok ? 'text-green-400' : 'text-red-400'}`}>
+                {feedback.message}
+              </p>
+            ) : (
+              <p className="line-clamp-2 text-xs text-white/50">
+                {hint ?? 'จ่อบาร์โค้ดให้อยู่ในกรอบ — ยิงต่อกันได้เรื่อยๆ'}
+              </p>
+            )}
+          </div>
+          {panel}
+          <button
+            onClick={onClose}
+            className="shrink-0 bg-white/15 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 text-sm font-medium text-white active:bg-white/25"
+          >
+            เสร็จแล้ว
+          </button>
+        </>
+      ) : (
+        <div className="px-4 pb-6 pt-3 text-center">
+          {feedback ? (
+            <p className={`text-sm font-medium ${feedback.ok ? 'text-green-400' : 'text-red-400'}`}>
+              {feedback.message}
+            </p>
+          ) : (
+            <p className="text-sm text-white/60">{hint ?? 'จ่อบาร์โค้ดให้อยู่ในกรอบ — ยิงต่อกันได้เรื่อยๆ'}</p>
+          )}
+          <button
+            onClick={onClose}
+            className="mt-3 w-full rounded-lg bg-white/15 py-3 text-sm font-medium text-white hover:bg-white/25"
+          >
+            เสร็จแล้ว
+          </button>
+        </div>
+      )}
     </div>
   )
 }

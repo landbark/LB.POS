@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 import { ScanLine, ScanSearch, Search, Trash2, Check, X, ChevronDown, ChevronUp, AlertTriangle } from 'lucide-react'
 import toast from 'react-hot-toast'
 import BarcodeScanner, { type ScanFeedback } from '@/components/BarcodeScanner'
+import ScanList from '@/components/ScanList'
 import DateField from '@/components/DateField'
 import { confirmDialog } from '@/lib/confirm'
 import { findByBarcode } from '@/lib/productUnits'
@@ -70,6 +71,8 @@ export default function CountClient({
   const router = useRouter()
   const [rows, setRows] = useState<ItemRow[]>(initialItems)
   const [scanMode, setScanMode] = useState<ScanMode | null>(null)
+  // แถวที่เพิ่งยิงเข้ามา — ไฮไลต์ในรายการใต้กล้องให้เห็นว่าเลขไหนเพิ่งขยับ
+  const [lastTallyKey, setLastTallyKey] = useState<string | null>(null)
   const [term, setTerm] = useState('')
   const [picked, setPicked] = useState<CountableProduct | null>(null)
   const [qty, setQty] = useState('')
@@ -266,10 +269,45 @@ export default function CountClient({
     const next = current + step
     intendedRef.current.set(key, next)
 
+    setLastTallyKey(key)
     // หมายเหตุ/วันหมดอายุที่กรอกไว้แล้วต้องติดไปด้วย ไม่งั้นยิงชิ้นถัดไปแล้วล้างทิ้ง
     void queueSave(product, lot, next, existing?.note ?? null, existing?.expiry_date ?? null)
     const where = lot ? ` (lot ${lotById.get(lot)?.lot_number || '—'})` : ''
     return { ok: true, message: `${product.name}${where} — นับได้ ${next} ${product.unit}` }
+  }
+
+  /**
+   * ผลนับของรอบนี้ในรูปแบบของแผงใต้กล้อง (rows ใหม่สุดอยู่บนสุดอยู่แล้ว)
+   *
+   * โชว์ทุกแถวของรอบ ไม่ใช่แค่ที่ยิงรอบนี้ — ยิงเกินไปชิ้นเดียวก็กดลบในนี้ได้เลย
+   * ไม่ต้องปิดกล้องลงไปหาในตาราง
+   */
+  const scanRows = rows.map((r) => {
+    const lot = r.product_lot_id ? lotById.get(r.product_lot_id) : null
+    const product = byId.get(r.product_id)
+    return {
+      key: keyOf(r.product_id, r.product_lot_id),
+      name: product?.name ?? 'สินค้าที่ถูกลบไปแล้ว',
+      sub: `${lot ? `lot ${lot.lot_number || '—'} · ` : ''}ระบบมี ${r.system_quantity}`,
+      qty: r.counted_quantity,
+      unit: product?.unit ?? null,
+    }
+  })
+
+  function setTallyQty(key: string, qty: number) {
+    if (locked) return
+    const row = rows.find((r) => keyOf(r.product_id, r.product_lot_id) === key)
+    const product = row ? byId.get(row.product_id) : null
+    if (!row || !product) return
+    intendedRef.current.set(key, qty)
+    setLastTallyKey(key)
+    void queueSave(product, row.product_lot_id, qty, row.note, row.expiry_date)
+  }
+
+  function removeTallyRow(key: string) {
+    if (locked) return
+    const row = rows.find((r) => keyOf(r.product_id, r.product_lot_id) === key)
+    if (row) void removeRow(row)
   }
 
   /** เปิดฟอร์มใส่จำนวนของสินค้าตัวหนึ่ง — scannedUnit มาจากบาร์โค้ดลังที่ยิงในโหมดหาสินค้า */
@@ -756,7 +794,19 @@ export default function CountClient({
           hint={
             scanMode === 'find'
               ? 'ยิงหนึ่งครั้ง — จะปิดกล้องแล้วเปิดสินค้าตัวนั้นให้ใส่จำนวนที่นับได้'
-              : 'จ่อบาร์โค้ดให้อยู่ในกรอบ — ยิงต่อกันได้เรื่อยๆ ระบบบวกให้ทีละชิ้น · วันหมดอายุกรอกที่ตารางหลังปิดกล้อง'
+              : 'ยิงต่อกันได้เรื่อยๆ ระบบบวกให้ทีละชิ้น · ยิงเกินก็แก้จำนวนที่รายการข้างล่างได้เลย · วันหมดอายุกรอกที่ตารางหลังปิดกล้อง'
+          }
+          // โหมดหาสินค้ายิงครั้งเดียวแล้วปิดกล้องเลย ไม่ต้องหุบกล้องให้รายการ
+          panel={
+            scanMode === 'tally' ? (
+              <ScanList
+                rows={scanRows}
+                empty="ยังไม่ได้ยิงอะไร — ที่นับได้จะมาโชว์ที่นี่ แก้จำนวนได้เลย"
+                onSetQty={setTallyQty}
+                onRemove={removeTallyRow}
+                activeKey={lastTallyKey}
+              />
+            ) : undefined
           }
         />
       )}
