@@ -68,6 +68,17 @@ npx wrangler deploy
 
 แก้ `vars.POS_URL` ใน `workers/cron/wrangler.jsonc` ให้ชี้โดเมนจริงตอนย้ายโดเมนแล้ว
 
+## ต้องพิสูจน์ให้ได้ก่อนย้ายโดเมน
+
+- [ ] **worker ส่ง Telegram ออกได้จริง** — ยังไม่เคยมีข้อความไหนออกจาก workerd สำเร็จสักครั้ง
+      token ตรวจด้วย `getMe` แล้วใช้ได้ แต่คนละเรื่องกับการส่งออกจาก worker
+      วิธีที่ตรงที่สุด: ล็อกอินเป็น admin บน URL ของ Cloudflare → `/admin/notifications` → **ส่งทดสอบ**
+      (ยิง `POST /api/notify/test` ซึ่งไม่มี dedupe จึงส่งจริงทุกครั้ง)
+      ⚠️ ปุ่มเดียวกันบนเว็บ Vercel หน้าตาเหมือนกันเป๊ะ แต่พิสูจน์คนละฝั่ง ดูให้แน่ว่าอยู่โดเมนไหน
+- [ ] **หน้า `/pos` เร็วพอ** — ดูหัวข้อความเร็วข้างล่าง
+- [ ] **LINE Login** — ต้องเพิ่ม Callback URL ของโดเมนใหม่ใน LINE Developers ก่อน
+      ไม่งั้น LINE จะปฏิเสธตอน redirect กลับ (ฝั่งเราเด้งไป LINE ถูกแล้ว ตรวจเมื่อ 30 ต.ค.)
+
 ## วันที่ย้ายโดเมนจริง
 
 1. เพิ่ม `routes` ใน `wrangler.jsonc` (แบบ `custom_domain: true` เหมือน `jfk`) แล้วตัด `workers_dev` ออก
