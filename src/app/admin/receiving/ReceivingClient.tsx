@@ -8,7 +8,7 @@ import { Plus, Trash2, PackagePlus, Printer, PackageCheck, ListPlus, Pencil } fr
 import { confirmDialog } from '@/lib/confirm'
 import toast from 'react-hot-toast'
 import type { PurchaseStatus, Supplier } from '@/lib/types'
-import { ProductPicker, MultiPicker, StockBadge, UnitSelect, newItem, inputClass, findUnitChoice, factorOfRow, useUnitAdder, type ProductOption, type ItemRow } from './pickers'
+import { ProductPicker, MultiPicker, StockBadge, UnitSelect, newItem, inputClass, qtyInputClass, findUnitChoice, factorOfRow, useUnitAdder, type ProductOption, type ItemRow } from './pickers'
 
 // เลขที่ใบรับของอิงเวลาที่กดบันทึก — อยู่นอกคอมโพเนนต์ให้ชัดว่าไม่ใช่ค่าที่คิดตอน render
 const newPurchaseNumber = () => `PO${Date.now()}`
@@ -246,7 +246,7 @@ export default function ReceivingClient({ suppliers, products, purchases }: Prop
             <thead>
               <tr className="text-xs font-medium text-gray-500 uppercase">
                 <th className="text-left pb-2 pr-2 min-w-56">สินค้า</th>
-                <th className="text-left pb-2 pr-2 w-44">จำนวน / หน่วย</th>
+                <th className="text-left pb-2 pr-2 min-w-56 whitespace-nowrap">จำนวน / หน่วย</th>
                 <th className="text-left pb-2 pr-2 w-28">ทุน/หน่วยที่สั่ง</th>
                 <th className="text-right pb-2 w-24">รวม</th>
                 <th className="pb-2 w-8"></th>
@@ -277,7 +277,7 @@ export default function ReceivingClient({ suppliers, products, purchases }: Prop
                         return (
                           <>
                             <div className="flex items-center gap-1.5">
-                              <input type="number" min="1" value={it.quantity} onChange={(e) => setItem(i, 'quantity', e.target.value)} className={inputClass} placeholder="0" />
+                              <input type="number" min="1" value={it.quantity} onChange={(e) => setItem(i, 'quantity', e.target.value)} className={qtyInputClass} placeholder="0" />
                               <UnitSelect product={p} value={it.product_unit_id} onChange={(id) => setItem(i, 'product_unit_id', id)} onUnitAdded={addUnit} />
                             </div>
                             {factor > 1 && qty > 0 && (

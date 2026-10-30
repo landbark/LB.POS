@@ -8,7 +8,7 @@ import { ArrowLeft, Plus, Trash2, ListPlus, Save } from 'lucide-react'
 import toast from 'react-hot-toast'
 import type { Supplier } from '@/lib/types'
 import {
-  ProductPicker, MultiPicker, StockBadge, UnitSelect, newItem, inputClass,
+  ProductPicker, MultiPicker, StockBadge, UnitSelect, newItem, inputClass, qtyInputClass,
   findUnitChoice, factorOfRow, useUnitAdder,
   type ProductOption, type ItemRow,
 } from '../../pickers'
@@ -184,7 +184,7 @@ export default function EditPurchaseClient({
             <thead>
               <tr className="text-xs font-medium text-gray-500 uppercase">
                 <th className="text-left pb-2 pr-2 min-w-56">สินค้า</th>
-                <th className="text-left pb-2 pr-2 w-44">จำนวน / หน่วย</th>
+                <th className="text-left pb-2 pr-2 min-w-56 whitespace-nowrap">จำนวน / หน่วย</th>
                 <th className="text-left pb-2 pr-2 w-28">ทุน/หน่วยที่สั่ง</th>
                 <th className="text-right pb-2 w-24">รวม</th>
                 <th className="pb-2 w-8"></th>
@@ -207,7 +207,7 @@ export default function EditPurchaseClient({
                     </td>
                     <td className="pr-2 py-1.5 align-top">
                       <div className="flex items-center gap-1.5">
-                        <input type="number" min="1" value={it.quantity} onChange={(e) => setItem(i, 'quantity', e.target.value)} className={inputClass} placeholder="0" />
+                        <input type="number" min="1" value={it.quantity} onChange={(e) => setItem(i, 'quantity', e.target.value)} className={qtyInputClass} placeholder="0" />
                         <UnitSelect product={p} value={it.product_unit_id} onChange={(id) => setItem(i, 'product_unit_id', id)} onUnitAdded={addUnit} />
                       </div>
                       {factorOfRow(p, it.product_unit_id) > 1 && (parseInt(it.quantity) || 0) > 0 && (

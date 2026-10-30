@@ -103,7 +103,7 @@ export function UnitSelect({
           type="button"
           onClick={() => setAdding(true)}
           title={`เพิ่มหน่วยใหญ่ของ ${product.name} เช่น ลัง / กล่อง`}
-          className="rounded-lg border border-gray-300 p-1.5 text-gray-500 hover:bg-gray-50 hover:text-gray-700"
+          className="shrink-0 rounded-lg border border-gray-300 p-1.5 text-gray-500 hover:bg-gray-50 hover:text-gray-700"
         >
           <Plus size={14} />
         </button>
@@ -287,6 +287,9 @@ export function useUnitAdder(products: ProductOption[]) {
 }
 
 export const inputClass = 'w-full border border-gray-300 rounded-lg px-2.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500'
+
+/** ช่องจำนวนคู่กับ UnitSelect — ต้องกว้างคงที่ ไม่งั้นชื่อหน่วยยาวอย่าง "กระสอบ (20)" บีบจนพิมพ์เลขไม่เห็น */
+export const qtyInputClass = 'w-16 shrink-0 border border-gray-300 rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500'
 
 /** ความสูงสูงสุดของลิสต์ และระยะห่างจากช่องพิมพ์ */
 const MENU_MAX_H = 256
