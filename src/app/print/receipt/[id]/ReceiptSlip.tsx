@@ -38,6 +38,13 @@ export default function ReceiptSlip({ tx, store }: { tx: ReceiptTx; store: Store
           <span>วันที่</span>
           <span>{new Date(tx.created_at).toLocaleString('th-TH', { dateStyle: 'short', timeStyle: 'short' })}</span>
         </div>
+        {/* บิลที่คีย์ตามหลัง — บอกไว้บนใบเสร็จด้วย ไม่งั้นลูกค้าเทียบวันกับเวลาที่ได้รับใบไม่ตรง */}
+        {tx.recorded_at && (
+          <div className="flex justify-between">
+            <span>บันทึกย้อนหลัง</span>
+            <span>{new Date(tx.recorded_at).toLocaleString('th-TH', { dateStyle: 'short', timeStyle: 'short' })}</span>
+          </div>
+        )}
         {tx.profiles?.name && <div className="flex justify-between"><span>พนักงาน</span><span>{tx.profiles.name}</span></div>}
         {tx.customers && <div className="flex justify-between"><span>ลูกค้า</span><span>{tx.customers.name}</span></div>}
       </div>

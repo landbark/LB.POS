@@ -15,6 +15,11 @@ interface DeductOptions {
   /** ข้อความที่จะขึ้นในประวัติสต็อค เช่น เลขที่บิล หรือเหตุผลที่ตัดออก */
   reason: string
   createdBy: string | null
+  /**
+   * เวลาที่ของออกจากชั้นจริง — ใส่เฉพาะบิลที่คีย์ย้อนหลัง (ดู lib/backdate)
+   * ไม่ใส่ = ตอนนี้ · ของมันหายไปจากชั้นตอนขาย ประวัติสต็อคต้องตรงกับวันที่บนบิล
+   */
+  occurredAt?: string | null
 }
 
 /**
@@ -26,8 +31,11 @@ interface DeductOptions {
 export async function deductStock(
   supabase: SupabaseClient,
   cart: CartItem[],
-  { transactionId, type, reason, createdBy }: DeductOptions
+  { transactionId, type, reason, createdBy, occurredAt }: DeductOptions
 ): Promise<void> {
+  // ไม่ส่ง created_at เลยตอนขายปกติ — ปล่อยให้ DEFAULT NOW() ของตารางทำงานเหมือนเดิม
+  const stamp = occurredAt ? { created_at: occurredAt } : {}
+
   for (const item of cart) {
     // ขาย 2 กล่อง = ตัดสต็อค 2 × จำนวนต่อกล่อง — สต็อคเก็บเป็นหน่วยฐานกองเดียว
     let remaining = baseQty(item)
@@ -51,6 +59,7 @@ export async function deductStock(
         quantity: deduct,
         reason,
         created_by: createdBy,
+        ...stamp,
       })
       remaining -= deduct
     }
@@ -89,6 +98,7 @@ export async function deductStock(
           quantity: remaining,
           reason: `${reason} (เกินสต็อค)`,
           created_by: createdBy,
+          ...stamp,
         })
       }
     }

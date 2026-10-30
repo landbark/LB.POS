@@ -59,6 +59,12 @@ export default function ReceiptDocument({ tx, store }: { tx: ReceiptTx; store: S
           <p><span className="text-gray-500">เลขที่</span> <span className="font-mono">{tx.transaction_number}</span></p>
           <p><span className="text-gray-500">วันที่</span> {paidAt.toLocaleDateString('th-TH', { dateStyle: 'long' })}</p>
           <p><span className="text-gray-500">เวลา</span> {paidAt.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })} น.</p>
+          {tx.recorded_at && (
+            <p>
+              <span className="text-gray-500">บันทึกย้อนหลัง</span>{' '}
+              {new Date(tx.recorded_at).toLocaleString('th-TH', { dateStyle: 'short', timeStyle: 'short' })}
+            </p>
+          )}
           {tx.profiles?.name && <p><span className="text-gray-500">พนักงาน</span> {tx.profiles.name}</p>}
           {tx.sales_channel && isOnlineChannel(tx.sales_channel) && (
             <p>

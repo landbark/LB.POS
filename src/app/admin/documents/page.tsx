@@ -11,7 +11,7 @@ export default async function DocumentsPage() {
     supabase.from('profiles').select('role').eq('id', user?.id ?? '').maybeSingle(),
     supabase
       .from('transactions')
-      .select('id, transaction_number, created_at, total, status, customer_id, payment_method, payment_method_original, sales_channel, external_order_no, profiles!transactions_cashier_id_fkey(name), transaction_payments(method, amount)')
+      .select('id, transaction_number, created_at, recorded_at, backdate_reason, total, status, customer_id, payment_method, payment_method_original, sales_channel, external_order_no, profiles!transactions_cashier_id_fkey(name), transaction_payments(method, amount)')
       .order('created_at', { ascending: false })
       .limit(100),
     supabase

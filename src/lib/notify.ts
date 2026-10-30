@@ -696,6 +696,8 @@ export interface SaleInfo {
   channelLabel: string | null
   cashier: string | null
   customer: string | null
+  /** บิลที่คีย์ย้อนหลัง — วันเวลาที่ขายจริง (ดู lib/backdate) · null = บิลปกติ */
+  soldAt?: string | null
 }
 
 export function buildSaleMessage(s: SaleInfo): string {
@@ -706,6 +708,10 @@ export function buildSaleMessage(s: SaleInfo): string {
   ]
   if (s.customer) lines.push(`ลูกค้า: ${s.customer}`)
   if (s.cashier) lines.push(`พนักงาน: ${s.cashier}`)
+  // บิลย้อนหลังต้องบอกทั้งสองเวลา ไม่งั้นเจ้าของเห็นแจ้งเตือนตอนดึกแล้วคิดว่ามีคนขายของอยู่
+  if (s.soldAt) {
+    lines.push(`↩ คีย์ย้อนหลัง — ขายจริง ${s.soldAt} น.`)
+  }
   lines.push(`เวลา ${timeThai()} น.`)
   return lines.join('\n') + adminLink('/admin/documents')
 }

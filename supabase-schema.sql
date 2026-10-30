@@ -68,12 +68,15 @@ LANGUAGE sql AS $$
 $$;
 
 -- เลขที่รายการขาย RC + วันเดือนปีค.ศ. (เวลาไทย) + ลำดับ 4 หลัก รีเซ็ตรายวัน
-CREATE OR REPLACE FUNCTION public.next_transaction_number()
+--
+-- p_at = วันที่ขาย ไม่ใช่วันที่คีย์ — บิลที่คีย์ย้อนหลังต้องได้เลขของวันที่ขายจริง
+-- (ดู supabase-migration-backdate.sql) เรียกเปล่า ๆ ได้เหมือนเดิมเพราะมีค่าตั้งต้น
+CREATE OR REPLACE FUNCTION public.next_transaction_number(p_at timestamptz DEFAULT now())
 RETURNS text
 SECURITY DEFINER SET search_path = public
 LANGUAGE plpgsql AS $$
 DECLARE
-  prefix text := 'RC' || to_char(now() AT TIME ZONE 'Asia/Bangkok', 'DDMMYYYY');
+  prefix text := 'RC' || to_char(p_at AT TIME ZONE 'Asia/Bangkok', 'DDMMYYYY');
   seq int;
 BEGIN
   SELECT COALESCE(MAX(SUBSTRING(transaction_number FROM 11)::int), 0) + 1

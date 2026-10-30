@@ -3,7 +3,10 @@ import type { PaymentMethod, SalesChannel } from '@/lib/types'
 export interface ReceiptTx {
   id: string
   transaction_number: string
+  /** วันที่ขายจริง — บิลย้อนหลังคือวันที่เน็ตล่ม ใบเสร็จพิมพ์วันนี้ */
   created_at: string
+  /** เวลาที่คีย์เข้าระบบ · null = คีย์ตอนขาย (ดู lib/backdate) */
+  recorded_at?: string | null
   subtotal: number
   discount: number
   total: number

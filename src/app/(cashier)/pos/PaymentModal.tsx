@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { X, CheckCircle2, Printer, AlertTriangle } from 'lucide-react'
+import { X, CheckCircle2, Printer, AlertTriangle, History } from 'lucide-react'
 import toast from 'react-hot-toast'
 import type { CartItem, Customer, PointsConfig, PaymentMethod, SalesChannel, RoundingMode } from '@/lib/types'
 import { roundTotal } from '@/lib/rounding'
@@ -12,6 +12,8 @@ import { SALES_CHANNELS, isOnlineChannel } from '@/lib/salesChannel'
 import { POS_DISPLAY_CHANNEL, type PosDisplayMessage } from '@/lib/posDisplay'
 import { useReceiptPrint } from '@/lib/use-receipt-print'
 import { isVatApplicable } from '@/lib/vat'
+import { confirmDialog } from '@/lib/confirm'
+import { BACKDATE_MAX_DAYS, fallsBeforeShift, fmtThai, inputBounds, toInputValue, validateBackdate } from '@/lib/backdate'
 
 interface Props {
   cart: CartItem[]
@@ -29,6 +31,8 @@ interface Props {
   boothTripId: string | null
   /** มีกะเปิดอยู่ไหม — ไม่มีแล้วเก็บเงินหน้าร้านจะเตือนก่อนกดยืนยัน */
   shiftOpen: boolean
+  /** กะที่เปิดอยู่เปิดเมื่อไหร่ — คีย์บิลย้อนหลังไปก่อนเวลานี้ เงินสดจะไม่เข้ากะนี้ */
+  shiftOpenedAt: string | null
   onClose: () => void
   onSuccess: (info?: { writeoff?: boolean }) => void
 }
@@ -48,7 +52,7 @@ const SPLIT_METHODS = Object.keys(PAYMENT_LABELS) as SplitMethod[]
 const STORE_CHANNELS = SALES_CHANNELS.filter((c) => c.value !== 'booth')
 
 export default function PaymentModal({
-  cart, subtotal, totalDiscount, total, customer, pointsConfig, cashierId, promptpayId, roundingMode, visitIds, boothTripId, shiftOpen, onClose, onSuccess,
+  cart, subtotal, totalDiscount, total, customer, pointsConfig, cashierId, promptpayId, roundingMode, visitIds, boothTripId, shiftOpen, shiftOpenedAt, onClose, onSuccess,
 }: Props) {
   // writeoff = ตัดของออกจากสต็อกเฉยๆ ไม่ใช่การขาย (ของเสีย/ของแถม/ใช้ในร้าน) — ไม่สร้างใบเสร็จ
   const [mode, setMode] = useState<'sale' | 'writeoff'>('sale')
@@ -66,6 +70,10 @@ export default function PaymentModal({
   const [manualDiscountMode, setManualDiscountMode] = useState<'percent' | 'amount'>('percent')
   const [manualDiscountInput, setManualDiscountInput] = useState('')
   const [loading, setLoading] = useState(false)
+  // คีย์บิลย้อนหลัง: ขายไปแล้วตอนเน็ตล่ม มาคีย์ตามทีหลัง — บิลลงวันที่ขายจริง ไม่ใช่วันที่คีย์
+  const [backdating, setBackdating] = useState(false)
+  const [soldAtInput, setSoldAtInput] = useState('')
+  const [backdateReason, setBackdateReason] = useState('')
   // หลังบันทึกสำเร็จ เปลี่ยนเป็นหน้าเลือก เสร็จสิ้น/พิมพ์ใบเสร็จ แทนที่จะปิด modal ทันที
   const [completedTxId, setCompletedTxId] = useState<string | null>(null)
   const displayChannelRef = useRef<BroadcastChannel | null>(null)
@@ -152,6 +160,29 @@ export default function PaymentModal({
   const writeoff = mode === 'writeoff'
   const online = !writeoff && isOnlineChannel(channel)
 
+  // ย้อนหลังเฉพาะการขาย — "ตัดสต็อกออก" ไม่มีบิล ไม่มียอดเงิน ย้อนวันไปก็ไม่มีอะไรเปลี่ยน
+  const canBackdate = !writeoff
+  const backdateOn = backdating && canBackdate
+  const backdateCheck = backdateOn ? validateBackdate(soldAtInput) : null
+  // negligible = เลือกเวลาที่เท่ากับตอนนี้ ไม่ต้องทำอะไรเป็นพิเศษ (trigger ฝั่ง DB ก็ไม่ติดธงให้)
+  const soldAt = backdateCheck?.ok && !backdateCheck.negligible ? backdateCheck.at : null
+  const backdateError = backdateCheck && !backdateCheck.ok ? backdateCheck.error : null
+  const backdateBeforeShift = soldAt ? fallsBeforeShift(soldAt, shiftOpenedAt) : false
+  const bounds = inputBounds()
+
+  function toggleBackdate() {
+    if (backdateOn) {
+      setBackdating(false)
+      setSoldAtInput('')
+      setBackdateReason('')
+      return
+    }
+    setBackdating(true)
+    // ตั้งต้นเป็นตอนนี้ แล้วให้แคชเชียร์เลื่อนย้อนไปเอง — พิมพ์วันเดือนปีใหม่ทั้งชุดช้ากว่า
+    setSoldAtInput(toInputValue(new Date()))
+    setBackdateReason('เน็ตล่ม')
+  }
+
   // เงินทอนของบิลนี้ — null = ไม่ได้รับเงินสด หรือรับมายังไม่พอ ยังไม่ต้องโชว์
   const changeDue = writeoff || online
     ? null
@@ -222,6 +253,11 @@ export default function PaymentModal({
       return
     }
 
+    if (backdateError) {
+      toast.error(backdateError)
+      return
+    }
+
     if (splitMode && !online) {
       if (splitError) {
         toast.error(splitError)
@@ -232,8 +268,23 @@ export default function PaymentModal({
       return
     }
 
+    // ย้อนวันขายคือแก้ตัวเลขของวันที่ปิดไปแล้ว ต้องยืนยันอีกชั้นพร้อมโชว์วันเวลาที่จะลง
+    if (soldAt) {
+      const warn = backdateBeforeShift
+        ? '\n\nบิลนี้ขายก่อนเวลาที่เปิดกะ — เงินสดจะไม่ถูกนับในกะที่เปิดอยู่'
+        : ''
+      const ok = await confirmDialog({
+        title: 'คีย์บิลย้อนหลัง',
+        message: `บันทึกเป็นการขายเมื่อ ${fmtThai(soldAt)} น. · ยอด ฿${finalTotal.toFixed(2)}${warn}`,
+        confirmLabel: 'บันทึกย้อนหลัง',
+      })
+      if (!ok.confirmed) return
+    }
+
     setLoading(true)
     const supabase = createClient()
+    // เวลาที่ขายจริง — ส่งลง created_at ของบิล/รายการ/ประวัติสต็อค ให้ทุกอย่างลงวันเดียวกัน
+    const soldAtISO = soldAt ? soldAt.toISOString() : null
 
     const splitting = splitMode && !online && !writeoff && splitAllocation.length > 0
     // payment_method เก็บช่องทางที่ยอดเยอะสุดไว้ ให้หน้าที่ยังอ่านคอลัมน์เดิมไม่พัง (แค่เห็นไม่ละเอียด)
@@ -244,10 +295,14 @@ export default function PaymentModal({
     const changeOut = splitting ? splitChange : method === 'cash' ? Math.max(0, change) : null
 
     // เลขที่ RCxxyyzzzzbbbb จาก DB function — ถ้าชนกัน (ขายพร้อมกัน 2 เครื่อง) ลองใหม่อีกรอบ
+    // บิลย้อนหลังขอเลขของ "วันที่ขาย" ไม่ใช่วันนี้ ไม่งั้นเลขบนใบเสร็จจะขัดกับวันที่บนใบเสร็จเอง
     let tx: { id: string; transaction_number: string } | null = null
     let lastError: string | undefined
     for (let attempt = 0; attempt < 2 && !tx; attempt++) {
-      const { data: txNumber, error: numError } = await supabase.rpc('next_transaction_number')
+      const { data: txNumber, error: numError } = await supabase.rpc(
+        'next_transaction_number',
+        soldAtISO ? { p_at: soldAtISO } : {},
+      )
       if (numError || !txNumber) {
         toast.error('สร้างเลขที่รายการไม่สำเร็จ: ' + numError?.message)
         setLoading(false)
@@ -276,6 +331,8 @@ export default function PaymentModal({
           notes: manualDiscountAmount > 0
             ? `ส่วนลดเพิ่มเติม: ${manualDiscountMode === 'percent' ? `${manualDiscountValue}%` : `฿${manualDiscountValue.toFixed(2)}`} (฿${manualDiscountAmount.toFixed(2)})`
             : null,
+          // บิลย้อนหลัง: created_at = เวลาที่ขายจริง ส่วน recorded_at (เวลาที่คีย์) trigger เขียนให้เอง
+          ...(soldAtISO ? { created_at: soldAtISO, backdate_reason: backdateReason.trim() || null } : {}),
         })
         .select('id, transaction_number')
         .single()
@@ -297,7 +354,12 @@ export default function PaymentModal({
     // บันทึกว่าเงินเข้าช่องทางไหนบ้าง — เฉพาะบิลที่แยกจ่าย บิลจ่ายทางเดียวไม่ต้องมีแถวเลย
     if (splitting) {
       const { error: payError } = await supabase.from('transaction_payments').insert(
-        splitAllocation.map((l) => ({ transaction_id: tx.id, method: l.method, amount: l.amount })),
+        splitAllocation.map((l) => ({
+          transaction_id: tx.id,
+          method: l.method,
+          amount: l.amount,
+          ...(soldAtISO ? { created_at: soldAtISO } : {}),
+        })),
       )
       // บิลบันทึกไปแล้ว ยอดรวมถูกต้อง — ไม่ย้อนกลับ แต่ต้องบอกให้รู้ว่ารายงานจะเห็นเป็นช่องทางเดียว
       if (payError) {
@@ -321,6 +383,7 @@ export default function PaymentModal({
       subtotal: item.subtotal,
       // เก็บสถานะ VAT ณ วันที่ขาย (ยังไม่ได้คิดเงิน VAT — ไว้ใช้ตอนจดทะเบียนแล้ว)
       vat_applicable: isVatApplicable(item.product),
+      ...(soldAtISO ? { created_at: soldAtISO } : {}),
     }))
 
     await supabase.from('transaction_items').insert(itemInserts)
@@ -330,6 +393,7 @@ export default function PaymentModal({
       type: 'sale',
       reason: tx.transaction_number,
       createdBy: cashierId,
+      occurredAt: soldAtISO,
     })
 
     // ปิดเวชระเบียนคลินิกที่เพิ่งเก็บเงิน — ผูกกับบิลไว้เพื่อพิมพ์ใบเสร็จซ้ำ/คืนสถานะตอนยกเลิกบิล
@@ -484,6 +548,90 @@ export default function PaymentModal({
               ตัดสต็อกออก (ไม่ใช่การขาย)
             </button>
           </div>
+
+          {/* คีย์บิลย้อนหลัง — ขายไปแล้วตอนเน็ตล่ม/ไฟดับ แล้วมาคีย์ตามทีหลัง */}
+          {canBackdate && (
+            <div>
+              <button
+                onClick={toggleBackdate}
+                className={`flex w-full items-center justify-center gap-1.5 rounded-lg border-2 py-2 text-xs font-medium transition-colors ${
+                  backdateOn
+                    ? 'border-amber-400 bg-amber-50 text-amber-800'
+                    : 'border-gray-200 text-gray-600 hover:border-gray-300'
+                }`}
+              >
+                <History size={14} />
+                {backdateOn ? 'ยกเลิกการคีย์ย้อนหลัง' : 'คีย์ย้อนหลัง (ขายตอนเน็ตล่ม)'}
+              </button>
+
+              {backdateOn && (
+                <div className="mt-2 space-y-2 rounded-lg border-2 border-amber-300 bg-amber-50 p-3">
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-amber-900">ขายจริงเมื่อ</label>
+                    <input
+                      type="datetime-local"
+                      value={soldAtInput}
+                      onChange={(e) => setSoldAtInput(e.target.value)}
+                      min={bounds.min}
+                      max={bounds.max}
+                      className="w-full rounded-lg border border-amber-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+                    />
+                    <p className="mt-1 text-[11px] text-amber-700">ย้อนได้ไม่เกิน {BACKDATE_MAX_DAYS} วัน</p>
+                  </div>
+
+                  {backdateError ? (
+                    <p className="flex items-start gap-1.5 text-xs font-medium text-red-700">
+                      <AlertTriangle size={13} className="mt-0.5 shrink-0" />
+                      {backdateError}
+                    </p>
+                  ) : soldAt ? (
+                    <p className="text-xs text-amber-900">
+                      บิลจะลงวันที่ <b>{fmtThai(soldAt)} น.</b> — เลขที่บิล ใบเสร็จ รายงาน และประวัติสต็อก
+                      ใช้วันนั้นทั้งหมด แต่<b>แต้ม โปรโมชัน และสต็อกคิดจากข้อมูลตอนนี้</b>
+                    </p>
+                  ) : (
+                    <p className="text-xs text-amber-800">เวลาที่เลือกคือตอนนี้ — จะบันทึกเป็นบิลปกติ</p>
+                  )}
+
+                  {backdateBeforeShift && (
+                    <p className="flex items-start gap-1.5 rounded-lg bg-red-50 px-2.5 py-2 text-xs text-red-700">
+                      <AlertTriangle size={13} className="mt-0.5 shrink-0" />
+                      <span>
+                        <b>ขายก่อนเวลาที่เปิดกะ</b> — เงินสดบิลนี้จะไม่ถูกนับในกะที่เปิดอยู่
+                        ปิดกะแล้วเงินในเก๊ะจะเกินยอดที่ระบบคิดไว้เท่ายอดบิลนี้
+                      </span>
+                    </p>
+                  )}
+
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-amber-900">เหตุผล</label>
+                    <div className="mb-1.5 flex flex-wrap gap-1.5">
+                      {['เน็ตล่ม', 'ไฟดับ', 'ระบบล่ม', 'ลืมคีย์'].map((r) => (
+                        <button
+                          key={r}
+                          onClick={() => setBackdateReason(r)}
+                          className={`rounded-lg border px-2.5 py-1 text-xs ${
+                            backdateReason === r
+                              ? 'border-amber-500 bg-white text-amber-800'
+                              : 'border-amber-200 bg-white/60 text-amber-700'
+                          }`}
+                        >
+                          {r}
+                        </button>
+                      ))}
+                    </div>
+                    <input
+                      type="text"
+                      value={backdateReason}
+                      onChange={(e) => setBackdateReason(e.target.value)}
+                      placeholder="หรือพิมพ์เหตุผลเอง"
+                      className="w-full rounded-lg border border-amber-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* เตือนตอนเก็บเงินหน้าร้านโดยไม่มีกะเปิด — แถบบนหน้าขายถูกโมดอลนี้ทับอยู่ */}
           {!shiftOpen && !writeoff && channel === 'store' && (

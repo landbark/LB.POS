@@ -42,6 +42,8 @@ interface Props {
   booth: BoothContext | null
   /** มีกะเปิดอยู่ไหม — ไม่มีแล้วขายหน้าร้านจะขึ้นแถบเตือน (โหมดบูธไม่เกี่ยว เงินบูธแยกจากเก๊ะร้าน) */
   shiftOpen: boolean
+  /** กะที่เปิดอยู่เปิดเมื่อไหร่ — คีย์บิลย้อนหลังไปก่อนเวลานี้ เงินสดจะไม่เข้ากะนี้ (เตือนในโมดอลชำระเงิน) */
+  shiftOpenedAt: string | null
   /** ชื่อคนที่ล็อกอิน — เขียนลง notes ของกะตอนย้อนเวลาเปิดกะ */
   cashierName: string
   promotions: Promotion[]
@@ -64,7 +66,7 @@ const lineKey = (item: Pick<CartItem, 'product' | 'unit'>) => `${item.product.id
 // จำนวนสินค้าที่วาดบนกริด — วาดครบสองพันตัวทำให้ทุกตัวอักษรที่พิมพ์หน่วงเป็นสิบ ms
 const GRID_LIMIT = 60
 
-export default function POSClient({ products: allProducts, booth, shiftOpen, promotions, pointsConfig, cashierId, cashierName, promptpayId, roundingMode, clinicQueue }: Props) {
+export default function POSClient({ products: allProducts, booth, shiftOpen, shiftOpenedAt, promotions, pointsConfig, cashierId, cashierName, promptpayId, roundingMode, clinicQueue }: Props) {
   const router = useRouter()
   // เวชระเบียนที่กำลังเก็บเงินอยู่ — จ่ายเสร็จแล้วจะถูก mark เป็น paid พร้อมผูกเลขที่บิล
   // เจ้าของคนเดียวพาสัตว์มาหลายตัว (หรือตัวเดิมหลายใบ) รวมเก็บเงินทีเดียวได้ เลยเก็บเป็นรายการ
@@ -1200,6 +1202,7 @@ export default function POSClient({ products: allProducts, booth, shiftOpen, pro
           visitIds={activeVisitIds}
           boothTripId={boothMode && booth ? booth.id : null}
           shiftOpen={shiftOpen}
+          shiftOpenedAt={shiftOpenedAt}
           onClose={() => setShowPayment(false)}
           onSuccess={(info) => {
             // ตัดสต็อกออกก็ปิดใบเหมือนกัน — ของออกจากสต็อกไปแล้ว ไม่ต้องค้างในคิวให้เก็บเงินอีก

@@ -49,7 +49,7 @@ export default async function POSPage() {
       .eq('status', 'open')
       .maybeSingle(),
     // กะที่เปิดอยู่ — ขายหน้าร้านตอนไม่มีกะเปิด เงินสดบิลนั้นจะไม่เข้าสูตร "เงินที่ควรมี" ของกะไหนเลย
-    supabase.from('shifts').select('id').is('closed_at', null).maybeSingle(),
+    supabase.from('shifts').select('id, opened_at').is('closed_at', null).maybeSingle(),
     // ชื่อคนขาย — ใช้เขียน notes ของกะตอนเปิดกะจากหน้านี้
     supabase.from('profiles').select('name').eq('id', user?.id ?? '').maybeSingle(),
   ])
@@ -100,6 +100,7 @@ export default async function POSPage() {
       products={shelfProducts}
       booth={booth}
       shiftOpen={Boolean(openShift)}
+      shiftOpenedAt={openShift?.opened_at ?? null}
       promotions={(promotions ?? []).map((p) => toPromotion(p as never))}
       pointsConfig={activePointsConfig}
       cashierId={user?.id ?? ''}

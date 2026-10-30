@@ -3,6 +3,7 @@ import { getStaff } from '@/lib/require-staff'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { buildSaleMessage, notifyEvent } from '@/lib/notify'
 import { CHANNEL_LABEL, platformPaymentLabel } from '@/lib/salesChannel'
+import { fmtThai } from '@/lib/backdate'
 import type { PaymentMethod, SalesChannel } from '@/lib/types'
 
 const PAYMENT_LABEL: Record<PaymentMethod, string> = {
@@ -22,7 +23,7 @@ export async function POST(request: NextRequest) {
   const admin = createAdminClient()
   const { data: tx } = await admin
     .from('transactions')
-    .select('id, transaction_number, total, payment_method, sales_channel, status, customers(name), profiles!transactions_cashier_id_fkey(name), transaction_items(id)')
+    .select('id, transaction_number, total, payment_method, sales_channel, status, created_at, recorded_at, customers(name), profiles!transactions_cashier_id_fkey(name), transaction_items(id)')
     .eq('id', transactionId)
     .maybeSingle()
 
@@ -45,6 +46,7 @@ export async function POST(request: NextRequest) {
       channelLabel: channel === 'booth' ? CHANNEL_LABEL[channel] : null,
       cashier: cashier?.name ?? null,
       customer: customer?.name ?? null,
+      soldAt: tx.recorded_at ? fmtThai(tx.created_at) : null,
     }),
     { dedupeKey: `sale:${tx.id}` }
   )

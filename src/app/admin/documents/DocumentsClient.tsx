@@ -12,7 +12,11 @@ import { CHANNEL_LABEL, CHANNEL_BADGE, isOnlineChannel, platformPaymentLabel } f
 interface ReceiptRow {
   id: string
   transaction_number: string
+  /** วันที่ขายจริง (บิลย้อนหลัง = วันที่เน็ตล่ม ไม่ใช่วันที่คีย์) */
   created_at: string
+  /** เวลาที่คีย์เข้าระบบ · null = คีย์ตอนขาย (ดู lib/backdate) */
+  recorded_at: string | null
+  backdate_reason: string | null
   total: number
   status: 'completed' | 'cancelled'
   customer_id: string | null
@@ -121,7 +125,18 @@ export default function DocumentsClient({
               {filteredReceipts.map((r) => (
                 <tr key={r.id} className="hover:bg-gray-50">
                   <td className="px-4 py-3 text-sm font-mono text-gray-600">{r.transaction_number}</td>
-                  <td className="px-4 py-3 text-sm text-gray-600">{fmtDate(r.created_at)}</td>
+                  <td className="px-4 py-3 text-sm text-gray-600">
+                    {fmtDate(r.created_at)}
+                    {/* บิลที่คีย์ตามหลัง — วันที่ข้างบนคือวันที่ขาย ไม่ใช่วันที่บันทึก */}
+                    {r.recorded_at && (
+                      <span
+                        className="mt-0.5 block text-[11px] font-medium text-amber-700"
+                        title={`คีย์เข้าระบบ ${fmtDate(r.recorded_at)}${r.backdate_reason ? ` · ${r.backdate_reason}` : ''}`}
+                      >
+                        ↩ ย้อนหลัง{r.backdate_reason ? ` · ${r.backdate_reason}` : ''}
+                      </span>
+                    )}
+                  </td>
                   <td className="px-4 py-3 text-sm text-gray-700">{r.profiles?.name ?? '—'}</td>
                   <td className="px-4 py-3">
                     <span className={`inline-flex text-xs px-2 py-0.5 rounded-full font-medium ${CHANNEL_BADGE[r.sales_channel]}`}>
