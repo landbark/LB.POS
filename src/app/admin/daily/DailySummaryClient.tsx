@@ -3,8 +3,9 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { ChevronLeft, ChevronRight, Wallet, Trophy, AlertTriangle } from 'lucide-react'
-import type { SalesChannel } from '@/lib/types'
-import { CHANNEL_LABEL, CHANNEL_BADGE, isOwnMoney } from '@/lib/salesChannel'
+import {
+  CHANNEL_LABEL, CHANNEL_BADGE, CHANNEL_GROUP_COLOR, isOwnMoney, type ChannelGroupTotal,
+} from '@/lib/salesChannel'
 
 const money = (n: number) => n.toLocaleString('th-TH', { minimumFractionDigits: 2 })
 const fmtTime = (d: string) =>
@@ -42,7 +43,8 @@ interface Props {
   platformTotal: number
   platformCount: number
   byMethod: { method: string; amount: number; count: number }[]
-  byChannel: { channel: string; amount: number; count: number }[]
+  /** ยอดวันนั้นแยกเป็น หน้าร้าน / ออกบูธ / ออนไลน์ พร้อมรายช่องทางข้างใน */
+  byGroup: ChannelGroupTotal[]
   bestSellers: { name: string; unit: string; qty: number; revenue: number }[]
   shifts: ShiftSummary[]
 }
@@ -63,7 +65,7 @@ const thaiDateLabel = (date: string) =>
 
 export default function DailySummaryClient({
   date, today, netTotal, txCount, discountTotal, cancelledCount, cancelledTotal,
-  platformTotal, platformCount, byMethod, byChannel, bestSellers, shifts,
+  platformTotal, platformCount, byMethod, byGroup, bestSellers, shifts,
 }: Props) {
   const router = useRouter()
   const [showAll, setShowAll] = useState(false)
@@ -140,26 +142,48 @@ export default function DailySummaryClient({
       </div>
 
       <div className="bg-white rounded-xl p-5 shadow-sm border border-gray-100 mb-6">
-        <p className="text-sm text-gray-500 mb-2">
+        <p className="text-sm text-gray-500 mb-3">
           แยกตามช่องทางขาย <span className="text-xs text-gray-400">· ยอดตามราคาที่ลงบิล รวมทุกช่องทาง</span>
         </p>
-        <div className="space-y-1.5">
-          {byChannel.map(({ channel, amount, count }) => (
-            <div key={channel} className="flex justify-between items-center text-sm">
-              <span className="flex items-center gap-2">
-                <span className={`inline-flex text-xs px-2 py-0.5 rounded-full font-medium ${CHANNEL_BADGE[channel as SalesChannel] ?? 'bg-gray-100 text-gray-600'}`}>
-                  {CHANNEL_LABEL[channel as SalesChannel] ?? channel}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          {byGroup.map((g) => (
+            <div key={g.group} className="rounded-lg border border-gray-100 p-3">
+              <div className="flex items-center justify-between mb-1">
+                <span className={`inline-flex text-xs px-2 py-0.5 rounded-full font-medium ${CHANNEL_GROUP_COLOR[g.group].bg}`}>
+                  {g.label}
                 </span>
-                <span className="text-gray-400">({count} บิล)</span>
-                {!isOwnMoney(channel as SalesChannel) && (
-                  <span className="text-xs text-gray-400">ไม่รวมในยอดสุทธิ</span>
-                )}
-              </span>
-              <span className={`font-semibold tabular-nums ${isOwnMoney(channel as SalesChannel) ? 'text-gray-900' : 'text-gray-400'}`}>฿{money(amount)}</span>
+                <span className="text-xs text-gray-400">{g.count} บิล</span>
+              </div>
+              <p className={`text-xl font-bold tabular-nums ${g.amount > 0 ? CHANNEL_GROUP_COLOR[g.group].text : 'text-gray-300'}`}>
+                ฿{money(g.amount)}
+              </p>
+              {/* กางรายช่องทางเฉพาะกลุ่มที่มีหลายทาง (ออนไลน์ = เว็บร้าน + marketplace) */}
+              {g.byChannel.length > 1 && (
+                <div className="mt-2 space-y-1">
+                  {g.byChannel.map(({ channel, amount, count }) => (
+                    <div key={channel} className="flex justify-between items-center text-xs">
+                      <span className="flex items-center gap-1.5">
+                        <span className={`inline-flex px-1.5 py-0.5 rounded font-medium ${CHANNEL_BADGE[channel]}`}>
+                          {CHANNEL_LABEL[channel]}
+                        </span>
+                        <span className="text-gray-400">({count})</span>
+                      </span>
+                      <span className={`tabular-nums ${isOwnMoney(channel) ? 'text-gray-700' : 'text-gray-400'}`}>฿{money(amount)}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {g.amount > g.ownAmount && (
+                <p className="text-xs text-gray-400 mt-2">
+                  ในนี้เป็นยอดแพลตฟอร์ม ฿{money(g.amount - g.ownAmount)} — ไม่รวมในยอดสุทธิ
+                </p>
+              )}
             </div>
           ))}
-          {byChannel.length === 0 && <p className="text-sm text-gray-400">ยังไม่มีรายการขาย</p>}
         </div>
+        {byGroup.every((g) => g.count === 0) && (
+          <p className="text-sm text-gray-400 mt-3">ยังไม่มีรายการขาย</p>
+        )}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">

@@ -7,7 +7,7 @@ import { Receipt, ShoppingBag, Printer, Ban, Wallet } from 'lucide-react'
 import CancelReceiptModal from './CancelReceiptModal'
 import EditPaymentModal from './EditPaymentModal'
 import type { PaymentMethod, SalesChannel } from '@/lib/types'
-import { CHANNEL_LABEL, CHANNEL_BADGE, isOnlineChannel, platformPaymentLabel } from '@/lib/salesChannel'
+import { CHANNEL_LABEL, CHANNEL_BADGE, channelGroup, isPlatformChannel, platformPaymentLabel } from '@/lib/salesChannel'
 
 interface ReceiptRow {
   id: string
@@ -142,7 +142,7 @@ export default function DocumentsClient({
                     <span className={`inline-flex text-xs px-2 py-0.5 rounded-full font-medium ${CHANNEL_BADGE[r.sales_channel]}`}>
                       {CHANNEL_LABEL[r.sales_channel] ?? r.sales_channel}
                     </span>
-                    {isOnlineChannel(r.sales_channel) && r.external_order_no && (
+                    {channelGroup(r.sales_channel) === 'online' && r.external_order_no && (
                       <span className="block mt-0.5 text-[11px] font-mono text-gray-400">{r.external_order_no}</span>
                     )}
                   </td>
@@ -185,7 +185,7 @@ export default function DocumentsClient({
                         <Printer size={15} />
                       </Link>
                       {/* บิลแพลตฟอร์มไม่มีวิธีรับเงินให้แก้ — เงินเข้าทางแพลตฟอร์ม ไม่ได้รับที่ร้าน */}
-                      {canEdit && r.status !== 'cancelled' && !isOnlineChannel(r.sales_channel) && (
+                      {canEdit && r.status !== 'cancelled' && !isPlatformChannel(r.sales_channel) && (
                         <button
                           onClick={() => setEditingPayment(r)}
                           title="แก้วิธีรับเงิน"

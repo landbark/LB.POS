@@ -1,7 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { paymentLines, type PaidTransaction } from '@/lib/payments'
 import { thaiToday, thaiDayRange } from '@/lib/thaiDate'
-import { isOwnMoney } from '@/lib/salesChannel'
+import { isOwnMoney, totalsByChannelGroup } from '@/lib/salesChannel'
 import DailySummaryClient, { type ShiftSummary } from './DailySummaryClient'
 
 export default async function DailySummaryPage({
@@ -71,15 +71,8 @@ export default async function DailySummaryPage({
     .sort((a, b) => b.amount - a.amount)
 
   // ช่องทางขายยังโชว์ครบทุกช่องทาง รวมแพลตฟอร์มด้วย — ตรงนี้ดูว่าขายออกทางไหนบ้าง ไม่ใช่เงินเข้า
-  const byChannelMap: Record<string, { amount: number; count: number }> = {}
-  for (const t of completedTx ?? []) {
-    const c = (byChannelMap[t.sales_channel ?? 'store'] ??= { amount: 0, count: 0 })
-    c.amount += t.total
-    c.count += 1
-  }
-  const byChannel = Object.entries(byChannelMap)
-    .map(([channel, v]) => ({ channel, ...v }))
-    .sort((a, b) => b.amount - a.amount)
+  // จัดเป็นสามก้อน หน้าร้าน / ออกบูธ / ออนไลน์ แล้วกางรายช่องทางไว้ข้างใน
+  const byGroup = totalsByChannelGroup(completedTx ?? [])
 
   const productMap: Record<string, { name: string; unit: string; qty: number; revenue: number }> = {}
   for (const it of (items ?? []) as unknown as { base_quantity: number; subtotal: number; product_id: string; products: { name: string; unit: string } | null }[]) {
@@ -106,7 +99,7 @@ export default async function DailySummaryPage({
       platformTotal={platformTx.reduce((s, t) => s + t.total, 0)}
       platformCount={platformTx.length}
       byMethod={byMethod}
-      byChannel={byChannel}
+      byGroup={byGroup}
       bestSellers={bestSellers}
       shifts={(shifts as unknown as ShiftSummary[]) ?? []}
     />

@@ -76,6 +76,9 @@ export async function confirmOrder(order: Order, userId: string): Promise<{ erro
         discount: 0,
         total: goodsTotal,
         payment_method: 'transfer',
+        // เว็บร้านเป็นช่องทางของตัวเอง ไม่ใช่หน้าร้าน — หน้าสรุปแยกยอดกลุ่ม "ออนไลน์" จากคอลัมน์นี้
+        sales_channel: 'online',
+        external_order_no: order.order_number,
         points_earned: earnedPoints,
         points_used: 0,
         notes: `ออเดอร์ออนไลน์ ${order.order_number}${shippingNote}`,

@@ -1,5 +1,5 @@
 import type { StoreSettings } from '@/lib/types'
-import { CHANNEL_LABEL, isOnlineChannel, platformPaymentLabel } from '@/lib/salesChannel'
+import { CHANNEL_LABEL, channelGroup, platformPaymentLabel } from '@/lib/salesChannel'
 import { paymentLines } from '@/lib/payments'
 import { bahtText } from '@/lib/bahtText'
 import { PAYMENT_LABELS, money, type ReceiptTx } from './receipt-shared'
@@ -66,7 +66,7 @@ export default function ReceiptDocument({ tx, store }: { tx: ReceiptTx; store: S
             </p>
           )}
           {tx.profiles?.name && <p><span className="text-gray-500">พนักงาน</span> {tx.profiles.name}</p>}
-          {tx.sales_channel && isOnlineChannel(tx.sales_channel) && (
+          {tx.sales_channel && channelGroup(tx.sales_channel) === 'online' && (
             <p>
               <span className="text-gray-500">ช่องทาง</span> {CHANNEL_LABEL[tx.sales_channel]}
               {tx.external_order_no && <span className="font-mono"> · {tx.external_order_no}</span>}

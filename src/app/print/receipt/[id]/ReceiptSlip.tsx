@@ -1,5 +1,5 @@
 import type { StoreSettings } from '@/lib/types'
-import { CHANNEL_LABEL, isOnlineChannel, platformPaymentLabel } from '@/lib/salesChannel'
+import { CHANNEL_LABEL, channelGroup, platformPaymentLabel } from '@/lib/salesChannel'
 import { paymentLines } from '@/lib/payments'
 import { PAYMENT_LABELS, money, type ReceiptTx } from './receipt-shared'
 
@@ -101,7 +101,7 @@ export default function ReceiptSlip({ tx, store }: { tx: ReceiptTx; store: Store
             <span>{platformPaymentLabel(tx.sales_channel) ?? PAYMENT_LABELS[tx.payment_method]}</span>
           </div>
         )}
-        {tx.sales_channel && isOnlineChannel(tx.sales_channel) && (
+        {tx.sales_channel && channelGroup(tx.sales_channel) === 'online' && (
           <>
             <div className="flex justify-between"><span>ช่องทาง</span><span>{CHANNEL_LABEL[tx.sales_channel]}</span></div>
             {tx.external_order_no && (

@@ -8,7 +8,7 @@ import type { CartItem, Customer, PointsConfig, PaymentMethod, SalesChannel, Rou
 import { roundTotal } from '@/lib/rounding'
 import { deductStock } from '@/lib/deductStock'
 import { baseQty } from '@/lib/productUnits'
-import { SALES_CHANNELS, isOnlineChannel } from '@/lib/salesChannel'
+import { SALES_CHANNELS, isPlatformChannel } from '@/lib/salesChannel'
 import { POS_DISPLAY_CHANNEL, type PosDisplayMessage } from '@/lib/posDisplay'
 import { useReceiptPrint } from '@/lib/use-receipt-print'
 import { isVatApplicable } from '@/lib/vat'
@@ -48,8 +48,9 @@ const PAYMENT_LABELS: Record<SplitMethod, string> = {
 
 const SPLIT_METHODS = Object.keys(PAYMENT_LABELS) as SplitMethod[]
 
-// ช่องทางที่เลือกเองได้ตรงนี้ — 'booth' ไม่อยู่ในนี้ มาจากสวิตช์โหมดบูธในหน้าขายเท่านั้น
-const STORE_CHANNELS = SALES_CHANNELS.filter((c) => c.value !== 'booth')
+// ช่องทางที่เลือกเองได้ตรงนี้ — 'booth' มาจากสวิตช์โหมดบูธในหน้าขาย
+// และ 'online' (เว็บร้าน) มาจากการยืนยันออเดอร์ที่ /admin/orders เท่านั้น ไม่ให้กดเองที่นี่
+const STORE_CHANNELS = SALES_CHANNELS.filter((c) => c.value !== 'booth' && c.value !== 'online')
 
 export default function PaymentModal({
   cart, subtotal, totalDiscount, total, customer, pointsConfig, cashierId, promptpayId, roundingMode, visitIds, boothTripId, shiftOpen, shiftOpenedAt, onClose, onSuccess,
@@ -158,7 +159,7 @@ export default function PaymentModal({
   }
 
   const writeoff = mode === 'writeoff'
-  const online = !writeoff && isOnlineChannel(channel)
+  const platform = !writeoff && isPlatformChannel(channel)
 
   // ย้อนหลังเฉพาะการขาย — "ตัดสต็อกออก" ไม่มีบิล ไม่มียอดเงิน ย้อนวันไปก็ไม่มีอะไรเปลี่ยน
   const canBackdate = !writeoff
@@ -184,7 +185,7 @@ export default function PaymentModal({
   }
 
   // เงินทอนของบิลนี้ — null = ไม่ได้รับเงินสด หรือรับมายังไม่พอ ยังไม่ต้องโชว์
-  const changeDue = writeoff || online
+  const changeDue = writeoff || platform
     ? null
     : splitMode
       ? (splitError === null && splitLines.some((l) => l.method === 'cash') ? splitChange : null)
@@ -192,7 +193,7 @@ export default function PaymentModal({
         ? change
         : null
 
-  const earnedPoints = !online && pointsConfig && finalTotal > 0
+  const earnedPoints = !platform && pointsConfig && finalTotal > 0
     ? Math.floor(finalTotal / pointsConfig.spend_amount) * pointsConfig.earn_points
     : 0
 
@@ -258,7 +259,7 @@ export default function PaymentModal({
       return
     }
 
-    if (splitMode && !online) {
+    if (splitMode && !platform) {
       if (splitError) {
         toast.error(splitError)
         return
@@ -286,7 +287,7 @@ export default function PaymentModal({
     // เวลาที่ขายจริง — ส่งลง created_at ของบิล/รายการ/ประวัติสต็อค ให้ทุกอย่างลงวันเดียวกัน
     const soldAtISO = soldAt ? soldAt.toISOString() : null
 
-    const splitting = splitMode && !online && !writeoff && splitAllocation.length > 0
+    const splitting = splitMode && !platform && !writeoff && splitAllocation.length > 0
     // payment_method เก็บช่องทางที่ยอดเยอะสุดไว้ ให้หน้าที่ยังอ่านคอลัมน์เดิมไม่พัง (แค่เห็นไม่ละเอียด)
     const primaryMethod: PaymentMethod = splitting
       ? splitAllocation.reduce((best, l) => (l.amount > best.amount ? l : best)).method
@@ -321,7 +322,7 @@ export default function PaymentModal({
           rounding,
           payment_method: primaryMethod,
           sales_channel: channel,
-          external_order_no: isOnlineChannel(channel) ? (orderNo.trim() || null) : null,
+          external_order_no: isPlatformChannel(channel) ? (orderNo.trim() || null) : null,
           booth_trip_id: channel === 'booth' ? boothTripId : null,
           cash_received: cashIn && cashIn > 0 ? cashIn : null,
           change_given: cashIn && cashIn > 0 ? (changeOut ?? 0) : null,
@@ -458,7 +459,7 @@ export default function PaymentModal({
       <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
         <div className="bg-white rounded-2xl w-full max-w-sm shadow-2xl p-6 text-center">
           <CheckCircle2 size={48} className="mx-auto text-green-500 mb-3" />
-          <h2 className="text-lg font-bold text-gray-900 mb-1">{online ? 'บันทึกออเดอร์แล้ว' : 'ชำระเงินสำเร็จ'}</h2>
+          <h2 className="text-lg font-bold text-gray-900 mb-1">{platform ? 'บันทึกออเดอร์แล้ว' : 'ชำระเงินสำเร็จ'}</h2>
           <p className="text-2xl font-bold text-gray-900 mb-1">฿{finalTotal.toFixed(2)}</p>
           {method === 'cash' && change > 0 && (
             <p className="text-sm text-blue-600 mb-4">เงินทอน ฿{change.toFixed(2)}</p>
@@ -497,7 +498,7 @@ export default function PaymentModal({
       <div className="bg-white rounded-2xl w-full max-w-sm shadow-2xl max-h-[92dvh] flex flex-col overflow-hidden">
         <div className="shrink-0 bg-white rounded-t-2xl flex items-center justify-between px-4 py-3 border-b border-gray-100">
           <h2 className="font-bold text-gray-900">
-            {writeoff ? 'ตัดสต็อกออก' : online ? 'บันทึกออเดอร์ออนไลน์' : 'ชำระเงิน'}
+            {writeoff ? 'ตัดสต็อกออก' : platform ? 'บันทึกออเดอร์ออนไลน์' : 'ชำระเงิน'}
           </h2>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
             <X size={20} />
@@ -522,9 +523,9 @@ export default function PaymentModal({
                     setMode('sale')
                     setChannel(c.value)
                     // ขายออนไลน์เงินเข้าบัญชีร้านผ่านแพลตฟอร์ม ตั้งเป็นโอนให้เลย
-                    if (isOnlineChannel(c.value) && method === 'cash') setMethod('transfer')
+                    if (isPlatformChannel(c.value) && method === 'cash') setMethod('transfer')
                     // ออนไลน์ไม่ได้รับเงินที่ร้าน ไม่มีอะไรให้แยก
-                    if (isOnlineChannel(c.value) && splitMode) toggleSplit()
+                    if (isPlatformChannel(c.value) && splitMode) toggleSplit()
                   }}
                   className={`py-2 rounded-lg text-xs font-medium border-2 transition-colors ${
                     !writeoff && channel === c.value
@@ -649,7 +650,7 @@ export default function PaymentModal({
             </p>
           )}
 
-          {online && (
+          {platform && (
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">เลขที่ออเดอร์ (ถ้ามี)</label>
               <input
@@ -694,14 +695,14 @@ export default function PaymentModal({
             </div>
           )}
 
-          {online && (
+          {platform && (
             <p className="text-xs text-gray-500 bg-gray-50 rounded-lg px-3 py-2">
               ไม่ต้องรับเงินที่ร้าน — ยอดเงินไปเก็บจากแพลตฟอร์มโดยตรง ตรงนี้แค่บันทึกบิลและตัดสต็อก
             </p>
           )}
 
           {/* Payment Method */}
-          <div className={online || writeoff ? 'hidden' : ''}>
+          <div className={platform || writeoff ? 'hidden' : ''}>
             <div className="flex items-center justify-between mb-2">
               <p className="text-sm font-medium text-gray-700">วิธีชำระเงิน</p>
               <button
@@ -797,7 +798,7 @@ export default function PaymentModal({
           </div>
 
           {/* Manual discount */}
-          <div className={`bg-orange-50 rounded-lg p-3 ${online || writeoff ? 'hidden' : ''}`}>
+          <div className={`bg-orange-50 rounded-lg p-3 ${platform || writeoff ? 'hidden' : ''}`}>
             <div className="flex items-center justify-between mb-2">
               <p className="text-sm font-medium text-gray-900">ส่วนลดเพิ่มเติม</p>
               <div className="flex bg-white rounded-lg border border-gray-200 p-0.5">
@@ -836,7 +837,7 @@ export default function PaymentModal({
           </div>
 
           {/* Cash input */}
-          {method === 'cash' && !online && !writeoff && !splitMode && (
+          {method === 'cash' && !platform && !writeoff && !splitMode && (
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">รับเงิน</label>
               <input
@@ -865,7 +866,7 @@ export default function PaymentModal({
           )}
 
           {/* Points */}
-          {!online && !writeoff && customer && pointsConfig && customer.points > 0 && (
+          {!platform && !writeoff && customer && pointsConfig && customer.points > 0 && (
             <div className="bg-blue-50 rounded-lg p-3">
               <div className="flex justify-between items-center">
                 <div>
@@ -982,7 +983,7 @@ export default function PaymentModal({
               <span>ยอดที่ต้องชำระ</span>
               <span>฿{finalTotal.toFixed(2)}</span>
             </div>
-            {splitMode && !online && !writeoff && splitAllocation.map((l) => (
+            {splitMode && !platform && !writeoff && splitAllocation.map((l) => (
               <div key={l.method} className="flex justify-between text-sm text-gray-600">
                 <span>{PAYMENT_LABELS[l.method]}</span>
                 <span>฿{l.amount.toFixed(2)}</span>
@@ -1014,8 +1015,8 @@ export default function PaymentModal({
             disabled={
               loading ||
               (writeoff && !writeoffReason.trim()) ||
-              (!writeoff && !online && splitMode && splitError !== null) ||
-              (!writeoff && !online && !splitMode && method === 'cash' && (!cashReceived || parseFloat(cashReceived) < finalTotal))
+              (!writeoff && !platform && splitMode && splitError !== null) ||
+              (!writeoff && !platform && !splitMode && method === 'cash' && (!cashReceived || parseFloat(cashReceived) < finalTotal))
             }
             className={`w-full disabled:opacity-40 disabled:cursor-not-allowed text-white font-bold py-3 rounded-xl text-base transition-colors ${
               writeoff ? 'bg-red-600 hover:bg-red-700' : 'bg-green-600 hover:bg-green-700'
@@ -1024,7 +1025,7 @@ export default function PaymentModal({
             {loading
               ? 'กำลังบันทึก...'
               : writeoff ? '✓ ตัดสต็อกออก'
-                : online ? '✓ บันทึกและตัดสต็อก'
+                : platform ? '✓ บันทึกและตัดสต็อก'
                   : '✓ ยืนยันชำระเงิน'}
           </button>
         </div>

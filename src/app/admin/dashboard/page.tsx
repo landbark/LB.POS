@@ -6,6 +6,7 @@ import { dueVaccinations, graceDaysFrom } from '@/lib/vaccines'
 import { fetchAll } from '@/lib/supabase/fetch-all'
 import { toOne } from '@/lib/supabase/embed'
 import { APPOINTMENT_TYPE_LABELS, type AppointmentType } from '@/lib/types'
+import { CHANNEL_GROUP_COLOR, CHANNEL_LABEL, totalsByChannelGroup } from '@/lib/salesChannel'
 import StaffRequests, { type StaffRequest } from '../settings/StaffRequests'
 
 interface VaxRow {
@@ -38,7 +39,9 @@ export default async function DashboardPage() {
     // ยิงพร้อมกันทั้งหมด — เดิมรอ profile เสร็จก่อนค่อยเริ่มชุดนี้ เสียเวลาไป-กลับ DB ฟรีๆ หนึ่งรอบ
     supabase.from('profiles').select('role').eq('id', user?.id ?? '').maybeSingle(),
     supabase.from('products').select('*', { count: 'exact', head: true }).eq('active', true),
-    supabase.from('transactions').select('total').gte('created_at', dayStartUtc).lt('created_at', dayEndUtcISO),
+    supabase.from('transactions').select('total, sales_channel')
+      .neq('status', 'cancelled')
+      .gte('created_at', dayStartUtc).lt('created_at', dayEndUtcISO),
     supabase.from('product_lots')
       .select('quantity, products(name)')
       .eq('products.active', true)
@@ -94,14 +97,19 @@ export default async function DashboardPage() {
 
   const vaxDue = dueVaccinations(vaxRows, todayThai, 30, graceDaysFrom(notifySettings))
 
-  const todaySales = todayTx?.reduce((sum, t) => sum + t.total, 0) ?? 0
-  const todayCount = todayTx?.length ?? 0
+  // แยกยอดวันนี้เป็น หน้าร้าน / ออกบูธ / ออนไลน์ — การ์ดใบแรกนับเฉพาะเงินที่ร้านรับเอง
+  // (ยอด marketplace ไม่ใช่เงินที่ได้จริง โดนหักค่าธรรมเนียมก่อนโอนเข้าบัญชีเป็นรอบ)
+  const byGroup = totalsByChannelGroup(todayTx ?? [])
+  const todaySales = byGroup.reduce((sum, g) => sum + g.ownAmount, 0)
+  const todayCount = byGroup.reduce((sum, g) => sum + g.ownCount, 0)
+  const platformTotal = byGroup.reduce((sum, g) => sum + (g.amount - g.ownAmount), 0)
+  const platformCount = byGroup.reduce((sum, g) => sum + (g.count - g.ownCount), 0)
 
   const stats = [
     {
       label: 'ยอดขายวันนี้',
       value: `฿${todaySales.toLocaleString('th-TH', { minimumFractionDigits: 2 })}`,
-      sub: `${todayCount} รายการ`,
+      sub: `${todayCount} รายการ · ไม่รวมแพลตฟอร์ม`,
       icon: TrendingUp,
       color: 'text-green-600 bg-green-50',
     },
@@ -150,6 +158,49 @@ export default async function DashboardPage() {
           </div>
         ))}
       </div>
+
+      {/* ยอดขายวันนี้ แยกเป็นสามก้อน — เจ้าของร้านดูว่าวันนี้เงินมาจากทางไหน */}
+      <div className="flex items-baseline gap-2 mb-3">
+        <h2 className="text-sm font-semibold text-gray-700">ยอดขายวันนี้ แยกช่องทาง</h2>
+        <Link href="/admin/daily" className="text-xs text-blue-600 hover:text-blue-700 font-medium">ดูสรุปรายวัน →</Link>
+      </div>
+      <div className={`grid grid-cols-1 sm:grid-cols-3 gap-4 ${platformCount > 0 ? 'mb-3' : 'mb-8'}`}>
+        {byGroup.map((g) => (
+          <div key={g.group} className="bg-white rounded-xl p-5 shadow-sm border border-gray-100">
+            <div className="flex items-center justify-between mb-2">
+              <span className={`inline-flex text-xs px-2 py-0.5 rounded-full font-medium ${CHANNEL_GROUP_COLOR[g.group].bg}`}>
+                {g.label}
+              </span>
+              <span className="text-xs text-gray-400">{g.count} บิล</span>
+            </div>
+            <p className={`text-2xl font-bold ${g.amount > 0 ? CHANNEL_GROUP_COLOR[g.group].text : 'text-gray-300'}`}>
+              ฿{g.amount.toLocaleString('th-TH', { minimumFractionDigits: 2 })}
+            </p>
+            {/* กลุ่มออนไลน์มีหลายช่องทาง กางให้เห็นว่ามาจากเว็บร้านหรือแพลตฟอร์มไหน */}
+            {g.byChannel.length > 1 && (
+              <div className="mt-2 space-y-0.5">
+                {g.byChannel.map((c) => (
+                  <div key={c.channel} className="flex justify-between text-xs text-gray-500">
+                    <span>{CHANNEL_LABEL[c.channel]}</span>
+                    <span className="tabular-nums">฿{c.amount.toLocaleString('th-TH', { minimumFractionDigits: 2 })}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+            {g.amount > g.ownAmount && (
+              <p className="text-xs text-gray-400 mt-2">
+                มียอดแพลตฟอร์ม ฿{(g.amount - g.ownAmount).toLocaleString('th-TH', { minimumFractionDigits: 2 })} — ไม่รวมในยอดขายวันนี้
+              </p>
+            )}
+          </div>
+        ))}
+      </div>
+      {platformCount > 0 && (
+        <p className="text-xs text-gray-400 mb-8">
+          ยอดขายผ่านแพลตฟอร์มวันนี้ {platformCount} บิล (฿{platformTotal.toLocaleString('th-TH', { minimumFractionDigits: 2 })})
+          ไม่นับเป็นเงินที่ร้านรับเอง — เงินจริงดูที่สรุปการเงินของแพลตฟอร์ม
+        </p>
+      )}
 
       {/* ร้านค้าออนไลน์ — โชว์เฉพาะตอนมีออเดอร์ค้าง */}
       {(orderCounts.awaiting + orderCounts.packing + orderCounts.unpaid) > 0 && (

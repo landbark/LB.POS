@@ -2,7 +2,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { sumByMethod, type PaidTransaction } from '@/lib/payments'
 import { dueVaccinations, graceDaysFrom, groupDueByPet } from '@/lib/vaccines'
 import { fetchAll } from '@/lib/supabase/fetch-all'
-import { isOwnMoney, CHANNEL_LABEL } from '@/lib/salesChannel'
+import { isOwnMoney, CHANNEL_LABEL, totalsByChannelGroup, type ChannelGroup } from '@/lib/salesChannel'
 import type { SalesChannel } from '@/lib/types'
 
 const MAX_ITEMS_PER_SECTION = 15
@@ -633,6 +633,8 @@ export async function gatherDailySales(admin: ReturnType<typeof createAdminClien
     date,
     total,
     txCount: tx.length,
+    // แยก หน้าร้าน / ออกบูธ / ออนไลน์ ให้ตรงกับหน้า /admin/daily (นับทุกบิล รวมแพลตฟอร์ม)
+    byGroup: totalsByChannelGroup(completed ?? []),
     byMethod: Object.entries(byMethodMap).map(([method, amount]) => ({ method, amount })),
     platform: Object.entries(platformMap)
       .map(([channel, v]) => ({ channel, ...v }))
@@ -641,6 +643,12 @@ export async function gatherDailySales(admin: ReturnType<typeof createAdminClien
     cancelledTotal: cancelledOwn.reduce((s, t) => s + t.total, 0),
     bestSellers,
   }
+}
+
+const GROUP_EMOJI: Record<ChannelGroup, string> = {
+  store: '🏪',
+  booth: '🎪',
+  online: '🌐',
 }
 
 const PAYMENT_TH: Record<string, string> = {
@@ -667,6 +675,14 @@ export function buildDailySalesMessage(s: Awaited<ReturnType<typeof gatherDailyS
     lines.push(...s.byMethod
       .sort((a, b) => b.amount - a.amount)
       .map((m) => `   • ${PAYMENT_TH[m.method] ?? m.method} ${baht(m.amount)}`))
+  }
+
+  // ขายทางไหนมาบ้าง — เฉพาะกลุ่มที่มีบิลวันนั้น (วันไม่ออกบูธไม่ต้องมีบรรทัดศูนย์บาท)
+  const groupsWithSales = s.byGroup.filter((g) => g.count > 0)
+  if (groupsWithSales.length > 1) {
+    lines.push('', '🧭 แยกช่องทาง (ยอดตามราคาที่ลงบิล)')
+    lines.push(...groupsWithSales.map((g) =>
+      `   • ${GROUP_EMOJI[g.group]} ${g.label} ${baht(g.amount)} · ${g.count} บิล`))
   }
 
   // ยอดแพลตฟอร์มแยกไว้ล่างสุดของบล็อกยอด — POS ตัดสต็อกให้เท่านั้น เงินจริงดูสรุปของแพลตฟอร์ม

@@ -566,8 +566,13 @@ export interface Promotion {
 }
 
 export type PaymentMethod = 'cash' | 'transfer' | 'card' | 'qr'
-/** ช่องทางที่บิลนี้ขายออกไป — store = หน้าร้าน, booth = ยกของไปขายที่งาน, ที่เหลือคือ marketplace */
-export type SalesChannel = 'store' | 'shopee' | 'tiktok' | 'lazada' | 'booth'
+/**
+ * ช่องทางที่บิลนี้ขายออกไป — store = หน้าร้าน, booth = ยกของไปขายที่งาน,
+ * online = เว็บร้านของเราเอง (บิลที่สร้างตอนยืนยันออเดอร์), ที่เหลือคือ marketplace
+ *
+ * จัดกลุ่มเป็น หน้าร้าน / ออกบูธ / ออนไลน์ ไว้ใช้ในหน้าสรุป — ดู src/lib/salesChannel.ts
+ */
+export type SalesChannel = 'store' | 'shopee' | 'tiktok' | 'lazada' | 'booth' | 'online'
 /** ปัดเศษสตางค์ท้ายบิล — none = ไม่ปัด, normal = .50 ขึ้นไปปัดขึ้น, up/down = ปัดขึ้น/ลงเสมอ */
 export type RoundingMode = 'none' | 'normal' | 'up' | 'down'
 export type TransactionStatus = 'completed' | 'cancelled'

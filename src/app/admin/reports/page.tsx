@@ -3,7 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { fetchAll } from '@/lib/supabase/fetch-all'
 import { thaiDayRange, thaiMonthStart } from '@/lib/thaiDate'
 import { sumByMethod, type PaidTransaction } from '@/lib/payments'
-import { isOwnMoney, OWN_MONEY_CHANNELS } from '@/lib/salesChannel'
+import { isOwnMoney, OWN_MONEY_CHANNELS, CHANNEL_GROUP_COLOR, CHANNEL_LABEL, totalsByChannelGroup } from '@/lib/salesChannel'
 import { toOne } from '@/lib/supabase/embed'
 
 export default async function ReportsPage() {
@@ -15,11 +15,12 @@ export default async function ReportsPage() {
   const [todayTx, monthTx, { data: recentTx }, monthItems, { data: store }] = await Promise.all([
     fetchAll((from, to) =>
       supabase.from('transactions').select('total, sales_channel, payment_method, transaction_payments(method, amount)')
+        .neq('status', 'cancelled')
         .gte('created_at', today).lt('created_at', tomorrow).order('id').range(from, to)
     ),
     fetchAll((from, to) =>
-      supabase.from('transactions').select('total')
-        .in('sales_channel', OWN_MONEY_CHANNELS)
+      supabase.from('transactions').select('total, sales_channel')
+        .neq('status', 'cancelled')
         .gte('created_at', startOfMonth).order('id').range(from, to)
     ),
     supabase
@@ -55,7 +56,12 @@ export default async function ReportsPage() {
   const paymentBreakdown = sumByMethod(ownTodayTx as PaidTransaction[])
 
   const todayTotal = ownTodayTx.reduce((s, t) => s + t.total, 0)
-  const monthTotal = monthTx?.reduce((s, t) => s + t.total, 0) ?? 0
+
+  // แยกยอด หน้าร้าน / ออกบูธ / ออนไลน์ ทั้งของวันนี้และของเดือนนี้ ไว้เทียบกันในตารางเดียว
+  const todayGroups = totalsByChannelGroup(todayTx ?? [])
+  const monthGroups = totalsByChannelGroup(monthTx ?? [])
+  const monthTotal = monthGroups.reduce((s, g) => s + g.ownAmount, 0)
+  const monthOwnCount = monthGroups.reduce((s, g) => s + g.ownCount, 0)
 
   const PAYMENT_TH: Record<string, string> = {
     cash: 'เงินสด',
@@ -81,7 +87,7 @@ export default async function ReportsPage() {
           <p className="text-2xl font-bold text-gray-900 mt-1">
             ฿{monthTotal.toLocaleString('th-TH', { minimumFractionDigits: 2 })}
           </p>
-          <p className="text-xs text-gray-400 mt-0.5">{monthTx?.length ?? 0} รายการ</p>
+          <p className="text-xs text-gray-400 mt-0.5">{monthOwnCount} รายการ</p>
         </div>
         <div className="bg-white rounded-xl p-5 shadow-sm border border-gray-100">
           <p className="text-sm text-gray-500 mb-2">
@@ -99,6 +105,53 @@ export default async function ReportsPage() {
             )}
           </div>
         </div>
+      </div>
+
+      <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 mb-6">
+        <h2 className="font-semibold text-gray-900 mb-3">ยอดขายแยกช่องทาง</h2>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-xs text-gray-500 border-b border-gray-100">
+                <th className="text-left font-medium pb-2">ช่องทาง</th>
+                <th className="text-right font-medium pb-2">วันนี้</th>
+                <th className="text-right font-medium pb-2">เดือนนี้</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-50">
+              {monthGroups.map((g, i) => {
+                const todayGroup = todayGroups[i]
+                return (
+                  <tr key={g.group}>
+                    <td className="py-2">
+                      <span className={`inline-flex text-xs px-2 py-0.5 rounded-full font-medium ${CHANNEL_GROUP_COLOR[g.group].bg}`}>
+                        {g.label}
+                      </span>
+                      {/* กลุ่มออนไลน์มีหลายช่องทาง กางชื่อไว้ข้างๆ ให้รู้ว่าเดือนนี้ขายทางไหนบ้าง */}
+                      {g.byChannel.length > 1 && (
+                        <span className="text-xs text-gray-400 ml-2">
+                          {g.byChannel.map((c) => CHANNEL_LABEL[c.channel]).join(' · ')}
+                        </span>
+                      )}
+                    </td>
+                    <td className="py-2 text-right tabular-nums text-gray-700">
+                      ฿{todayGroup.amount.toLocaleString('th-TH', { minimumFractionDigits: 2 })}
+                      <span className="text-xs text-gray-400"> · {todayGroup.count} บิล</span>
+                    </td>
+                    <td className="py-2 text-right tabular-nums font-semibold text-gray-900">
+                      ฿{g.amount.toLocaleString('th-TH', { minimumFractionDigits: 2 })}
+                      <span className="text-xs text-gray-400 font-normal"> · {g.count} บิล</span>
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+        <p className="text-xs text-gray-400 mt-3">
+          ยอดตามราคาที่ลงบิล รวมทุกช่องทาง · ตัดบิลที่ยกเลิกออก · ยอดขายผ่าน Shopee/TikTok/Lazada
+          ไม่ถูกนับในการ์ด &quot;ยอดขายวันนี้/เดือนนี้&quot; ข้างบน เพราะเงินเข้าผ่านแพลตฟอร์ม
+        </p>
       </div>
 
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 mb-6">
