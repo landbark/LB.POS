@@ -17,7 +17,7 @@
 
   "vars": {
     // ตั้งเป็นโดเมนจริงเมื่อย้ายโดเมนมาแล้ว ระหว่างทดสอบชี้ไป workers.dev ได้
-    "POS_URL": "https://landbark-pos.workers.dev"
+    "POS_URL": "https://landbark-pos.arm-maniii.workers.dev"
   },
 
   "observability": {

@@ -57,9 +57,12 @@ Cron Trigger ของ Cloudflare ต้องการ handler ชื่อ `sc
 จะเพิ่มต้องเขียน entry ครอบทับของ adapter — พลาดแล้วคือทั้งร้านล่ม ไม่ใช่แค่แจ้งเตือนไม่เข้า
 `workers/cron/` จึงเป็น worker เปล่า ๆ ที่ยิง HTTPS เข้าเว็บเหมือนที่ Vercel Cron ทำอยู่ทุกวันนี้
 
+⛔ **ห้าม deploy worker ตัวนี้ก่อนลบ `crons` ออกจาก `vercel.json`** — สองฝั่งจะยิงงานเดียวกัน
+วันละสองรอบ `expireStaleOrders()` จะวิ่งซ้ำและแจ้งเตือนจะเข้าซ้ำ ให้ทำพร้อมกันตอนย้ายโดเมน
+
 ```sh
 cd workers/cron
-npx wrangler secret put CRON_SECRET     # ค่าเดียวกับฝั่งเว็บ
+npx wrangler secret put CRON_SECRET     # ค่าเดียวกับฝั่งเว็บ (อยู่ใน .env.cloudflare)
 npx wrangler deploy
 ```
 
@@ -71,8 +74,11 @@ npx wrangler deploy
 2. `npm run deploy`
 3. แก้ `NEXT_PUBLIC_SITE_URL` + `POS_URL` ของ worker ตารางเวลา
 4. ลบ `crons` ออกจาก `vercel.json` **ไม่งั้นงานจะถูกยิงซ้ำสองทาง**
-5. เช็ก callback URL ฝั่ง LINE Login และ Telegram webhook ว่าชี้โดเมนเดิมอยู่หรือเปล่า
-6. ปิดโปรเจกต์ฝั่ง Vercel เมื่อมั่นใจแล้ว
+5. สั่ง `setWebhook` ของ Telegram ใหม่ด้วย `TELEGRAM_WEBHOOK_SECRET` ชุดของ Cloudflare
+   (ดูคำสั่งใน `TELEGRAM-SETUP.md`) — บอทหนึ่งตัวผูก webhook ได้ที่เดียว ตราบใดที่ยังไม่สั่ง
+   Telegram จะยิงเข้า Vercel อยู่ และฝั่ง Cloudflare จะไม่เห็น /start เลย
+6. เช็ก callback URL ฝั่ง LINE Login ว่าชี้โดเมนไหน
+7. ปิดโปรเจกต์ฝั่ง Vercel เมื่อมั่นใจแล้ว
 
 ## ที่ตรวจไปแล้ว (30 ต.ค. 2026)
 
