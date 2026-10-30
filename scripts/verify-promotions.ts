@@ -10,7 +10,7 @@ import { createClient } from '@supabase/supabase-js'
 import { readFileSync } from 'node:fs'
 import { resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { bestPromotion, toPromotion, promotionInChannel, PROMOTION_SELECT, describePromotion } from '../src/lib/promotions'
+import { applyPromotions, bestPromotion, toPromotion, promotionInChannel, PROMOTION_SELECT, describePromotion } from '../src/lib/promotions'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 for (const line of readFileSync(resolve(ROOT, '.env.local'), 'utf8').split('\n')) {
@@ -46,6 +46,9 @@ async function main() {
 
   const { error: scopeColErr } = await supabase.from('promotions').select('channel_scope').limit(1)
   check('คอลัมน์ channel_scope ลงแล้ว (โปรแยกหน้าร้าน/ออกบูธ)', scopeColErr?.message ?? 'ok', 'ok')
+
+  const { error: mixColErr } = await supabase.from('promotions').select('combine_items').limit(1)
+  check('คอลัมน์ combine_items ลงแล้ว (โปรคละสินค้า)', mixColErr?.message ?? 'ok', 'ok')
 
   const { error: oldColErr } = await supabase.from('promotions').select('product_id').limit(1)
   check('คอลัมน์เก่า product_id ถูกลบแล้ว', oldColErr ? 'ลบแล้ว' : 'ยังอยู่', 'ลบแล้ว')
@@ -218,6 +221,60 @@ async function main() {
 
   const atStore = [boothPromo, storePromo, anywherePromo].filter((p) => promotionInChannel(p, false))
   check('หน้าร้านลดด้วยโปรหน้าร้าน 10% ของยอด 300 (ไม่ใช่โปรบูธ 15%)', bestPromotion(atStore, target, 3, 300)?.discount, 30)
+
+  // ── 5) คละสินค้า — นับหลายบรรทัดรวมกัน ──────────────────────
+  console.log('\n5) โปรคละสินค้า (นับรวมทั้งบิล)')
+
+  const { data: product2, error: prod2Err } = await supabase
+    .from('products')
+    .insert({
+      name: 'ทดสอบโปรโมชั่น 2 (ลบอัตโนมัติ)',
+      sku: `TEST-PROMO2-${Date.now()}`,
+      price: 50,
+      cost: 25,
+      unit: 'ชิ้น',
+      category_id: cat.id,
+      active: false,
+    })
+    .select('id, price, category_id')
+    .single()
+  if (prod2Err || !product2) throw new Error('สร้างสินค้าทดสอบตัวที่สองไม่สำเร็จ: ' + prod2Err?.message)
+  created.push({ table: 'products', id: product2.id })
+
+  const target2 = { id: product2.id, category_id: product2.category_id, price: product2.price }
+  // ตะกร้า: ของตัวแรก 2 ชิ้น (200 บาท) + ตัวที่สอง 1 ชิ้น (50 บาท) = 3 ชิ้น 250 บาท
+  const cart = [
+    { product: target, baseQuantity: 2, gross: 200 },
+    { product: target2, baseQuantity: 1, gross: 50 },
+  ]
+  const discounts = (promos: Awaited<ReturnType<typeof makePromo>>[]) =>
+    applyPromotions(promos, cart).map((pick) => pick?.discount ?? 0)
+
+  const mixQty = await makePromo({
+    type: 'percent_discount', discount_percent: 10, min_quantity: 3,
+    combine_items: true, apply_to: 'categories',
+  }, { categories: [cat.id] })
+  check('คละได้ ครบ 3 ชิ้น (2+1 คนละตัว) ลด 10% → เฉลี่ยตามยอด', discounts([mixQty]), [20, 5])
+
+  const sameNoMix = await makePromo({
+    type: 'percent_discount', discount_percent: 10, min_quantity: 3,
+    combine_items: false, apply_to: 'categories',
+  }, { categories: [cat.id] })
+  check('โปรเดียวกันแต่ไม่คละ → ไม่มีบรรทัดไหนครบ 3 ชิ้นเอง', discounts([sameNoMix]), [0, 0])
+
+  const mixAmount = await makePromo({
+    type: 'amount_discount', discount_amount: 100, amount_mode: 'per_line', min_amount: 250,
+    combine_items: true, apply_to: 'categories',
+  }, { categories: [cat.id] })
+  check('คละได้ ยอดรวมครบ 250 ลด 100 ครั้งเดียวทั้งกลุ่ม', discounts([mixAmount]), [80, 20])
+
+  const mixBuyGet = await makePromo({
+    type: 'buy_x_get_y', buy_quantity: 2, get_quantity: 1,
+    combine_items: true, apply_to: 'categories',
+  }, { categories: [cat.id] })
+  check('คละได้ ซื้อ 2 แถม 1 → แถมตัวที่ถูกที่สุดในกลุ่ม (50 บาท)', discounts([mixBuyGet]), [0, 50])
+
+  check('อ่านค่า combine_items กลับจาก DB ได้', mixQty.combine_items, true)
 
   // ขอบเขตอ่านกลับจาก DB ได้จริง (ไม่ใช่แค่ object ในหน่วยความจำ)
   const { data: reread } = await supabase.from('promotions').select(PROMOTION_SELECT).eq('id', perUnit.id).single()

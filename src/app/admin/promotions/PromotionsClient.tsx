@@ -32,6 +32,7 @@ const emptyForm = {
   min_amount: '',
   max_discount: '',
   apply_to: 'all' as ApplyTo,
+  combine_items: false,
   channel_scope: 'all' as ChannelScope,
   category_ids: [] as string[],
   product_ids: [] as string[],
@@ -99,6 +100,7 @@ export default function PromotionsClient({
       min_amount: p.min_amount?.toString() ?? '',
       max_discount: p.max_discount?.toString() ?? '',
       apply_to: p.apply_to,
+      combine_items: p.combine_items,
       channel_scope: p.channel_scope,
       category_ids: p.category_ids,
       product_ids: p.product_ids,
@@ -139,6 +141,16 @@ export default function PromotionsClient({
       toast.error('กรุณาเลือกสินค้าอย่างน้อย 1 รายการ')
       return
     }
+    // คละสินค้าแบบลด %/บาท โดยไม่มีเงื่อนไข = ผลลัพธ์เท่ากับไม่คละ แต่คนตั้งโปรจะเข้าใจว่าได้อย่างอื่น
+    if (
+      form.combine_items &&
+      form.type !== 'buy_x_get_y' &&
+      !intOrNull(form.min_quantity) &&
+      !numOrNull(form.min_amount)
+    ) {
+      toast.error('คละสินค้าต้องใส่เงื่อนไข "ซื้อครบ" อย่างน้อยหนึ่งช่อง')
+      return
+    }
     // วันสิ้นสุดเว้นว่างได้ = ไม่มีวันหมด เทียบวันก็เฉพาะตอนที่กรอกมา
     if (form.end_date && form.start_date > form.end_date) {
       toast.error('วันที่เริ่มต้องไม่เกินวันที่สิ้นสุด')
@@ -164,6 +176,7 @@ export default function PromotionsClient({
       min_amount: isBuyGet ? null : numOrNull(form.min_amount),
       max_discount: isPercent ? numOrNull(form.max_discount) : null,
       apply_to: form.apply_to,
+      combine_items: form.combine_items,
       channel_scope: form.channel_scope,
       start_date: form.start_date,
       end_date: form.end_date || null,
@@ -321,7 +334,9 @@ export default function PromotionsClient({
           <p className="sm:col-span-2 text-xs text-gray-500 -mt-1">
             {form.amount_mode === 'per_unit'
               ? 'ต่อชิ้น = ซื้อ 3 ชิ้นลด 3 เท่า (นับเป็นหน่วยย่อย ซื้อยกกล่องลดตามจำนวนชิ้นในกล่อง)'
-              : 'ต่อรายการ = ลดครั้งเดียวต่อสินค้าหนึ่งบรรทัดในบิล ไม่ว่าจะซื้อกี่ชิ้น'}
+              : form.combine_items
+                ? 'ต่อรายการ + คละสินค้า = ลดครั้งเดียวทั้งกลุ่มที่โปรคลุม (เฉลี่ยลงแต่ละบรรทัดให้เอง)'
+                : 'ต่อรายการ = ลดครั้งเดียวต่อสินค้าหนึ่งบรรทัดในบิล ไม่ว่าจะซื้อกี่ชิ้น'}
           </p>
         )}
 
@@ -352,7 +367,9 @@ export default function PromotionsClient({
               </div>
             </div>
             <p className="text-xs text-gray-500 mt-2">
-              นับต่อสินค้าหนึ่งบรรทัดในบิล (ชิ้นนับเป็นหน่วยย่อย — ซื้อยกกล่องนับซองในกล่องให้ด้วย)
+              {form.combine_items
+                ? 'นับรวมทุกบรรทัดที่โปรนี้คลุม — คละสินค้ากันได้ (ชิ้นนับเป็นหน่วยย่อย — ซื้อยกกล่องนับซองในกล่องให้ด้วย)'
+                : 'นับต่อสินค้าหนึ่งบรรทัดในบิล (ชิ้นนับเป็นหน่วยย่อย — ซื้อยกกล่องนับซองในกล่องให้ด้วย)'}
               {form.min_quantity && form.min_amount && ' · ใส่ทั้งสองช่อง = ต้องครบทั้งคู่'}
             </p>
           </div>
@@ -397,6 +414,30 @@ export default function PromotionsClient({
             />
           </div>
         )}
+
+        {/* คละสินค้า — เปลี่ยนจาก "นับทีละบรรทัด" เป็น "นับรวมทุกบรรทัดที่โปรคลุม" */}
+        <div className="sm:col-span-2 border border-gray-200 bg-white rounded-lg p-3">
+          <label className="flex items-start gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={form.combine_items}
+              onChange={(e) => set('combine_items', e.target.checked)}
+              className="mt-0.5"
+            />
+            <span className="text-sm text-gray-700">
+              คละสินค้าได้ — นับชิ้น/ยอดของทุกรายการในโปรนี้รวมกัน
+            </span>
+          </label>
+          <p className="text-xs text-gray-500 mt-2 ml-6">
+            {form.combine_items
+              ? form.type === 'buy_x_get_y'
+                ? `คนละตัวก็นับรวม — หยิบในกลุ่มนี้ครบ ${form.buy_quantity || 'X'} ชิ้นแถม ${form.get_quantity || 'Y'} ชิ้น (แถมตัวที่ถูกที่สุดในกลุ่ม)`
+                : form.apply_to === 'all'
+                  ? 'นับรวมทั้งบิล — ซื้ออะไรก็ได้ให้ครบเงื่อนไข แล้วลดจากยอดรวม'
+                  : 'คนละตัวก็นับรวม — หยิบสินค้าในโปรนี้คละกันให้ครบเงื่อนไข แล้วเฉลี่ยส่วนลดลงแต่ละบรรทัด'
+              : 'ไม่ติ๊ก = นับแยกทีละบรรทัด สินค้าตัวเดียวกันต้องซื้อครบเงื่อนไขเองถึงจะลด'}
+          </p>
+        </div>
 
         <div className="sm:col-span-2">
           <label className={labelClass}>ใช้ที่ไหน *</label>

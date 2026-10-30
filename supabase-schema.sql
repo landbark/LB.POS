@@ -486,6 +486,8 @@ CREATE TABLE promotions (
   -- เพดานส่วนลดต่อรายการ กันลด % บานปลายกับของแพง
   max_discount NUMERIC(12,2) CHECK (max_discount > 0),
   apply_to TEXT NOT NULL CHECK (apply_to IN ('all', 'categories', 'products')),
+  -- คละสินค้า — true = นับชิ้น/ยอดของทุกบรรทัดที่โปรคลุมรวมกัน แล้วเฉลี่ยส่วนลดกลับลงแต่ละบรรทัด
+  combine_items BOOLEAN NOT NULL DEFAULT false,
   -- ใช้ที่ไหน — booth = เด้งเฉพาะตอนเปิดโหมดบูธในหน้าขาย, store = ไม่เด้งที่บูธ
   channel_scope TEXT NOT NULL DEFAULT 'all' CHECK (channel_scope IN ('all', 'store', 'booth')),
   start_date DATE NOT NULL,

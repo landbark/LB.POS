@@ -6,7 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 import { Search, X, Plus, Minus, ShoppingCart, User, MonitorPlay, Stethoscope, ScanBarcode, Store, AlertTriangle } from 'lucide-react'
 import toast from 'react-hot-toast'
 import type { Product, ProductUnit, CartItem, Promotion, PointsConfig, Customer, ClinicQueueVisit, RoundingMode } from '@/lib/types'
-import { bestPromotion, promotionInChannel } from '@/lib/promotions'
+import { applyPromotions, promotionInChannel } from '@/lib/promotions'
 import { baseQty, factorOf, findByBarcode, posUnitChoices, unitNameOf, unitPriceOf } from '@/lib/productUnits'
 import { POS_DISPLAY_CHANNEL, type PosDisplayMessage } from '@/lib/posDisplay'
 import PaymentModal from './PaymentModal'
@@ -237,43 +237,51 @@ export default function POSClient({ products: allProducts, booth, shiftOpen, pro
   /**
    * โปรโมชั่นคิดเป็นหน่วยฐานเสมอ — "ซื้อ 10 แถม 1" ต้องนับซองในกล่องด้วย
    * ไม่งั้นซื้อ 1 กล่อง (12 ซอง) จะไม่เข้าเงื่อนไข
+   *
+   * คิดทีเดียวทั้งตะกร้า ไม่ใช่ทีละบรรทัด — โปร "คละสินค้า" นับหลายบรรทัดรวมกัน
+   * หยิบของชิ้นที่สองลงตะกร้าแล้วบรรทัดแรกต้องลดตามด้วย
    * เข้าหลายโปรพร้อมกัน = เอาอันที่ลดเยอะสุด (ดูเหตุผลใน lib/promotions)
    */
-  function applyPromotion(product: Product, baseQuantity: number, gross: number) {
-    return bestPromotion(
+  function withPromotions(items: CartItem[]): CartItem[] {
+    const picks = applyPromotions(
       activePromotions,
-      { id: product.id, category_id: product.category_id, price: product.price },
-      baseQuantity,
-      gross,
+      items.map((item) => ({
+        product: { id: item.product.id, category_id: item.product.category_id, price: item.product.price },
+        baseQuantity: item.quantity * factorOf(item.unit),
+        gross: item.unit_price * item.quantity,
+      })),
     )
+
+    return items.map((item, i) => {
+      const gross = item.unit_price * item.quantity
+      const promo = picks[i]
+      // ลดเองทับโปรได้ แต่รวมกันแล้วห้ามเกินราคาของบรรทัด
+      const discount = Math.min(gross, (promo?.discount ?? 0) + item.manual_discount)
+      return {
+        ...item,
+        discount,
+        subtotal: gross - discount,
+        // ไว้ขึ้นชื่อโปรในตะกร้า แคชเชียร์ตอบลูกค้าได้ว่าลดมาจากโปรอะไร
+        promo_name: promo?.promo.name ?? null,
+        promo_discount: promo?.discount ?? 0,
+      }
+    })
   }
 
-  // ยอดของบรรทัดหนึ่งในตะกร้า — คิดส่วนลดที่ลดเองใหม่จาก mode/value ทุกครั้ง
+  /** แก้ตะกร้าต้องผ่านทางนี้เสมอ — คิดโปรใหม่ทั้งใบ ไม่ใช่แค่บรรทัดที่เพิ่งแก้ */
+  const commitCart = (items: CartItem[]) => setCart(withPromotions(items))
+
+  // ส่วนลดที่แคชเชียร์ใส่เอง + ยอดของบรรทัด — คิดใหม่จาก mode/value ทุกครั้ง
   // (ถ้าเก็บแต่ยอดบาทไว้ พอแก้จำนวนแล้ว % จะค้างอยู่ที่จำนวนเดิม)
-  function lineTotals(
-    product: Product,
-    unitPrice: number,
-    qty: number,
-    mode: 'amount' | 'percent',
-    value: number,
-    unit: ProductUnit | null = null,
-  ) {
+  // โปรโมชั่นไม่คิดที่นี่ ปล่อยให้ commitCart คิดทั้งตะกร้าทีหลัง
+  function lineTotals(unitPrice: number, qty: number, mode: 'amount' | 'percent', value: number) {
     const gross = unitPrice * qty
     const manual = !value || value <= 0
       ? 0
       : mode === 'percent'
         ? (gross * Math.min(value, 100)) / 100
         : Math.min(gross, value)
-    const promo = applyPromotion(product, qty * factorOf(unit), gross)
-    const discount = Math.min(gross, (promo?.discount ?? 0) + manual)
-    return {
-      manual_discount: manual,
-      discount,
-      subtotal: gross - discount,
-      // ไว้ขึ้นชื่อโปรในตะกร้า แคชเชียร์ตอบลูกค้าได้ว่าลดมาจากโปรอะไร
-      promo_name: promo?.promo.name ?? null,
-      promo_discount: promo?.discount ?? 0,
-    }
+    return { manual_discount: manual, discount: manual, subtotal: gross - manual }
   }
 
   /** เตือนตอนจำนวนในตะกร้าเกินสต็อค — เทียบเป็นหน่วยฐานเสมอ (1 กล่อง = factor ซอง) */
@@ -296,14 +304,14 @@ export default function POSClient({ products: allProducts, booth, shiftOpen, pro
       newCart[existing] = {
         ...item,
         quantity: newQty,
-        ...lineTotals(product, item.unit_price, newQty, item.discount_mode, item.discount_value, unit),
+        ...lineTotals(item.unit_price, newQty, item.discount_mode, item.discount_value),
       }
-      setCart(newCart)
+      commitCart(newCart)
     } else {
       const lot_id = getBestLot(product)
       const price = unitPriceOf(product, unit)
       warnOverStock(product, unit, 1)
-      setCart([
+      commitCart([
         ...cart,
         {
           product,
@@ -312,7 +320,7 @@ export default function POSClient({ products: allProducts, booth, shiftOpen, pro
           unit_price: price,
           discount_mode: 'amount',
           discount_value: 0,
-          ...lineTotals(product, price, 1, 'amount', 0, unit),
+          ...lineTotals(price, 1, 'amount', 0),
           lot_id,
         },
       ])
@@ -373,11 +381,11 @@ export default function POSClient({ products: allProducts, booth, shiftOpen, pro
           next.push(add)
         }
       }
-      setCart(next)
+      commitCart(next)
       setActiveVisits([...activeVisits, visit])
       toast.success(`รวมใบ ${visit.visit_number} (${visit.pet_name || 'ไม่ระบุสัตว์'}) เข้าบิลแล้ว`)
     } else {
-      setCart(incoming)
+      commitCart(incoming)
       setCustomer(visit.customer)
       setCustomerPhone(visit.customer?.phone ?? '')
       setShowAddCustomer(false)
@@ -398,10 +406,10 @@ export default function POSClient({ products: allProducts, booth, shiftOpen, pro
       newCart[index] = {
         ...item,
         quantity: newQty,
-        ...lineTotals(item.product, item.unit_price, newQty, item.discount_mode, item.discount_value, item.unit),
+        ...lineTotals(item.unit_price, newQty, item.discount_mode, item.discount_value),
       }
     }
-    setCart(newCart)
+    commitCart(newCart)
   }
 
   // พิมพ์จำนวนตรงๆ ในตะกร้า — เกินสต็อคได้ แค่เตือน ห้ามต่ำกว่า 1
@@ -415,9 +423,9 @@ export default function POSClient({ products: allProducts, booth, shiftOpen, pro
     newCart[index] = {
       ...item,
       unit_price: price,
-      ...lineTotals(item.product, price, item.quantity, item.discount_mode, item.discount_value, item.unit),
+      ...lineTotals(price, item.quantity, item.discount_mode, item.discount_value),
     }
-    setCart(newCart)
+    commitCart(newCart)
   }
 
   function setQty(index: number, raw: string) {
@@ -431,9 +439,9 @@ export default function POSClient({ products: allProducts, booth, shiftOpen, pro
     newCart[index] = {
       ...item,
       quantity: n,
-      ...lineTotals(item.product, item.unit_price, n, item.discount_mode, item.discount_value, item.unit),
+      ...lineTotals(item.unit_price, n, item.discount_mode, item.discount_value),
     }
-    setCart(newCart)
+    commitCart(newCart)
   }
 
   async function searchCustomer() {
@@ -580,9 +588,9 @@ export default function POSClient({ products: allProducts, booth, shiftOpen, pro
       ...item,
       discount_mode: mode,
       discount_value: value,
-      ...lineTotals(item.product, item.unit_price, item.quantity, mode, value, item.unit),
+      ...lineTotals(item.unit_price, item.quantity, mode, value),
     }
-    setCart(newCart)
+    commitCart(newCart)
   }
 
   // ใช้ unit_price ไม่ใช่ราคาสินค้าปัจจุบัน — บิลจากคลินิกใช้ราคาที่หมอบันทึกไว้

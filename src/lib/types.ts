@@ -548,6 +548,11 @@ export interface Promotion {
   /** เพดานส่วนลดต่อรายการ (บาท) — null = ไม่จำกัด */
   max_discount: number | null
   apply_to: ApplyTo
+  /**
+   * คละสินค้าได้ไหม — false = นับแยกทีละบรรทัดในบิล (เดิม),
+   * true = นับชิ้นและยอดของทุกบรรทัดที่โปรนี้คลุมรวมกัน แล้วเฉลี่ยส่วนลดกลับลงแต่ละบรรทัด
+   */
+  combine_items: boolean
   /** สินค้า/หมวดที่โปรนี้คลุม — มาจากตารางเชื่อม promotion_products / promotion_categories */
   product_ids: string[]
   category_ids: string[]
