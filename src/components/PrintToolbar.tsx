@@ -2,6 +2,8 @@
 
 interface Props {
   sizes: { value: string; label: string }[]
+  /** ตัวเลือกเฉพาะของหน้านั้น (เช่น ติ๊กโชว์รายชื่อสินค้าบนป้ายโปร) — วางต่อจากปุ่มขนาดกระดาษ */
+  extra?: React.ReactNode
   size: string
   onSizeChange: (value: string) => void
   backHref: string
@@ -10,7 +12,7 @@ interface Props {
 }
 
 // แถบเครื่องมือด้านบนหน้าพิมพ์เอกสาร (ใบเสร็จ/ใบสั่งซื้อ) — ซ่อนตอนพิมพ์จริงด้วย .no-print
-export default function PrintToolbar({ sizes, size, onSizeChange, backHref, variant = 'close' }: Props) {
+export default function PrintToolbar({ sizes, size, onSizeChange, backHref, variant = 'close', extra }: Props) {
   // ลิงก์พิมพ์เอกสารของพนักงานเปิดเป็นแท็บใหม่ทั้งหมด — ปิดแท็บจึงตรงกว่าพากลับไปหน้าอื่น
   // เบราว์เซอร์บางตัวปิดแท็บที่ผู้ใช้เปิดเองไม่ได้ ถ้าปิดไม่สำเร็จค่อยย้อนกลับให้แทน
   function closeOrBack() {
@@ -47,6 +49,7 @@ export default function PrintToolbar({ sizes, size, onSizeChange, backHref, vari
             {s.label}
           </button>
         ))}
+        {extra}
       </div>
       <button
         onClick={() => window.print()}

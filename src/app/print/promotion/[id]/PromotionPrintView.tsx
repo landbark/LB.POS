@@ -8,10 +8,13 @@ import { describeCondition } from '@/lib/promotions'
 interface ProductRef { id: string; name: string; unit: string; price: number }
 interface CategoryRef { id: string; name: string }
 
-// ป้ายโปรโมชั่นพิมพ์แนวนอนอย่างเดียว (A5 = ป้ายตั้งโต๊ะ/ติดชั้น, A4 = ป้ายใหญ่หน้าร้าน)
-type PaperSize = 'a5' | 'a4'
+// ป้ายโปรโมชั่นพิมพ์แนวนอนอย่างเดียว
+// label = สติกเกอร์ 80×50 มม. เท่าฉลากยา (เครื่องพิมพ์ฉลากตัวเดิม) ไว้แปะที่ชั้นวาง/ตัวสินค้า
+// a5 = ป้ายตั้งโต๊ะ, a4 = ป้ายใหญ่หน้าร้าน
+type PaperSize = 'label' | 'a5' | 'a4'
 
 const PAPER_CONFIG: Record<PaperSize, { page: string; margin: string; width: string; height: string; scale: number }> = {
+  label: { page: '80mm 50mm', margin: '0', width: '80mm', height: '50mm', scale: 0.6 },
   a5: { page: 'A5 landscape', margin: '7mm', width: '196mm', height: '134mm', scale: 1 },
   a4: { page: 'A4 landscape', margin: '10mm', width: '277mm', height: '190mm', scale: 1.42 },
 }
@@ -36,14 +39,23 @@ export default function PromotionPrintView({
   store: StoreSettings | null
 }) {
   const [size, setSize] = useState<PaperSize>('a5')
+  // ลิสต์สินค้ายาวๆ บนป้ายไม่มีใครอ่าน — ปกติบอกแค่จำนวน กดติ๊กเองได้ถ้าอยากได้ลิสต์เต็ม
+  const [showItems, setShowItems] = useState(false)
   const cfg = PAPER_CONFIG[size]
   const em = (n: number) => `${(n * cfg.scale).toFixed(2)}rem`
+  // สติกเกอร์เล็กเท่าฉลากยา — ตัดหัวร้านกับลิสต์สินค้าออก เหลือที่ให้ตัวเลขส่วนลด
+  const compact = size === 'label'
 
+  const names = (p.apply_to === 'categories' ? categories : products).map((x) => x.name)
+  // เกิน 3 ชื่อขึ้นไปบอกแค่จำนวน — ป้ายที่ยัดชื่อสินค้าเป็นสิบบรรทัดอ่านไม่ออกจากระยะไกล
+  const listed = names.length > 0 && names.length <= 3
   const scope = p.apply_to === 'all'
     ? 'ทุกสินค้าในร้าน'
-    : p.apply_to === 'categories'
-      ? `เฉพาะหมวด ${categories.map((c) => c.name).join(' · ') || '—'}`
-      : `เฉพาะ ${products.map((pr) => pr.name).join(' · ') || '—'}`
+    : names.length === 0
+      ? '—'
+      : p.apply_to === 'categories'
+        ? listed ? `เฉพาะหมวด ${names.join(' · ')}` : `เฉพาะ ${names.length} หมวดที่ร่วมรายการ`
+        : listed ? `เฉพาะ ${names.join(' · ')}` : `เฉพาะสินค้าที่ร่วมรายการ ${names.length} รายการ`
 
   // พาดหัวต้องอ่านออกจากระยะไกล — ตัวเลขส่วนลดคือพระเอก
   const headline = p.type === 'percent_discount'
@@ -93,9 +105,18 @@ export default function PromotionPrintView({
         size={size}
         onSizeChange={(v) => setSize(v as PaperSize)}
         sizes={[
+          { value: 'label', label: 'ฉลาก 80×50 มม.' },
           { value: 'a5', label: 'A5 แนวนอน' },
           { value: 'a4', label: 'A4 แนวนอน' },
         ]}
+        extra={
+          !listed && names.length > 0 && !compact ? (
+            <label className="flex items-center gap-1.5 text-sm text-gray-600 ml-1">
+              <input type="checkbox" checked={showItems} onChange={(e) => setShowItems(e.target.checked)} />
+              โชว์รายชื่อ{p.apply_to === 'categories' ? 'หมวด' : 'สินค้า'} ({names.length})
+            </label>
+          ) : null
+        }
       />
 
       <div className="flex justify-center py-6 print:py-0">
@@ -110,8 +131,11 @@ export default function PromotionPrintView({
             padding: `${(1.1 * cfg.scale).toFixed(2)}rem ${(1.6 * cfg.scale).toFixed(2)}rem`,
           }}
         >
-          {/* หัวร้าน */}
-          <div className="flex items-center justify-center gap-2 shrink-0" style={{ color: BROWN }}>
+          {/* หัวร้าน — สติกเกอร์เล็กไม่ต้องมี ของแปะอยู่ในร้านอยู่แล้ว */}
+          <div
+            className="flex items-center justify-center gap-2 shrink-0"
+            style={{ color: BROWN, display: compact ? 'none' : undefined }}
+          >
             {store?.logo_url && (
               // eslint-disable-next-line @next/next/no-img-element
               <img src={store.logo_url} alt="" style={{ height: em(1.6), width: em(1.6), objectFit: 'contain' }} />
@@ -120,7 +144,11 @@ export default function PromotionPrintView({
           </div>
 
           {/* เนื้อป้าย — ตัวเลขส่วนลดต้องเด่นที่สุด อ่านออกจากระยะไกล */}
-          <div className="flex-1 flex flex-col items-center justify-center" style={{ gap: em(0.45) }}>
+          <div
+            className="flex-1 flex flex-col items-center justify-center"
+            // กันลิสต์ยาวดันเนื้อหาทะลุกรอบป้ายออกไป — ป้ายสูงคงที่ตามขนาดกระดาษ
+            style={{ gap: em(0.45), minHeight: 0, overflow: 'hidden' }}
+          >
             {/* line-height เผื่อไว้เสมอ — ตัวไทยมีสระบน/วรรณยุกต์ ถ้า leading แน่นไปหัวจะโดนตัด */}
             <p className="font-semibold" style={{ fontSize: em(1.3), color: BROWN, lineHeight: 1.35 }}>{p.name}</p>
 
@@ -141,6 +169,12 @@ export default function PromotionPrintView({
             )}
 
             <p className="font-medium" style={{ fontSize: em(1.05), color: BROWN, lineHeight: 1.4 }}>{scope}</p>
+
+            {showItems && !listed && !compact && names.length > 0 && (
+              <p style={{ fontSize: em(0.62), color: BROWN, lineHeight: 1.35, opacity: 0.85 }}>
+                {names.join(' · ')}
+              </p>
+            )}
 
             {salePrice !== null && single && (
               <p style={{ fontSize: em(1.15), color: BROWN }}>
