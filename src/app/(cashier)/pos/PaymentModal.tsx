@@ -537,99 +537,105 @@ export default function PaymentModal({
               ))}
             </div>
             )}
-            <button
-              onClick={() => setMode(writeoff ? 'sale' : 'writeoff')}
-              className={`mt-1.5 w-full py-2 rounded-lg text-xs font-medium border-2 transition-colors ${
-                writeoff
-                  ? 'border-red-400 bg-red-50 text-red-700'
-                  : 'border-gray-200 text-gray-600 hover:border-gray-300'
-              }`}
-            >
-              ตัดสต็อกออก (ไม่ใช่การขาย)
-            </button>
-          </div>
-
-          {/* คีย์บิลย้อนหลัง — ขายไปแล้วตอนเน็ตล่ม/ไฟดับ แล้วมาคีย์ตามทีหลัง */}
-          {canBackdate && (
-            <div>
+            {/* สองปุ่มนี้คู่กัน — เรียงซ้อนกันทีละแถวทำให้ต้องเลื่อนหาปุ่มยืนยันชำระเงิน */}
+            <div className="mt-1.5 grid grid-cols-2 gap-1.5">
               <button
-                onClick={toggleBackdate}
-                className={`flex w-full items-center justify-center gap-1.5 rounded-lg border-2 py-2 text-xs font-medium transition-colors ${
-                  backdateOn
-                    ? 'border-amber-400 bg-amber-50 text-amber-800'
+                onClick={() => setMode(writeoff ? 'sale' : 'writeoff')}
+                className={`rounded-lg border-2 py-1.5 text-xs font-medium leading-tight transition-colors ${
+                  writeoff
+                    ? 'border-red-400 bg-red-50 text-red-700'
                     : 'border-gray-200 text-gray-600 hover:border-gray-300'
                 }`}
               >
-                <History size={14} />
-                {backdateOn ? 'ยกเลิกการคีย์ย้อนหลัง' : 'คีย์ย้อนหลัง (ขายตอนเน็ตล่ม)'}
+                ตัดสต็อกออก
+                <span className="block text-[10px] font-normal opacity-70">ไม่ใช่การขาย</span>
               </button>
+              {/* ปิดตอนตัดสต็อกออก — ไม่มีบิล ไม่มียอดเงิน ย้อนวันไปก็ไม่มีอะไรเปลี่ยน */}
+              <button
+                onClick={toggleBackdate}
+                disabled={!canBackdate}
+                className={`flex flex-col items-center justify-center rounded-lg border-2 py-1.5 text-xs font-medium leading-tight transition-colors disabled:opacity-40 ${
+                  backdateOn
+                    ? 'border-amber-400 bg-amber-50 text-amber-800'
+                    : 'border-gray-200 text-gray-600 enabled:hover:border-gray-300'
+                }`}
+              >
+                <span className="flex items-center gap-1">
+                  <History size={13} />
+                  คีย์ย้อนหลัง
+                </span>
+                <span className="block text-[10px] font-normal opacity-70">
+                  {backdateOn ? 'กดอีกครั้งเพื่อยกเลิก' : 'ขายตอนเน็ตล่ม'}
+                </span>
+              </button>
+            </div>
+          </div>
 
-              {backdateOn && (
-                <div className="mt-2 space-y-2 rounded-lg border-2 border-amber-300 bg-amber-50 p-3">
-                  <div>
-                    <label className="mb-1 block text-xs font-medium text-amber-900">ขายจริงเมื่อ</label>
-                    <input
-                      type="datetime-local"
-                      value={soldAtInput}
-                      onChange={(e) => setSoldAtInput(e.target.value)}
-                      min={bounds.min}
-                      max={bounds.max}
-                      className="w-full rounded-lg border border-amber-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
-                    />
-                    <p className="mt-1 text-[11px] text-amber-700">ย้อนได้ไม่เกิน {BACKDATE_MAX_DAYS} วัน</p>
-                  </div>
+          {/* คีย์บิลย้อนหลัง — ขายไปแล้วตอนเน็ตล่ม/ไฟดับ แล้วมาคีย์ตามทีหลัง (ปุ่มเปิดอยู่เหนือขึ้นไป) */}
+          {backdateOn && (
+            <div className="space-y-2 rounded-lg border-2 border-amber-300 bg-amber-50 p-3">
+              <div>
+                <label className="mb-1 block text-xs font-medium text-amber-900">ขายจริงเมื่อ</label>
+                <input
+                  type="datetime-local"
+                  value={soldAtInput}
+                  onChange={(e) => setSoldAtInput(e.target.value)}
+                  min={bounds.min}
+                  max={bounds.max}
+                  className="w-full rounded-lg border border-amber-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+                />
+                <p className="mt-1 text-[11px] text-amber-700">ย้อนได้ไม่เกิน {BACKDATE_MAX_DAYS} วัน</p>
+              </div>
 
-                  {backdateError ? (
-                    <p className="flex items-start gap-1.5 text-xs font-medium text-red-700">
-                      <AlertTriangle size={13} className="mt-0.5 shrink-0" />
-                      {backdateError}
-                    </p>
-                  ) : soldAt ? (
-                    <p className="text-xs text-amber-900">
-                      บิลจะลงวันที่ <b>{fmtThai(soldAt)} น.</b> — เลขที่บิล ใบเสร็จ รายงาน และประวัติสต็อก
-                      ใช้วันนั้นทั้งหมด แต่<b>แต้ม โปรโมชัน และสต็อกคิดจากข้อมูลตอนนี้</b>
-                    </p>
-                  ) : (
-                    <p className="text-xs text-amber-800">เวลาที่เลือกคือตอนนี้ — จะบันทึกเป็นบิลปกติ</p>
-                  )}
-
-                  {backdateBeforeShift && (
-                    <p className="flex items-start gap-1.5 rounded-lg bg-red-50 px-2.5 py-2 text-xs text-red-700">
-                      <AlertTriangle size={13} className="mt-0.5 shrink-0" />
-                      <span>
-                        <b>ขายก่อนเวลาที่เปิดกะ</b> — เงินสดบิลนี้จะไม่ถูกนับในกะที่เปิดอยู่
-                        ปิดกะแล้วเงินในเก๊ะจะเกินยอดที่ระบบคิดไว้เท่ายอดบิลนี้
-                      </span>
-                    </p>
-                  )}
-
-                  <div>
-                    <label className="mb-1 block text-xs font-medium text-amber-900">เหตุผล</label>
-                    <div className="mb-1.5 flex flex-wrap gap-1.5">
-                      {['เน็ตล่ม', 'ไฟดับ', 'ระบบล่ม', 'ลืมคีย์'].map((r) => (
-                        <button
-                          key={r}
-                          onClick={() => setBackdateReason(r)}
-                          className={`rounded-lg border px-2.5 py-1 text-xs ${
-                            backdateReason === r
-                              ? 'border-amber-500 bg-white text-amber-800'
-                              : 'border-amber-200 bg-white/60 text-amber-700'
-                          }`}
-                        >
-                          {r}
-                        </button>
-                      ))}
-                    </div>
-                    <input
-                      type="text"
-                      value={backdateReason}
-                      onChange={(e) => setBackdateReason(e.target.value)}
-                      placeholder="หรือพิมพ์เหตุผลเอง"
-                      className="w-full rounded-lg border border-amber-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
-                    />
-                  </div>
-                </div>
+              {backdateError ? (
+                <p className="flex items-start gap-1.5 text-xs font-medium text-red-700">
+                  <AlertTriangle size={13} className="mt-0.5 shrink-0" />
+                  {backdateError}
+                </p>
+              ) : soldAt ? (
+                <p className="text-xs text-amber-900">
+                  บิลจะลงวันที่ <b>{fmtThai(soldAt)} น.</b> — เลขที่บิล ใบเสร็จ รายงาน และประวัติสต็อก
+                  ใช้วันนั้นทั้งหมด แต่<b>แต้ม โปรโมชัน และสต็อกคิดจากข้อมูลตอนนี้</b>
+                </p>
+              ) : (
+                <p className="text-xs text-amber-800">เวลาที่เลือกคือตอนนี้ — จะบันทึกเป็นบิลปกติ</p>
               )}
+
+              {backdateBeforeShift && (
+                <p className="flex items-start gap-1.5 rounded-lg bg-red-50 px-2.5 py-2 text-xs text-red-700">
+                  <AlertTriangle size={13} className="mt-0.5 shrink-0" />
+                  <span>
+                    <b>ขายก่อนเวลาที่เปิดกะ</b> — เงินสดบิลนี้จะไม่ถูกนับในกะที่เปิดอยู่
+                    ปิดกะแล้วเงินในเก๊ะจะเกินยอดที่ระบบคิดไว้เท่ายอดบิลนี้
+                  </span>
+                </p>
+              )}
+
+              <div>
+                <label className="mb-1 block text-xs font-medium text-amber-900">เหตุผล</label>
+                <div className="mb-1.5 flex flex-wrap gap-1.5">
+                  {['เน็ตล่ม', 'ไฟดับ', 'ระบบล่ม', 'ลืมคีย์'].map((r) => (
+                    <button
+                      key={r}
+                      onClick={() => setBackdateReason(r)}
+                      className={`rounded-lg border px-2.5 py-1 text-xs ${
+                        backdateReason === r
+                          ? 'border-amber-500 bg-white text-amber-800'
+                          : 'border-amber-200 bg-white/60 text-amber-700'
+                      }`}
+                    >
+                      {r}
+                    </button>
+                  ))}
+                </div>
+                <input
+                  type="text"
+                  value={backdateReason}
+                  onChange={(e) => setBackdateReason(e.target.value)}
+                  placeholder="หรือพิมพ์เหตุผลเอง"
+                  className="w-full rounded-lg border border-amber-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+                />
+              </div>
             </div>
           )}
 
