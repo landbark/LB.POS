@@ -7,6 +7,7 @@ import { Plus } from 'lucide-react'
 import toast from 'react-hot-toast'
 import type { Category, Product, Supplier, Unit } from '@/lib/types'
 import ImageInput from '@/components/ImageInput'
+import BarcodeField from '@/components/BarcodeField'
 
 interface Props {
   categories: Category[]
@@ -240,7 +241,8 @@ export default function ProductForm({ categories, units, suppliers, product }: P
           />
         </div>
 
-        <div className="grid grid-cols-2 gap-4">
+        {/* บนมือถือเรียงลงมาทีละช่อง — ช่องบาร์โค้ดเสียที่ให้ปุ่มกล้องไป เหลือครึ่งคอลัมน์แล้วเลขไม่พอโชว์ */}
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div>
             <label className={labelClass}>SKU (รหัสสินค้า — ห้ามซ้ำ)</label>
             <input
@@ -253,12 +255,12 @@ export default function ProductForm({ categories, units, suppliers, product }: P
           </div>
           <div>
             <label className={labelClass}>บาร์โค้ด</label>
-            <input
-              type="text"
+            <BarcodeField
               value={form.barcode}
-              onChange={(e) => set('barcode', e.target.value)}
+              onChange={(code) => set('barcode', code)}
               className={inputClass}
               placeholder="8850xxxxxxx"
+              title={form.name ? `บาร์โค้ดของ ${form.name}` : 'ยิงบาร์โค้ดสินค้า'}
             />
           </div>
         </div>

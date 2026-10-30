@@ -7,6 +7,7 @@ import toast from 'react-hot-toast'
 import { createClient } from '@/lib/supabase/client'
 import type { ProductUnit } from '@/lib/types'
 import { purchaseUnitChoices } from '@/lib/productUnits'
+import BarcodeField from '@/components/BarcodeField'
 
 export interface ProductOption {
   id: string
@@ -222,7 +223,13 @@ function AddUnitModal({
             </label>
             <label className="block">
               <span className="text-xs text-gray-500">บาร์โค้ดข้างลัง</span>
-              <input value={barcode} onChange={(e) => setBarcode(e.target.value)} placeholder="ไม่มีก็ได้" className={inputClass} />
+              <BarcodeField
+                value={barcode}
+                onChange={setBarcode}
+                className={inputClass}
+                placeholder="ไม่มีก็ได้"
+                title={`บาร์โค้ดข้าง${name}`}
+              />
             </label>
           </div>
 

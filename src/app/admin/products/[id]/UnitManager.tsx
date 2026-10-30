@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import BarcodeField from '@/components/BarcodeField'
 import { Boxes, Plus, Trash2, Save, X } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { confirmDialog } from '@/lib/confirm'
@@ -195,10 +196,11 @@ export default function UnitManager({ productId, baseUnit, basePrice, baseCost, 
         </label>
         <label className="block">
           <span className="text-xs text-gray-500">บาร์โค้ดข้าง{draft.unit_name || 'แพ็ก'}</span>
-          <input
+          <BarcodeField
             value={draft.barcode}
-            onChange={(e) => setDraft({ ...draft, barcode: e.target.value })}
+            onChange={(code) => setDraft({ ...draft, barcode: code })}
             className={inputClass}
+            title={`บาร์โค้ดข้าง${draft.unit_name || 'แพ็ก'}`}
           />
         </label>
       </div>
