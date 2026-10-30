@@ -27,6 +27,16 @@ export function drugForm(unit: string | null | undefined): DrugForm {
   return 'solid'
 }
 
+/**
+ * ยาที่หมอฉีด/ให้ที่ร้าน — ดูจากหน่วยขาย (ml. / cc. / มล. / amp / vial)
+ * กว้างกว่า drugForm() ที่ดูแค่ ml/cc เพราะ amp กับ vial ก็เป็นยาฉีด
+ * แต่ต้องกรอกขนาดต่อครั้งเป็นหน่วยเต็มเหมือนยาเม็ด จึงแยกฟังก์ชันไว้ ไม่ไปแก้ drugForm
+ */
+export function isInjectionUnit(unit: string | null | undefined): boolean {
+  const u = (unit ?? '').trim().toLowerCase()
+  return /^(ml|cc|มล|amp|amps|ampoule|vial|แอมป์|ไวแอล)\.?$/.test(u)
+}
+
 /** ช่วงเวลาให้ยาในหนึ่งวัน — หมอเลือกเองได้ว่าเม็ดไหนให้ตอนไหน */
 export const TIME_SLOTS = [
   { value: 'morning', th: 'เช้า', en: 'morning' },

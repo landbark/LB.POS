@@ -1,7 +1,8 @@
 'use client'
 
 import { useState } from 'react'
-import { sigText, labelName, labelIndication } from '@/lib/sig'
+import { sigText, labelName, labelIndication, isInjectionUnit } from '@/lib/sig'
+import { isVaccine } from '@/lib/clinic'
 import type { Frequency, FoodTiming } from '@/lib/types'
 
 interface Item {
@@ -18,6 +19,8 @@ interface Item {
     name: string
     unit: string
     is_service: boolean
+    is_vaccine: boolean | null
+    categories: { is_vaccine: boolean | null } | null
     label_name: string | null
     label_name_en: string | null
     indication: string | null
@@ -45,11 +48,19 @@ interface Store {
 const fmtDate = (d: string) =>
   new Date(d).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' })
 
+/**
+ * ยาฉีดกับวัคซีนหมอให้ที่ร้านเอง ไม่ได้ให้เจ้าของเอากลับไปใช้ — ไม่ต้องมีฉลากติดซอง
+ * ไม่ตัดออกจากรายการ แค่ไม่ติ๊กให้ เผื่อของบางตัวขายเป็น ml. แต่เป็นยากิน (เช่นยาน้ำเชื่อม)
+ * หมอจะได้ติ๊กพิมพ์เองได้
+ */
+const administeredHere = (item: Item) =>
+  isInjectionUnit(item.products?.unit) || (item.products ? isVaccine(item.products) : false)
+
 export default function LabelView({ visit, store }: { visit: Visit; store: Store | null }) {
   const [lang, setLang] = useState<'th' | 'en'>('th')
   // ยาเท่านั้น ค่าบริการไม่ต้องมีฉลาก
   const drugs = (visit.visit_items ?? []).filter((i) => i.products && !i.products.is_service)
-  const [skipped, setSkipped] = useState<Set<string>>(new Set())
+  const [skipped, setSkipped] = useState<Set<string>>(() => new Set(drugs.filter(administeredHere).map((d) => d.id)))
   const toPrint = drugs.filter((d) => !skipped.has(d.id))
 
   function toggle(id: string) {
@@ -109,12 +120,19 @@ export default function LabelView({ visit, store }: { visit: Visit; store: Store
         <p className="no-print p-6 text-sm text-gray-400">ใบนี้ไม่มีรายการยา — มีแต่ค่าบริการ</p>
       )}
 
+      {drugs.length > 0 && drugs.some(administeredHere) && (
+        <p className="no-print px-4 pt-3 text-xs text-gray-400">
+          ยาฉีดกับวัคซีนไม่ติ๊กให้อัตโนมัติ เพราะฉีดที่ร้าน ไม่ได้เอากลับบ้าน — ถ้าต้องการฉลากก็ติ๊กเองได้
+        </p>
+      )}
+
       {drugs.length > 0 && (
         <div className="no-print px-4 pt-3 flex flex-wrap gap-2">
           {drugs.map((d) => (
             <label key={d.id} className="flex items-center gap-1.5 text-xs text-gray-600 border border-gray-200 rounded-lg px-2 py-1">
               <input type="checkbox" checked={!skipped.has(d.id)} onChange={() => toggle(d.id)} />
               {d.products ? labelName(d.products, lang) : ''}
+              {administeredHere(d) && <span className="text-gray-400">· ฉีดที่ร้าน</span>}
             </label>
           ))}
         </div>
