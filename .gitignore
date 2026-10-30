@@ -45,3 +45,9 @@ next-env.d.ts
 
 # ข้อมูลสำรอง — มีข้อมูลลูกค้าทั้งหมด ห้ามขึ้น git เด็ดขาด
 /backups/
+
+# cloudflare build output
+.open-next
+.wrangler
+.dev.vars
+.dev.vars.*

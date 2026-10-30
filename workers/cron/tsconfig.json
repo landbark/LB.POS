@@ -1,0 +1,15 @@
+{
+  // worker ตัวนี้ไม่ใช่ส่วนหนึ่งของแอป Next — คนละ runtime คนละชุด global
+  // (tsconfig ของแอปจึง exclude โฟลเดอร์ workers ไว้ ไม่งั้น type ของ DOM กับ Workers ชนกัน)
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "types": ["./worker-configuration.d.ts"],
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true
+  },
+  "include": ["src/**/*.ts", "worker-configuration.d.ts"]
+}

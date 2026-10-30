@@ -1,0 +1,43 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "landbark-pos",
+  "main": ".open-next/worker.js",
+  "compatibility_date": "2026-06-01",
+  // nodejs_compat จำเป็นเพราะ proxy.ts ของ Next 16 รันบน Node runtime เสมอ
+  // (และ src/lib/shopee.ts เรียก createHmac จาก node:crypto)
+  // global_fetch_strictly_public ทำให้ fetch ไปโดเมนตัวเองออกทางอินเทอร์เน็ตจริง ไม่วนกลับเข้า worker
+  "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+
+  // ⚠️ บัญชี arm.maniii (Workers Paid) — ห้ามเป็น b2b4963d... ซึ่งเป็นบัญชี joodfangkhem แพ็กฟรี
+  // เผลอขึ้นบัญชีฟรีจะเจอเพดาน CPU 10 ms แล้วพังโดยหาสาเหตุยาก
+  "account_id": "804de54b064396831bb303d9b7dd9b49",
+
+  // ยังไม่ผูกโดเมนจริง — ระหว่างทดสอบ ร้านยังขายของผ่าน Vercel อยู่
+  // พร้อมเมื่อไหร่ค่อยเพิ่ม "routes" แล้วตัด workers_dev ทิ้ง
+  "workers_dev": true,
+
+  "assets": {
+    "directory": ".open-next/assets",
+    "binding": "ASSETS"
+  },
+  "services": [
+    {
+      "binding": "WORKER_SELF_REFERENCE",
+      "service": "landbark-pos"
+    }
+  ],
+  // ที่เก็บผลของ route ที่ตั้ง revalidate ไว้ (เช่น /api/favicon)
+  // Worker ทำงานก่อนแคช CDN เสมอ response จึงไม่เคยผ่านแคชชั้นนั้น ต้องมีที่เก็บของตัวเอง
+  "r2_buckets": [
+    {
+      "binding": "NEXT_INC_CACHE_R2_BUCKET",
+      "bucket_name": "landbark-pos-cache"
+    }
+  ],
+  "images": {
+    "binding": "IMAGES"
+  },
+  "observability": {
+    "enabled": true
+  }
+}

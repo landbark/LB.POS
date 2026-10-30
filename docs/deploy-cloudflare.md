@@ -1,0 +1,82 @@
+# ย้าย POS ขึ้น Cloudflare Workers
+
+แผนหลักของการ hosting ตั้งแต่ 30 ต.ค. 2026 — `docs/deploy-vps.md` เก็บไว้เป็นแผนสำรอง
+
+ตัวเว็บรันผ่าน **`@opennextjs/cloudflare`** (adapter ตัวเดียวกับที่ `jfk` ใช้อยู่จริง)
+ส่วนตารางเวลาแยกเป็น worker ของตัวเองใน `workers/cron/` — เหตุผลอยู่ในหัวข้อ "ตารางเวลา"
+
+## บัญชีที่ต้องใช้ — ห้ามพลาดข้อนี้
+
+| บัญชี | account id | แพลน | ใช้กับ |
+|---|---|---|---|
+| `arm.maniii@gmail.com` | `804de54b064396831bb303d9b7dd9b49` | **Workers Paid $5** | **POS และที่เหลือทั้งหมด** |
+| `joodfangkhem@gmail.com` | `b2b4963d5c312a0eb5796b29153bf6fc` | Free | `jfk` เท่านั้น |
+
+`account_id` ถูกตรึงไว้ใน `wrangler.jsonc` ทั้งสองไฟล์แล้ว เพราะเผลอ deploy ขึ้นบัญชีฟรี
+จะไปชนเพดาน **CPU 10 ms ต่อ request** (POS ใช้เฉลี่ย ~37 ms) แล้วพังเป็น Error 1027 โดยหาสาเหตุยาก
+
+⚠️ `wrangler login` บนเครื่องนี้ผูกกับ **joodfangkhem** อยู่ (ใช้ deploy `jfk`) การ login ใหม่
+จะทับของเดิม — ให้ใช้ **API token ของบัญชี arm.maniii** แทน แล้ว export ก่อน deploy:
+
+```sh
+export CLOUDFLARE_API_TOKEN="$(security find-generic-password -s cloudflare-armmani -w)"
+```
+
+สร้าง token ได้ที่ My Profile → API Tokens → เทมเพลต **Edit Cloudflare Workers**
+(ต้องมีสิทธิ์ Workers Scripts:Edit + Workers R2 Storage:Edit)
+
+## ขั้นตอนตั้งครั้งแรก
+
+```sh
+npx wrangler r2 bucket create landbark-pos-cache
+```
+
+ตั้ง secret ทีละตัว (ค่าดึงจาก Vercel → Project Settings → Environment Variables):
+
+```sh
+for k in SUPABASE_SERVICE_ROLE_KEY TELEGRAM_BOT_TOKEN TELEGRAM_WEBHOOK_SECRET \
+         LINE_LOGIN_CHANNEL_ID LINE_LOGIN_CHANNEL_SECRET LINE_LIFF_CHANNEL_ID \
+         CUSTOMER_SESSION_SECRET CRON_SECRET; do npx wrangler secret put "$k"; done
+```
+
+ส่วนค่าที่ขึ้นต้นด้วย `NEXT_PUBLIC_` ถูกฝังตอน build ไม่ใช่ตอนรัน จึงต้องอยู่ใน `.env`
+ของเครื่องที่สั่ง build (หรือใน Workers Builds ถ้าย้ายไป build บน Cloudflare)
+
+## deploy
+
+```sh
+npm run deploy
+```
+
+ครั้งแรกจะได้ `https://landbark-pos.<subdomain>.workers.dev` — **ร้านยังขายของผ่าน Vercel อยู่**
+`wrangler.jsonc` ตั้ง `workers_dev: true` และยังไม่มี `routes` ไว้ตั้งใจ
+
+## ตารางเวลา (แทน `crons` ใน vercel.json)
+
+Cron Trigger ของ Cloudflare ต้องการ handler ชื่อ `scheduled` ซึ่ง worker ที่ OpenNext สร้างให้ไม่มี
+จะเพิ่มต้องเขียน entry ครอบทับของ adapter — พลาดแล้วคือทั้งร้านล่ม ไม่ใช่แค่แจ้งเตือนไม่เข้า
+`workers/cron/` จึงเป็น worker เปล่า ๆ ที่ยิง HTTPS เข้าเว็บเหมือนที่ Vercel Cron ทำอยู่ทุกวันนี้
+
+```sh
+cd workers/cron
+npx wrangler secret put CRON_SECRET     # ค่าเดียวกับฝั่งเว็บ
+npx wrangler deploy
+```
+
+แก้ `vars.POS_URL` ใน `workers/cron/wrangler.jsonc` ให้ชี้โดเมนจริงตอนย้ายโดเมนแล้ว
+
+## วันที่ย้ายโดเมนจริง
+
+1. เพิ่ม `routes` ใน `wrangler.jsonc` (แบบ `custom_domain: true` เหมือน `jfk`) แล้วตัด `workers_dev` ออก
+2. `npm run deploy`
+3. แก้ `NEXT_PUBLIC_SITE_URL` + `POS_URL` ของ worker ตารางเวลา
+4. ลบ `crons` ออกจาก `vercel.json` **ไม่งั้นงานจะถูกยิงซ้ำสองทาง**
+5. เช็ก callback URL ฝั่ง LINE Login และ Telegram webhook ว่าชี้โดเมนเดิมอยู่หรือเปล่า
+6. ปิดโปรเจกต์ฝั่ง Vercel เมื่อมั่นใจแล้ว
+
+## ที่ตรวจไปแล้ว (30 ต.ค. 2026)
+
+- `opennextjs-cloudflare build` ผ่าน (ต้องอัป Next เป็น **16.4.2** — adapter กำหนด peer `>=16.4.1`)
+- รันบน workerd ในเครื่อง: `/` `/login` `/shop` `/manifest.webmanifest` `/api/favicon` ตอบ 200
+  และ `/pos` เด้ง 307 ไป `/login` → **`proxy.ts` คุยกับ Supabase Auth บน Workers ได้จริง**
+- build เตือนว่า Node.js middleware ยัง experimental บน Cloudflare — `jfk` เจอเตือนเดียวกันและรันอยู่

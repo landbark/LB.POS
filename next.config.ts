@@ -8,3 +8,8 @@ const nextConfig: NextConfig = {
 };
 
 export default nextConfig;
+
+// เปิดให้ `next dev` มองเห็น binding ของ Cloudflare (R2 ที่ใช้เก็บผล revalidate)
+// ต้องอยู่ท้ายไฟล์ หลัง export default ตามที่ adapter กำหนด
+import { initOpenNextCloudflareForDev } from '@opennextjs/cloudflare'
+void initOpenNextCloudflareForDev()
