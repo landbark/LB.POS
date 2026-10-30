@@ -7,7 +7,7 @@ import { createClient } from '@/lib/supabase/client'
 import { PackageCheck, ArrowLeft, Plus, Trash2 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import DateField from '@/components/DateField'
-import { ProductPicker, UnitSelect, findUnitChoice, useUnitAdder, type ProductOption } from '../../pickers'
+import { ProductPicker, UnitSelect, findUnitChoice, qtyInputClass, useUnitAdder, type ProductOption } from '../../pickers'
 
 interface ReceiveItem {
   id: string
@@ -315,8 +315,8 @@ export default function ReceiveClient({
             <thead>
               <tr className="text-xs font-medium text-gray-500 uppercase">
                 <th className="text-left pb-2 pr-2 min-w-40">สินค้า</th>
-                <th className="text-right pb-2 pr-2 w-20">สั่ง</th>
-                <th className="text-left pb-2 pr-2 w-40">รับจริง</th>
+                <th className="text-right pb-2 pr-2 min-w-20 whitespace-nowrap">สั่ง</th>
+                <th className="text-left pb-2 pr-2 min-w-44 whitespace-nowrap">รับจริง</th>
                 <th className="text-left pb-2 pr-2 w-28">ทุน/หน่วย</th>
                 <th className="text-left pb-2 pr-2 w-32">LOT (ระบบ)</th>
                 <th className="text-left pb-2 pr-2 w-32">LOT บริษัท</th>
@@ -341,7 +341,7 @@ export default function ReceiveClient({
                         />
                       )}
                     </td>
-                    <td className="pr-2 py-1.5 text-sm text-right text-gray-500">
+                    <td className="pr-2 py-1.5 text-sm text-right text-gray-500 whitespace-nowrap">
                       {r.itemId ? `${r.orderedQty} ${r.unitLabel || r.unit}` : <span className="text-amber-600">ไม่ได้สั่ง</span>}
                     </td>
                     <td className="pr-2 py-1.5">
@@ -349,7 +349,7 @@ export default function ReceiveClient({
                         <input
                           type="number" min="0" value={r.receivedQty}
                           onChange={(e) => setRow(i, 'receivedQty', e.target.value)}
-                          className={`${inputClass} ${short ? 'border-amber-400 bg-amber-50' : ''}`}
+                          className={`${qtyInputClass} ${short ? 'border-amber-400 bg-amber-50' : ''}`}
                         />
                         {r.itemId ? (
                           <span className="shrink-0 text-xs text-gray-500">{r.unitLabel || r.unit}</span>
