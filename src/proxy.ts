@@ -2,6 +2,7 @@ import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 import { homePath } from '@/lib/home-path'
 import { isVet, isVetPlusPath } from '@/lib/roles'
+import { isStaffHost } from '@/lib/staff-host'
 
 export async function proxy(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request })
@@ -29,6 +30,20 @@ export async function proxy(request: NextRequest) {
 
   const { data: { user } } = await supabase.auth.getUser()
   const { pathname } = request.nextUrl
+
+  // บนโดเมนพนักงาน หน้าแรกคือหน้างานของคนนั้น ไม่ใช่หน้าร้านของลูกค้า
+  // (เครื่องในร้านติดตั้งเป็นแอปโดย start_url = '/' จึงต้องเด้งตรงนี้ ไม่ใช่ที่ manifest)
+  if (pathname === '/' && isStaffHost(request.headers.get('host'))) {
+    if (!user) {
+      return NextResponse.redirect(new URL('/login', request.url))
+    }
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('role')
+      .eq('id', user.id)
+      .single()
+    return NextResponse.redirect(new URL(homePath(profile?.role), request.url))
+  }
 
   // เว็บสาธารณะ (ข่าว/ร้านค้าออนไลน์/บัญชีลูกค้า) — ลูกค้าใช้เซสชันของตัวเอง ไม่ใช่ login พนักงาน
   const publicSitePaths = ['/news', '/shop', '/cart', '/checkout', '/orders', '/account', '/api/shop']
