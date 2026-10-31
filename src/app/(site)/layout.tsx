@@ -5,17 +5,18 @@ import { getSessionCustomer } from '@/lib/customer-session'
 import { getStorefront } from '@/lib/shop-data'
 import SiteHeader from './SiteHeader'
 
-// หน้าร้านของลูกค้าใช้ชื่อร้าน ไม่ใช่ชื่อระบบหลังบ้านที่ตั้งไว้ใน layout ชั้นนอก
-// (ชื่อนั้นจะไปโผล่ทั้งบนแท็บเบราว์เซอร์และในผลค้นหา)
+// หน้าร้านของลูกค้าไม่เอาชื่อระบบหลังบ้าน ("LANDBARK POS") ที่ตั้งไว้ใน layout ชั้นนอก
+// แท็บใช้ชื่อสั้น ๆ ให้อ่านออกตอนเปิดหลายแท็บ (ชื่อเต็มยาวเกินกว่าจะเห็นจบ)
+// ส่วนตอนแปะลิงก์ในไลน์/เฟซบุ๊กใช้ชื่อเต็มจากหน้าตั้งค่าร้าน เพราะที่นั่นมีที่ให้แสดง
 export async function generateMetadata(): Promise<Metadata> {
   const store = await getStorefront()
-  const name = store?.name ?? 'LANDBARK'
+  const description = store?.shop_intro ?? 'ร้านเพทชอปและคลินิกรักษาสัตว์'
   return {
-    title: { default: name, template: `%s · ${name}` },
-    description: store?.shop_intro ?? 'ร้านเพทชอปและคลินิกรักษาสัตว์',
+    title: { default: 'LANDBARK', template: '%s · LANDBARK' },
+    description,
     openGraph: {
-      title: name,
-      description: store?.shop_intro ?? 'ร้านเพทชอปและคลินิกรักษาสัตว์',
+      title: store?.name ?? 'LANDBARK',
+      description,
       type: 'website',
     },
   }
