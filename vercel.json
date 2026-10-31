@@ -1,5 +1,15 @@
 {
-  "regions": [
-    "sin1"
+  "regions": ["sin1"],
+  "redirects": [
+    { "source": "/", "destination": "https://pos.landbark.app/", "permanent": false },
+    { "source": "/login", "destination": "https://pos.landbark.app/login", "permanent": false },
+    { "source": "/no-access", "destination": "https://pos.landbark.app/no-access", "permanent": false },
+    { "source": "/pos", "destination": "https://pos.landbark.app/pos", "permanent": false },
+    { "source": "/pos/:path*", "destination": "https://pos.landbark.app/pos/:path*", "permanent": false },
+    { "source": "/admin/:path*", "destination": "https://pos.landbark.app/admin/:path*", "permanent": false },
+    { "source": "/pos-display/:path*", "destination": "https://pos.landbark.app/pos-display/:path*", "permanent": false },
+    { "source": "/print/:path*", "destination": "https://pos.landbark.app/print/:path*", "permanent": false },
+    { "source": "/auth/:path*", "destination": "https://pos.landbark.app/auth/:path*", "permanent": false },
+    { "source": "/:path*", "destination": "https://landbark.app/:path*", "permanent": false }
   ]
 }

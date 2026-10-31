@@ -15,18 +15,18 @@
   // โดเมนจริงของ POS (จด landbark.app เมื่อ 31 ต.ค. 2026 ใต้บัญชีเดียวกับ worker)
   // custom_domain = Cloudflare สร้าง DNS + ออกใบ SSL ให้เอง ไม่ต้องตั้ง record มือ
   "routes": [
-    { "pattern": "pos.landbark.app", "custom_domain": true }
+    // โดเมนพนักงาน — เปิดมาเจอหน้างาน (ดู src/lib/staff-host.ts)
+    { "pattern": "pos.landbark.app", "custom_domain": true },
+    // หน้าร้านของลูกค้า — เว็บเดียวกัน แยกกันที่ host
+    { "pattern": "landbark.app", "custom_domain": true },
+    { "pattern": "www.landbark.app", "custom_domain": true }
   ],
 
-  // origin ของตัวเอง — ใช้ทำลิงก์กดกลับเข้าหลังร้านในข้อความ Telegram
-  // (ไม่ใช่ความลับ จึงเป็น var ไม่ใช่ secret) ฝั่งเซิร์ฟเวอร์อ่านตอนรัน ไม่ได้ฝังตอน build
+  // ใช้ทำลิงก์กดกลับเข้าหลังร้านในข้อความ Telegram เท่านั้น — ที่นั่นไม่มี request ให้อ้าง origin
+  // (หน้าเว็บใช้ origin ของ request เอง เพราะ worker เดียวเสิร์ฟทั้งโดเมนลูกค้าและโดเมนพนักงาน)
   "vars": {
     "NEXT_PUBLIC_SITE_URL": "https://pos.landbark.app"
   },
-
-  // ยังเปิด workers.dev ค้างไว้ระหว่างที่ร้านยังขายผ่าน Vercel อยู่ — เป็นทางถอย
-  // ถ้าโดเมนใหม่มีปัญหา ตัดทิ้งตอนปิด Vercel จริง (ดู docs/deploy-cloudflare.md ขั้นที่ 1)
-  "workers_dev": true,
 
   // Worker ปกติรันที่ edge ใกล้คนกด แต่ Supabase อยู่สิงคโปร์ หน้าที่ยิงหลาย query
   // จึงเสียค่าเดินทางคูณจำนวนครั้ง (วัดได้ /shop ช้ากว่า Vercel ที่ตั้ง regions sin1 อยู่ ~2 เท่า)

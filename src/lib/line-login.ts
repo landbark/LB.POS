@@ -13,9 +13,11 @@ export function lineChannel() {
   return id && secret ? { id, secret } : null
 }
 
-/** origin ของเว็บ — ตั้ง NEXT_PUBLIC_SITE_URL ได้ ไม่งั้นใช้ origin ของ request */
+// origin ของ request เท่านั้น — เว็บเดียวเสิร์ฟหลายโดเมน (หน้าร้านลูกค้ากับ POS คนละชื่อ)
+// ลูกค้าต้องกลับมาโดเมนเดิมที่เขากดมา ไม่ใช่โดนพาไปอีกโดเมนหนึ่งกลางคัน
+// (เคยตรึงด้วย NEXT_PUBLIC_SITE_URL ตอนมีโดเมนเดียว — ตอนนี้ค่านั้นใช้เฉพาะลิงก์ใน Telegram)
 export function siteOrigin(request: NextRequest) {
-  return (process.env.NEXT_PUBLIC_SITE_URL || request.nextUrl.origin).replace(/\/$/, '')
+  return request.nextUrl.origin.replace(/\/$/, '')
 }
 
 export const callbackUrl = (request: NextRequest) => `${siteOrigin(request)}/api/shop/callback`
