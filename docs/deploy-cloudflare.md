@@ -68,7 +68,7 @@ npx wrangler deploy
 
 แก้ `vars.POS_URL` ใน `workers/cron/wrangler.jsonc` ให้ชี้โดเมนจริงตอนย้ายโดเมนแล้ว
 
-## ต้องพิสูจน์ให้ได้ก่อนย้ายโดเมน
+## ต้องพิสูจน์ให้ได้ก่อนย้ายโดเมน (ผ่านครบแล้ว 31 ต.ค. — เก็บไว้ใช้กับโปรเจกต์ถัดไป)
 
 - [ ] **worker ส่ง Telegram ออกได้จริง** — ยังไม่เคยมีข้อความไหนออกจาก workerd สำเร็จสักครั้ง
       token ตรวจด้วย `getMe` แล้วใช้ได้ แต่คนละเรื่องกับการส่งออกจาก worker
@@ -106,26 +106,32 @@ landbark.app       ← เผื่อหน้าร้านลูกค้า
 **ต้องจดในบัญชี `arm.maniii@gmail.com`** (บัญชีที่ซื้อ Workers Paid ไว้) ไม่งั้นผูก custom domain
 ข้ามบัญชีไม่ได้ และ Cloudflare **ไม่มีปุ่มย้าย zone ข้ามบัญชี** ต้องลบแล้วจดใหม่
 
-## วันที่ย้ายโดเมนจริง
+## ย้ายเสร็จแล้ว — 31 ต.ค. 2026
 
-⚠️ **ทำตอนปิดร้าน ไม่ใช่ก่อนเปิด** — ขั้นที่ 8 ต้องแตะทุกเครื่องในร้าน
+| โดเมน | ใคร | เปิดมาเจอ |
+|---|---|---|
+| `pos.landbark.app` | พนักงาน | หน้างานตาม role (`homePath`) |
+| `landbark.app` · `www.landbark.app` | ลูกค้า | หน้าร้าน |
+| `landbarkpos.vercel.app` | ของเดิม | **ส่งต่ออย่างเดียว** ไม่เสิร์ฟอะไรแล้ว |
+| `landbark-pos.*.workers.dev` | — | ปิดแล้ว |
 
-1. เพิ่ม `routes` ใน `wrangler.jsonc` (แบบ `custom_domain: true` เหมือน `jfk`) ชี้ `pos.landbark.app`
-   แล้วตัด `workers_dev` ออก
-2. `npm run deploy`
-3. เพิ่ม `https://pos.landbark.app/**` ใน Supabase → Authentication → URL Configuration →
-   **Redirect URLs** (อ่านหัวข้อข้างบนก่อน อาการเวลาลืมมันไม่ฟ้อง error)
-4. แก้ `NEXT_PUBLIC_SITE_URL` ของ worker หลัก + `POS_URL` ของ worker ตารางเวลา เป็น `https://pos.landbark.app`
-5. ลบ `crons` ออกจาก `vercel.json` **ไม่งั้นงานจะถูกยิงซ้ำสองทาง** แล้วค่อย deploy `workers/cron/`
-6. สั่ง `setWebhook` ของ Telegram ใหม่ด้วย `TELEGRAM_WEBHOOK_SECRET` ชุดของ Cloudflare
-   (ดูคำสั่งใน `TELEGRAM-SETUP.md`) — บอทหนึ่งตัวผูก webhook ได้ที่เดียว ตราบใดที่ยังไม่สั่ง
-   Telegram จะยิงเข้า Vercel อยู่ และฝั่ง Cloudflare จะไม่เห็น /start เลย
-7. เพิ่ม Callback URL `https://pos.landbark.app/api/shop/callback` ใน LINE Developers
-8. **ไล่เปลี่ยน URL ทุกเครื่องในร้าน** — ข้อนี้กินเวลาจริง ดูหัวข้อข้างล่าง
-9. เปลี่ยน Supabase **Site URL** เป็น `https://pos.landbark.app` (ขั้นสุดท้าย หลังไม่มีใครใช้ Vercel แล้ว)
-10. ปิดโปรเจกต์ฝั่ง Vercel เมื่อมั่นใจแล้ว
+ที่ตั้งไว้: Telegram webhook ชี้ `pos.landbark.app` · cron ย้ายมา `workers/cron/` (ตั้ง `CRON_SECRET`
+แยกเอง **`wrangler deploy` ไม่พา secret มาให้**) · Supabase Site URL + Redirect URLs ครบ ·
+LINE callback 4 โดเมน · `NEXT_PUBLIC_SITE_URL` เป็น var ใช้เฉพาะลิงก์ใน Telegram
 
-### ขั้นที่ 8 คือขั้นที่ยาก — PWA ผูกกับ origin
+⚠️ **`siteOrigin()` ใน `src/lib/line-login.ts` ต้องใช้ origin ของ request เท่านั้น** ห้ามตรึงด้วย
+`NEXT_PUBLIC_SITE_URL` อีก — worker ตัวเดียวเสิร์ฟทั้งโดเมนลูกค้าและโดเมนพนักงาน ถ้าตรึงไว้
+ลูกค้าที่ล็อกอิน LINE จากหน้าร้านจะถูกพาไปโผล่โดเมน POS
+
+### `vercel.json` เหลือหน้าที่เดียว: ส่งต่อ
+
+ไม่ได้ลบโปรเจกต์ทิ้ง เพราะเครื่องในร้านที่ยังไม่เปลี่ยน URL จะขายไม่ได้ทันที
+ตอนนี้มันตอบ 307 ไปโดเมนใหม่แทน — เครื่องเก่ายังใช้งานได้ และไม่มีเว็บสองชุดวิ่งพร้อมกัน
+เส้นทางงาน (`/pos` `/admin/*` `/login` `/`) → `pos.landbark.app` · ที่เหลือ → `landbark.app`
+
+ลบโปรเจกต์ Vercel จริงได้เมื่อ log ยืนยันว่าไม่มีใครยิงเข้ามาอีกแล้ว
+
+### งานที่เหลือและยากที่สุด: ไล่เครื่องในร้าน — PWA ผูกกับ origin
 
 เครื่องที่ **ติดตั้ง LANDBARK POS ไว้บนโฮมสกรีน** จะยังเปิด `landbarkpos.vercel.app` ต่อไป
 เพราะ `start_url: '/'` ใน `src/app/manifest.ts` เป็น path เทียบกับ origin ที่ติดตั้ง ไม่ใช่โดเมนใหม่
