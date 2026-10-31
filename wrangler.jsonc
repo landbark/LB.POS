@@ -12,8 +12,14 @@
   // เผลอขึ้นบัญชีฟรีจะเจอเพดาน CPU 10 ms แล้วพังโดยหาสาเหตุยาก
   "account_id": "804de54b064396831bb303d9b7dd9b49",
 
-  // ยังไม่ผูกโดเมนจริง — ระหว่างทดสอบ ร้านยังขายของผ่าน Vercel อยู่
-  // พร้อมเมื่อไหร่ค่อยเพิ่ม "routes" แล้วตัด workers_dev ทิ้ง
+  // โดเมนจริงของ POS (จด landbark.app เมื่อ 31 ต.ค. 2026 ใต้บัญชีเดียวกับ worker)
+  // custom_domain = Cloudflare สร้าง DNS + ออกใบ SSL ให้เอง ไม่ต้องตั้ง record มือ
+  "routes": [
+    { "pattern": "pos.landbark.app", "custom_domain": true }
+  ],
+
+  // ยังเปิด workers.dev ค้างไว้ระหว่างที่ร้านยังขายผ่าน Vercel อยู่ — เป็นทางถอย
+  // ถ้าโดเมนใหม่มีปัญหา ตัดทิ้งตอนปิด Vercel จริง (ดู docs/deploy-cloudflare.md ขั้นที่ 1)
   "workers_dev": true,
 
   // Worker ปกติรันที่ edge ใกล้คนกด แต่ Supabase อยู่สิงคโปร์ หน้าที่ยิงหลาย query
