@@ -427,8 +427,10 @@ export default function ShiftClient({
       carry_adjusted_at: null,
       carry_adjusted_by: null,
     })
-    // ยังไม่ได้รัน migration จัดเงินทอนหลังปิดกะ — ปิดกะต้องยังได้ แค่ยอดยกไปคิดจาก (นับได้ − ให้เจ้าของ)
-    if (error && error.message.includes('carry_')) ({ error } = await save({}))
+    // ปิดกะต้องไม่พังเพราะเขียน carry ไม่ได้ — ยอดยกไปยังคิดจาก (นับได้ − ให้เจ้าของ) ได้ผลเท่ากัน
+    // เขียนไม่ได้ได้สองเหตุ: ยังไม่ได้รัน migration จัดเงินทอนหลังปิดกะ (ไม่มีคอลัมน์)
+    // หรือร้านยังไม่ได้รัน supabase-migration-shift-close-carry.sql แล้ว trigger กันพนักงานไว้
+    if (error) ({ error } = await save({}))
     if (error) {
       setLoading(false)
       toast.error('เกิดข้อผิดพลาด: ' + error.message)
