@@ -5,7 +5,6 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { homePath } from '@/lib/home-path'
 import Image from 'next/image'
-import Link from 'next/link'
 import toast from 'react-hot-toast'
 
 const LOGIN_ERRORS: Record<string, string> = {
@@ -170,9 +169,9 @@ export default function LoginPage() {
 
         {/* ทางกลับหน้าเว็บร้าน (หน้าสาธารณะ) — ลูกค้าที่หลงเข้ามาหน้านี้จะได้ไม่ตัน */}
         <p className="text-center mt-5">
-          <Link href="/" className="text-sm hover:underline" style={{ color: '#D4A87A' }}>
+          <a href="/storefront" className="text-sm hover:underline" style={{ color: '#D4A87A' }}>
             ← กลับหน้าเว็บร้าน
-          </Link>
+          </a>
         </p>
       </div>
     </div>

@@ -17,7 +17,7 @@ export default async function WebsiteSettingsPage() {
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-bold text-gray-900">เว็บร้าน / ค่าส่ง</h1>
         <a
-          href="/"
+          href="/storefront"
           target="_blank"
           rel="noopener noreferrer"
           className="inline-flex items-center gap-1.5 text-sm text-blue-600 hover:underline"

@@ -36,6 +36,11 @@ export function primaryStaffHost(): string {
   return hostList(process.env.STAFF_HOSTS, DEFAULT_STAFF_HOSTS)[0]
 }
 
+/** โดเมนลูกค้าตัวหลัก — ปลายทางของลิงก์ "กลับหน้าเว็บร้าน" ใน /storefront */
+export function primaryCustomerHost(): string {
+  return hostList(process.env.CUSTOMER_HOSTS, DEFAULT_CUSTOMER_HOSTS)[0]
+}
+
 // หน้าที่เป็นงานหลังร้าน ไม่ใช่ของลูกค้า
 // ไม่รวม /print/receipt — ลูกค้าเปิดใบเสร็จของตัวเองได้ และ proxy ปล่อยผ่านอยู่แล้ว
 const STAFF_PATHS = ['/pos', '/admin', '/login', '/no-access', '/pos-display', '/auth']

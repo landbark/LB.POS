@@ -64,6 +64,8 @@ export async function proxy(request: NextRequest) {
   const isPublicPath = pathname === '/' || pathname === '/login' || pathname.startsWith('/auth')
     || publicSitePaths.some((p) => pathname === p || pathname.startsWith(p + '/'))
     || pathname === '/member' || pathname.startsWith('/api/member')
+    // ทางกลับหน้าร้าน — คนที่ยังไม่ล็อกอินต้องกดได้ ไม่งั้นหน้า login จะตัน
+    || pathname === '/storefront'
     || pathname.startsWith('/print/receipt')
     // favicon โหลดก่อนล็อกอิน (หน้า login ก็ต้องเห็นไอคอน)
     || pathname === '/api/favicon'
