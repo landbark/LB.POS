@@ -6,7 +6,7 @@
  * โจทย์: ปิดกะแล้วต้องแยกแบงค์ไหนออกให้เจ้าของบ้าง ถึงจะเหลือในลิ้นชักเท่าเงินทอนตั้งต้นพอดี
  * และเหรียญ/แบงค์เล็กต้องไม่ถูกหยิบออก เพราะนั่นคือเงินทอนที่ต้องใช้เปิดร้านเช้าวันถัดไป
  */
-import { planByDenom, planOwnerTake, SUGGESTED_FLOAT, SUGGESTED_KEEP, type FloatPlan } from '../src/lib/shiftFloat'
+import { ownerSide, planByDenom, planOwnerTake, SUGGESTED_FLOAT, SUGGESTED_KEEP, type FloatPlan } from '../src/lib/shiftFloat'
 
 const NOTES = [1000, 500, 100, 50, 20]
 
@@ -115,6 +115,36 @@ check(
 )
 check(i.taken === 0, 'ไม่มีกองไหนเกินเป้า → ไม่หยิบออกเลย', `฿${i.taken}`)
 check(i.short === 3000 - (1000 + 100 + 10), 'บอกว่าเงินทอนรวมขาดเท่าไหร่', `฿${i.short}`)
+
+// ── ให้เจ้าของเท่าไหร่ คิดจากส่วนต่าง ไม่ใช่ช่องที่กรอกแยก ─────────────────────────────
+// เดิมหน้าปิดกะมีช่อง "แยกให้เจ้าของ" ให้กรอกเอง ทำได้แค่ทางเดียวคือหยิบออก วันที่เงินทอนขาด
+// แล้วเจ้าของเอามาเติมจึงไม่มีที่ลง · คิดจาก (ที่นับได้ − ที่เหลือไว้) แทนจึงได้สองทางในช่องเดียว
+console.log('')
+
+// วันปกติ: นับได้ทั้งเก๊ะ เหลือไว้ตามชุด ส่วนที่เหลือออกไปหาเจ้าของ
+const keepPlan = planByDenom(real, kit, NOTES, SUGGESTED_KEEP)
+const o1 = ownerSide(real, keepPlan.keep)
+check(o1.net === keepPlan.taken, 'เหลือไว้ตามที่ระบบคิด → ให้เจ้าของเท่ากับที่แผนบอกเป๊ะ', `฿${o1.net} vs ฿${keepPlan.taken}`)
+check(Object.keys(o1.add).length === 0, 'วันที่เงินเกิน ไม่มีใบไหนต้องเติมเข้า', JSON.stringify(o1.add))
+check(o1.take[1000] === 3 && o1.take[500] === 2, 'ได้รายละเอียดใบที่หยิบออก (พัน 3 · ห้าร้อย 2)', JSON.stringify(o1.take))
+
+// วันที่เงินทอนขาด แล้วเจ้าของเอามาเติมตอนปิดกะ — ใส่ "เหลือไว้" มากกว่าที่นับได้
+const thin = { 100: 2, 20: 5, 10: 4, 5: 6, 1: 20 }
+const o2 = ownerSide(thin, kit)
+check(o2.net === -(3000 - (200 + 100 + 40 + 30 + 20)), 'เหลือไว้มากกว่าที่นับได้ → ยอดติดลบ = เจ้าของเติมเข้า', `฿${o2.net}`)
+check(Object.keys(o2.take).length === 0, 'วันที่ขาด ไม่มีใบไหนถูกหยิบออก', JSON.stringify(o2.take))
+check(o2.add[100] === 16 && o2.add[20] === 35, 'บอกว่าเจ้าของเติมใบไหนเข้ามากี่ใบ (ร้อย 16 · ยี่สิบ 35)', JSON.stringify(o2.add))
+
+// เติมบางกอง หยิบบางกองในวันเดียวกัน — แลกแบงค์ร้อยเป็นยี่สิบคือเคสนี้
+const o3 = ownerSide({ 100: 20, 20: 10, 1: 50 }, { 100: 15, 20: 40, 1: 50 })
+check(o3.net === 500 - 600, 'หยิบร้อย 5 เติมยี่สิบ 30 → สุทธิเจ้าของเติมเข้า ฿100', `฿${o3.net}`)
+check(o3.take[100] === 5 && o3.add[20] === 30, 'แยกฝั่งหยิบออก/เติมเข้าออกจากกันได้ในวันเดียวกัน', `${JSON.stringify(o3.take)} / ${JSON.stringify(o3.add)}`)
+check(o3.signed[100] === 5 && o3.signed[20] === -30, 'signed เก็บทั้งสองทางด้วยเครื่องหมาย (ลงคอลัมน์ owner_denominations)', JSON.stringify(o3.signed))
+check(!(1 in o3.signed), 'กองที่ไม่ขยับไม่ต้องโผล่ใน signed', JSON.stringify(o3.signed))
+
+// เหลือไว้เท่าที่นับได้ = วันที่ไม่ได้ให้เจ้าของเลย (ค่าตั้งต้นของร้านที่ไม่ได้ตั้งชุดเงินทอน)
+const o4 = ownerSide(real, real)
+check(o4.net === 0 && !Object.keys(o4.signed).length, 'เหลือไว้ทั้งเก๊ะ → ให้เจ้าของ ฿0', `฿${o4.net}`)
 
 console.log(`\nผ่าน ${passed} · ไม่ผ่าน ${failed}`)
 if (failed) process.exit(1)

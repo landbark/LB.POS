@@ -113,6 +113,7 @@ export async function findCarryOver(supabase: Db = createClient()): Promise<Carr
   const row = data as Record<string, unknown> | null
   if (!row || row.closing_cash_counted == null) return null
   const counted = Number(row.closing_cash_counted)
+  // ติดลบได้ตั้งแต่ที่หน้าปิดกะเปลี่ยนมาคิด "ให้เจ้าของ" จากส่วนต่าง — ลบคือเจ้าของเติมเงินทอนเข้าเก๊ะ
   const toOwner = Number(row.cash_to_owner ?? 0)
   const closing = row.closing_denominations as Record<string, number> | null
   const owner = (row.owner_denominations ?? {}) as Record<string, number>
@@ -163,7 +164,8 @@ export function carryNote(
   return (
     `[เงินตั้งต้นไม่ตรงยอดยกมา ${stamp} โดย ${byName || 'พนักงาน'}] ` +
     `ยกมา ฿${money(carry.amount)} (ปิดกะ ${fmtTime(carry.closedAt)} นับได้ ฿${money(carry.counted)}` +
-    `${carry.toOwner ? ` − แยกให้เจ้าของ ฿${money(carry.toOwner)}` : ''}) · ` +
+    `${carry.toOwner > 0 ? ` − แยกให้เจ้าของ ฿${money(carry.toOwner)}` : ''}` +
+    `${carry.toOwner < 0 ? ` + เจ้าของเติมเข้า ฿${money(-carry.toOwner)}` : ''}) · ` +
     `เช้านี้นับได้ ฿${money(openingCash)} · ${diff > 0 ? 'เกิน' : 'ขาด'} ฿${money(Math.abs(diff))}` +
     `${diffs.length ? ` · กองที่ไม่ตรง: ${diffs.map((x) => `${x.label} ${x.was}→${x.now}`).join(' · ')}` : ''}` +
     `${reason.trim() ? ` · ${reason.trim()}` : ''}`

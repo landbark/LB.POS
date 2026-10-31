@@ -4,7 +4,7 @@ import { Fragment, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { expectedCash as computeExpectedCash, splitShiftBills, type ShiftBill } from '@/lib/shiftCash'
-import { BANKNOTES, COINS, DENOMS, planByDenom, planOwnerTake } from '@/lib/shiftFloat'
+import { BANKNOTES, COINS, DENOMS, ownerSide, planByDenom, planOwnerTake } from '@/lib/shiftFloat'
 import { Wallet, Lock, Unlock, Pencil, StickyNote, ArrowRightLeft } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { confirmDialog } from '@/lib/confirm'
@@ -53,10 +53,14 @@ const carryOf = (s: ShiftRow | undefined) => {
 }
 
 // สรุปรายละเอียดแบงค์เป็นข้อความ เช่น "แบงค์พัน × 3\nแบงค์ร้อย × 5" (ใช้เป็น tooltip ในประวัติกะ)
+// owner_denominations ติดลบได้ — ลบคือเจ้าของเติมใบนั้นเข้าเก๊ะ ไม่ใช่หยิบออก
 const denomTitle = (den: Record<string, number> | null | undefined) =>
   den
     ? DENOMS.filter((d) => den[String(d.value)])
-        .map((d) => `${d.label} × ${den[String(d.value)]}`)
+        .map((d) => {
+          const q = den[String(d.value)]
+          return q < 0 ? `${d.label} เติมเข้า ${-q}` : `${d.label} × ${q}`
+        })
         .join('\n') || undefined
     : undefined
 
@@ -85,7 +89,9 @@ export default function ShiftClient({
   const router = useRouter()
   const [showOpenShift, setShowOpenShift] = useState(false)
   const [counts, setCounts] = useState<Record<number, string>>({})
-  const [ownerCounts, setOwnerCounts] = useState<Record<number, string>>({})
+  // เงินทอนที่จะเหลือไว้ให้กะถัดไป แยกรายชนิด · null = ยังไม่แตะ ใช้ชุดเงินทอนที่ตั้งไว้เป็นค่าตั้งต้น
+  // ไม่มีช่อง "แยกให้เจ้าของ" แล้ว — ยอดนั้นคิดจากส่วนต่างกับใบนับ (ดู lib/shiftFloat → ownerSide)
+  const [keepEdit, setKeepEdit] = useState<Record<number, string> | null>(null)
   // ไม่ติ๊กไว้ให้ — เคยติ๊กค้างแล้วคนปิดกะไม่ทันสังเกตว่ามีกะใหม่เปิดต่อ เช้ามาเห็นกะค้างอยู่
   // นึกว่าเมื่อวานลืมปิด เลยปิดแล้วเปิดใหม่อีกรอบ กลายเป็นกะเกินมาทุกวัน
   const [reopenNext, setReopenNext] = useState(false)
@@ -164,10 +170,6 @@ export default function ShiftClient({
   const hasCount = DENOMS.some((d) => (counts[d.value] ?? '') !== '')
   const counted = DENOMS.reduce((s, d) => s + d.value * (parseInt(counts[d.value] || '0', 10) || 0), 0)
   const qtyOf = (c: Record<number, string>, v: number) => parseInt(c[v] || '0', 10) || 0
-  const cashToOwner = BANKNOTES.reduce((s, d) => s + d.value * qtyOf(ownerCounts, d.value), 0)
-  // แบงค์ที่ให้เจ้าของต้องไม่เกินจำนวนที่นับได้ในลิ้นชัก
-  const ownerExceeds = BANKNOTES.filter((d) => qtyOf(ownerCounts, d.value) > qtyOf(counts, d.value))
-  const leftover = counted - cashToOwner
   const difference = counted - expectedCash
   // เงินทอนตั้งต้นคงที่ — กำหนดรายชนิดจะคิดทีละกอง (คุมได้ว่าเหลือเป็นแบงค์อะไร)
   // ตั้งแค่ยอดรวมก็ยังใช้ได้ แต่ไล่หยิบใบใหญ่ลงมาเฉย ๆ ไม่รู้ว่าเหลือแล้วทอนได้จริงไหม
@@ -189,6 +191,23 @@ export default function ShiftClient({
   const floatTotal = floatTargetDenoms
     ? DENOMS.reduce((s, d) => s + d.value * (floatTargetDenoms[d.value] ?? 0), 0)
     : floatTarget
+  // เหลือไว้เท่าไหร่ถ้าไม่แตะอะไรเลย — ร้านที่ตั้งชุดเงินทอนไว้ใช้ตามชุดนั้น ร้านที่ไม่ได้ตั้งก็เหลือไว้ทั้งหมด
+  const keepDefault: Record<number, number> = floatPlan ? floatPlan.keep : countedDenoms
+  const keepCounts: Record<number, number> = keepEdit
+    ? Object.fromEntries(DENOMS.map((d) => [d.value, qtyOf(keepEdit, d.value)]))
+    : keepDefault
+  const keepValue = (v: number) =>
+    keepEdit ? (keepEdit[v] ?? '') : keepDefault[v] ? String(keepDefault[v]) : ''
+  // แตะช่องแรกแล้วต้องยึดทั้งชุดไว้ ไม่งั้นช่องที่เหลือจะเลื่อนตามค่าตั้งต้นที่ขยับทุกครั้งที่นับเพิ่ม
+  const editKeep = (v: number, raw: string) =>
+    setKeepEdit((c) => ({
+      ...(c ?? Object.fromEntries(DENOMS.map((d) => [d.value, keepValue(d.value)]))),
+      [v]: raw,
+    }))
+  // ให้เจ้าของ = ที่นับได้ − ที่เหลือไว้ · ติดลบ = วันที่เงินทอนขาดแล้วเจ้าของเอามาเติม
+  const owner = ownerSide(countedDenoms, keepCounts)
+  const cashToOwner = owner.net
+  const leftover = DENOMS.reduce((s, d) => s + d.value * keepCounts[d.value], 0)
   // ชนิดที่เก็บไว้ทั้งหมดลอยไปตามที่รับมาจากลูกค้า — รวมเข้าเป้าตามที่นับได้ ไม่งั้นขึ้นว่าเกินทุกวัน
   const floatExpected = floatTotal == null
     ? null
@@ -281,6 +300,19 @@ export default function ShiftClient({
       `${changed.map((d) => `${d.label} ${carryBefore?.[d.value] ?? 0}→${qty(d.value)}`).join(' · ')}` +
       `${adjustNote.trim() ? ` · ${adjustNote.trim()}` : ''}`
 
+    // ส่วนต่างต้องเข้ายอด "ให้เจ้าของ" ด้วย ไม่ใช่ลงแต่หมายเหตุ — ไม่งั้นเจ้าของหยิบเพิ่ม/เติมเข้าตอนมาจัด
+    // เงินทอนแล้วคอลัมน์นี้ต่ำ/สูงไปเท่านั้น รวมทั้งเดือนก็เพี้ยนตามไปหมด (ยอดในแท็บประวัติ + ที่ส่งเข้า Telegram)
+    const closing = lastClosed.closing_denominations
+    const toOwner = lastClosed.closing_cash_counted != null
+      ? Number(lastClosed.closing_cash_counted) - after
+      : lastClosed.cash_to_owner ?? null
+    const ownerDenoms = closing
+      ? ownerSide(
+          Object.fromEntries(DENOMS.map((d) => [d.value, closing[d.value] ?? 0])),
+          Object.fromEntries(DENOMS.map((d) => [d.value, qty(d.value)])),
+        ).signed
+      : lastClosed.owner_denominations ?? null
+
     setLoading(true)
     const supabase = createClient()
     const { error } = await supabase
@@ -289,6 +321,8 @@ export default function ShiftClient({
         carry_denominations: Object.fromEntries(DENOMS.filter((d) => qty(d.value) > 0).map((d) => [d.value, qty(d.value)])),
         carry_adjusted_at: new Date().toISOString(),
         carry_adjusted_by: currentUserId,
+        cash_to_owner: toOwner,
+        owner_denominations: ownerDenoms,
         notes: [lastClosed.notes?.trim(), auditLine].filter(Boolean).join('\n'),
       })
       .eq('id', lastClosed.id)
@@ -339,9 +373,11 @@ export default function ShiftClient({
       toast.error('กรุณานับเงินอย่างน้อย 1 ช่อง (ถ้าไม่มีให้ใส่ 0)')
       return
     }
-    if (ownerExceeds.length > 0) {
-      toast.error(`${ownerExceeds[0].label}ที่ให้เจ้าของมากกว่าที่นับได้ในลิ้นชัก`)
-      return
+    // เคลียร์ช่อง "เหลือไว้" จนหมดแล้วกดปิดกะ = ยกเงินทอนออกไปทั้งเก๊ะ เช้ามาทอนไม่ได้สักบาท
+    if (counted > 0 && leftover === 0) {
+      if (!(await confirmDialog({
+        message: `เหลือเงินทอนไว้ ฿0 — เงินในเก๊ะ ฿${money(counted)} ออกไปหาเจ้าของทั้งหมด พรุ่งนี้เปิดร้านโดยไม่มีเงินทอน ยืนยัน?`,
+      })).confirmed) return
     }
     setLoading(true)
     const supabase = createClient()
@@ -349,13 +385,15 @@ export default function ShiftClient({
       DENOMS.filter((d) => (counts[d.value] ?? '') !== '')
         .map((d) => [String(d.value), parseInt(counts[d.value], 10) || 0])
     )
+    // ส่วนต่างรายชนิดแบบมีเครื่องหมาย — บวกคือหยิบออกให้เจ้าของ ลบคือเจ้าของเติมเข้า
     const ownerDenominations = Object.fromEntries(
-      BANKNOTES.filter((d) => qtyOf(ownerCounts, d.value) > 0)
-        .map((d) => [String(d.value), qtyOf(ownerCounts, d.value)])
+      Object.entries(owner.signed).map(([v, q]) => [v, q]),
     )
-    const { error } = await supabase
-      .from('shifts')
-      .update({
+    // ใบนับเงินทอนที่ยกไปให้กะถัดไป — กรอกตอนปิดกะไปเลย ไม่ต้องรอเจ้าของมาจัดทีหลัง
+    const carryDenominations = Object.fromEntries(
+      DENOMS.filter((d) => keepCounts[d.value] > 0).map((d) => [String(d.value), keepCounts[d.value]]),
+    )
+    const closeFields = {
         closed_at: new Date().toISOString(),
         closed_by: currentUserId,
         expected_cash: expectedCash,
@@ -375,9 +413,22 @@ export default function ShiftClient({
           cashFromCancelled > 0 || cashRefunds > 0
             ? `บิลที่ยกเลิก: เงินสดที่รับไว้ ฿${money(cashFromCancelled)} · คืนเงินสด ฿${money(cashRefunds)}`
             : '',
+          // เงินทอนขาดแล้วเจ้าของเอามาเติมตอนปิดกะ — เดิมไม่มีที่ลง ได้แต่ขึ้นเตือนแล้วปล่อยลอยไว้
+          owner.net < 0
+            ? `เจ้าของเติมเงินทอนเข้าเก๊ะ ฿${money(-owner.net)} (${DENOMS.filter((d) => owner.add[d.value]).map((d) => `${d.label} ${owner.add[d.value]}`).join(' · ')})`
+            : '',
         ].filter(Boolean).join('\n') || null,
-      })
-      .eq('id', openShift.id)
+    }
+    const save = (extra: Record<string, unknown>) =>
+      supabase.from('shifts').update({ ...closeFields, ...extra }).eq('id', openShift.id)
+    let { error } = await save({
+      carry_denominations: carryDenominations,
+      // ยังไม่มีใครมาจัดทีหลัง — ใบนับนี้มาจากตอนปิดกะตรง ๆ
+      carry_adjusted_at: null,
+      carry_adjusted_by: null,
+    })
+    // ยังไม่ได้รัน migration จัดเงินทอนหลังปิดกะ — ปิดกะต้องยังได้ แค่ยอดยกไปคิดจาก (นับได้ − ให้เจ้าของ)
+    if (error && error.message.includes('carry_')) ({ error } = await save({}))
     if (error) {
       setLoading(false)
       toast.error('เกิดข้อผิดพลาด: ' + error.message)
@@ -401,7 +452,7 @@ export default function ShiftClient({
         setLoading(false)
         toast.error('ปิดกะแล้ว แต่เปิดกะใหม่ไม่สำเร็จ: ' + openError.message)
         setCounts({})
-        setOwnerCounts({})
+        setKeepEdit(null)
         setNotes('')
         router.refresh()
         return
@@ -412,7 +463,7 @@ export default function ShiftClient({
     }
     setLoading(false)
     setCounts({})
-    setOwnerCounts({})
+    setKeepEdit(null)
     setNotes('')
     router.refresh()
   }
@@ -428,7 +479,8 @@ export default function ShiftClient({
     if (!editing) return
     const counted = parseFloat(editCounted)
     const toOwner = editOwner.trim() === '' ? 0 : parseFloat(editOwner)
-    if (Number.isNaN(counted) || counted < 0 || Number.isNaN(toOwner) || toOwner < 0) {
+    // toOwner ติดลบได้ — วันที่เงินทอนขาดแล้วเจ้าของเอาเงินมาเติมเข้าเก๊ะ
+    if (Number.isNaN(counted) || counted < 0 || Number.isNaN(toOwner)) {
       toast.error('กรอกยอดเงินให้ถูกต้อง')
       return
     }
@@ -459,6 +511,9 @@ export default function ShiftClient({
         // ยอดรวมถูกแก้ด้วยมือแล้ว รายละเอียดใบละที่นับไว้เดิมจึงไม่ตรงอีก
         closing_denominations: changedTotal ? null : editing.closing_denominations,
         owner_denominations: changedTotal ? null : editing.owner_denominations,
+        // ยอดยกไปคิดจาก carry ก่อนใบนับ — ปล่อยของเดิมไว้จะทับยอดที่เพิ่งแก้ด้วยมือ
+        // ร้านที่ยังไม่ได้รัน migration จะไม่มีคีย์นี้มาตั้งแต่ตอน query — อย่าส่งไปให้คอลัมน์ที่ไม่มี
+        ...('carry_denominations' in editing ? { carry_denominations: changedTotal ? null : editing.carry_denominations } : {}),
         notes,
       })
       .eq('id', editing.id)
@@ -505,7 +560,8 @@ export default function ShiftClient({
                 <h2 className="font-semibold text-gray-900">จัดเงินทอนหลังปิดกะ</h2>
               </div>
               <p className="text-xs text-gray-500 mb-3">
-                พนักงานกลับไปแล้วแต่เพิ่งมาแลกแบงค์/เติมเหรียญให้ครบชุด — ลงตรงนี้ ใบนับของพนักงานตอนปิดกะไม่ถูกแก้
+                ปิดกะไปแล้วแต่เพิ่งมาแลกแบงค์/เติมเหรียญให้ครบชุด — ลงตรงนี้ ใบนับของพนักงานตอนปิดกะไม่ถูกแก้
+                และยอด &quot;ให้เจ้าของ&quot; ของกะนั้นจะขยับตามส่วนต่างให้เอง
                 {lastClosed.carry_adjusted_at && (
                   <> · <span className="text-[#C4865A] font-medium">จัดไปแล้วเมื่อ {fmtDate(lastClosed.carry_adjusted_at)}</span></>
                 )}
@@ -810,121 +866,79 @@ export default function ShiftClient({
             )}
           </div>
 
-          <div className="flex items-center justify-between mb-2">
-            <label className="block text-xs font-medium text-gray-600">แยกเงินให้เจ้าของ (วันไหนไม่ได้ให้ ปล่อยว่างไว้)</label>
-            {floatPlan && floatPlan.taken > 0 ? (
+          <div className="flex items-center justify-between mb-1">
+            <label className="block text-xs font-medium text-gray-600">เงินทอนที่เหลือไว้ให้พรุ่งนี้</label>
+            {keepEdit && (
               <button
                 type="button"
-                onClick={() => setOwnerCounts(
-                  Object.fromEntries(BANKNOTES.map((d) => [d.value, floatPlan.take[d.value] ? String(floatPlan.take[d.value]) : ''])),
-                )}
+                onClick={() => setKeepEdit(null)}
                 className="text-xs font-medium text-blue-600 hover:text-blue-700"
               >
-                ใส่ให้อัตโนมัติ — แยกออก ฿{money(floatPlan.taken)}
+                คืนค่าที่ระบบคิดให้
               </button>
-            ) : qtyOf(counts, 1000) > 0 ? (
-              <button
-                type="button"
-                onClick={() => setOwnerCounts((c) => ({ ...c, 1000: counts[1000] }))}
-                className="text-xs font-medium text-blue-600 hover:text-blue-700"
-              >
-                แบงค์พันทั้งหมด ({qtyOf(counts, 1000)} ใบ)
-              </button>
-            ) : null}
+            )}
           </div>
-          {floatPlan && (
-            <p className="text-xs text-gray-500 mb-2">
-              {floatPlan.short > 0 ? (
-                <span className="text-red-600 font-medium">
-                  นับได้น้อยกว่าเงินทอนตั้งต้น ฿{money(floatTotal!)} อยู่ ฿{money(floatPlan.short)} — ยังไม่ต้องแยกให้เจ้าของ ต้องเติมเงินทอนก่อนเปิดกะหน้า
+          <p className="text-xs text-gray-500 mb-2">
+            ใส่ว่าจะเหลือเงินทอนไว้ในเก๊ะชนิดไหนกี่ใบ — ส่วนที่เหลือคือเงินที่ออกไปหาเจ้าของ ไม่ต้องกรอกซ้ำ
+            {floatPlan && (
+              floatPlan.short > 0 ? (
+                <span className="block mt-0.5 text-red-600 font-medium">
+                  ชุดเงินทอนที่ตั้งไว้ ฿{money(floatTotal!)} — นับได้น้อยกว่าอยู่ ฿{money(floatPlan.short)}
+                  {' '}วันนี้เหลือไว้ทั้งเก๊ะ หรือถ้าเจ้าของเอามาเติมตรงนี้ ใส่มากกว่าที่นับได้ได้เลย
                 </span>
               ) : (
-                <>
-                  เงินทอนตั้งต้น ฿{money(floatTotal!)}
+                <span className="block mt-0.5">
+                  ชุดเงินทอนที่ตั้งไว้ ฿{money(floatTotal!)}
                   {floatPlan.kept > 0 && <> + {keptLabels} ที่มี ฿{money(floatPlan.kept)}</>}
-                  {' '}→ แยกออกให้เจ้าของ ฿{money(floatPlan.taken)} เหลือในลิ้นชัก ฿{money(floatPlan.leftover)}
                   {floatPlan.over > 0 && (
                     <span className="text-amber-600"> · เกินเป้า ฿{money(floatPlan.over)} เพราะเศษนี้เป็นเหรียญ หยิบออกไม่ได้</span>
                   )}
-                </>
-              )}
-            </p>
-          )}
-          {floatPlan && floatTargetDenoms && (floatPlan.taken > 0 || floatPlan.shortages.length > 0) && (
-            <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 mb-3 text-xs space-y-2">
-              {floatPlan.taken > 0 && (
-                <div>
-                  <p className="font-medium text-gray-700 mb-1">ควรหยิบออกให้เจ้าของ</p>
-                  <div className="grid grid-cols-2 gap-x-6 gap-y-0.5">
-                    {BANKNOTES.filter((d) => floatPlan.take[d.value]).map((d) => (
-                      <div key={d.value} className="flex justify-between text-gray-600">
-                        <span>{d.label}</span>
-                        <span className="tabular-nums">
-                          {floatPlan.take[d.value]} ใบ · ฿{money(d.value * floatPlan.take[d.value])}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-              <div>
-                <p className="font-medium text-gray-700 mb-1">เหลือไว้เป็นเงินทอนพรุ่งนี้</p>
-                <div className="grid grid-cols-2 gap-x-6 gap-y-0.5">
-                  {DENOMS.filter((d) => floatPlan.keep[d.value] || floatTargetDenoms[d.value] || keepAll.includes(d.value)).map((d) => {
-                    const keep = floatPlan.keep[d.value] ?? 0
-                    const want = floatTargetDenoms[d.value] ?? 0
-                    const kept = keepAll.includes(d.value)
-                    return (
-                      <div key={d.value} className={`flex justify-between ${!kept && keep < want ? 'text-red-600 font-medium' : 'text-gray-600'}`}>
-                        <span>{d.label}</span>
-                        <span className="tabular-nums">{keep}{kept ? ' (เก็บไว้ทั้งหมด)' : want > 0 ? ` / ${want}` : ''}</span>
-                      </div>
-                    )
-                  })}
-                </div>
-              </div>
-              {floatPlan.shortages.length > 0 && (
-                <p className="text-red-600 font-medium">
-                  ต้องแลกมาเติมก่อนเปิดร้าน:{' '}
-                  {floatPlan.shortages.map((sh) => {
-                    const label = DENOMS.find((d) => d.value === sh.value)?.label ?? sh.value
-                    return `${label} อีก ${sh.need}`
-                  }).join(' · ')}
-                </p>
-              )}
-            </div>
-          )}
+                </span>
+              )
+            )}
+          </p>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1.5 mb-3">
-            {BANKNOTES.map((d) => {
-              const qty = qtyOf(ownerCounts, d.value)
-              const exceeds = qty > qtyOf(counts, d.value)
+            {DENOMS.map((d) => {
+              const keep = keepCounts[d.value]
+              const diff = (countedDenoms[d.value] ?? 0) - keep
+              const want = floatTargetDenoms?.[d.value] ?? 0
+              const lacking = want > keep && !keepAll.includes(d.value)
               return (
                 <div key={d.value} className="flex items-center gap-2">
                   <span className="text-sm text-gray-600 w-[5.5rem] shrink-0">{d.label}</span>
                   <input
                     type="number" min={0} step={1} inputMode="numeric"
-                    value={ownerCounts[d.value] ?? ''}
-                    onChange={(e) => setOwnerCounts((c) => ({ ...c, [d.value]: e.target.value }))}
+                    value={keepValue(d.value)}
+                    onChange={(e) => editKeep(d.value, e.target.value)}
                     className={`w-16 border rounded-lg px-2 py-1.5 text-sm text-right focus:outline-none focus:ring-2 ${
-                      exceeds ? 'border-red-400 focus:ring-red-500' : 'border-gray-300 focus:ring-blue-500'
+                      lacking ? 'border-red-300 focus:ring-red-400' : 'border-gray-300 focus:ring-blue-500'
                     }`}
                     placeholder="0"
                   />
-                  <span className={`text-sm text-right flex-1 tabular-nums ${exceeds ? 'text-red-600 font-medium' : qty > 0 ? 'text-gray-900 font-medium' : 'text-gray-300'}`}>
-                    ฿{money(d.value * qty)}
+                  <span className="text-xs flex-1 tabular-nums">
+                    {diff > 0 && <span className="text-gray-500">ให้เจ้าของ {diff}</span>}
+                    {diff < 0 && <span className="text-blue-600 font-medium">เจ้าของเติม {-diff}</span>}
+                    {lacking && <span className="text-red-500 font-medium">{diff !== 0 ? ' · ' : ''}ต้องการ {want}</span>}
                   </span>
                 </div>
               )
             })}
           </div>
-          {ownerExceeds.length > 0 && (
-            <p className="text-xs font-medium text-red-600 mb-3">{ownerExceeds[0].label}ที่ให้เจ้าของมากกว่าที่นับได้ในลิ้นชัก</p>
+          {floatPlan && floatPlan.shortages.length > 0 && (
+            <p className="text-xs font-medium text-red-600 mb-3">
+              ต้องแลกมาเติมก่อนเปิดร้าน:{' '}
+              {floatPlan.shortages.map((sh) => {
+                const label = DENOMS.find((d) => d.value === sh.value)?.label ?? sh.value
+                return `${label} อีก ${sh.need}`
+              }).join(' · ')}
+            </p>
           )}
 
           <div className="bg-gray-50 rounded-lg p-3 space-y-1.5 text-sm">
-            <div className="flex justify-between text-gray-600">
-              <span>ให้เจ้าของ</span><span>{cashToOwner > 0 ? `-฿${money(cashToOwner)}` : '—'}</span>
+            <div className={`flex justify-between ${cashToOwner < 0 ? 'text-blue-600 font-medium' : 'text-gray-600'}`}>
+              <span>{cashToOwner < 0 ? 'เจ้าของเติมเข้าเก๊ะ' : 'ให้เจ้าของ'}</span>
+              <span>{cashToOwner === 0 ? '—' : cashToOwner > 0 ? `-฿${money(cashToOwner)}` : `+฿${money(-cashToOwner)}`}</span>
             </div>
             <div className="flex justify-between font-medium text-gray-900 pt-1 border-t border-gray-200">
               <span>เหลือในลิ้นชัก (เงินตั้งต้นกะถัดไป)</span><span>฿{money(leftover)}</span>
@@ -1023,7 +1037,11 @@ export default function ShiftClient({
                   {s.closing_cash_counted != null ? `฿${money(s.closing_cash_counted)}` : '—'}
                 </td>
                 <td className="px-4 py-3 text-sm text-right text-gray-700" title={denomTitle(s.owner_denominations)}>
-                  {s.cash_to_owner != null && s.cash_to_owner > 0 ? `฿${money(s.cash_to_owner)}` : '—'}
+                  {s.cash_to_owner == null || s.cash_to_owner === 0
+                    ? '—'
+                    : s.cash_to_owner > 0
+                      ? `฿${money(s.cash_to_owner)}`
+                      : <span className="text-blue-600">+฿{money(-Number(s.cash_to_owner))}</span>}
                 </td>
                 <td className={`px-4 py-3 text-sm text-right font-semibold ${
                   s.cash_difference == null ? 'text-gray-400' : s.cash_difference === 0 ? 'text-green-600' : s.cash_difference > 0 ? 'text-blue-600' : 'text-red-600'
@@ -1095,9 +1113,11 @@ export default function ShiftClient({
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">เงินที่ให้เจ้าของ (บาท)</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  เงินที่ให้เจ้าของ (บาท) <span className="font-normal text-gray-400">· ติดลบ = เจ้าของเติมเข้าเก๊ะ</span>
+                </label>
                 <input
-                  type="number" min="0" step="0.01"
+                  type="number" step="0.01"
                   value={editOwner}
                   onChange={(e) => setEditOwner(e.target.value)}
                   className={inputClass}

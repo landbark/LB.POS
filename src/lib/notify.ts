@@ -560,7 +560,9 @@ export function buildShiftCloseMessage(s: ShiftCloseInfo): string {
     `เงินสดที่ควรมี: ${baht(s.expectedCash)}`,
     `นับได้จริง: ${baht(s.countedCash)}`,
     diffLine,
+    // ติดลบ = วันที่เงินทอนขาดแล้วเจ้าของเอาเงินมาเติมเข้าเก๊ะ ไม่ใช่หยิบออก
     ...(s.cashToOwner > 0 ? [`👜 แยกให้เจ้าของ: ${baht(s.cashToOwner)}`] : []),
+    ...(s.cashToOwner < 0 ? [`👜 เจ้าของเติมเงินทอนเข้าเก๊ะ: ${baht(-s.cashToOwner)}`] : []),
     ...(s.notes ? ['', `📝 ${s.notes}`] : []),
   ].join('\n') + adminLink('/admin/daily')
 }

@@ -7,6 +7,10 @@
 --
 -- เก็บแยกจาก closing_denominations เพราะเป็นคนละเหตุการณ์: ใบนับของพนักงานตอนปิดต้องไม่ถูกแก้
 -- ยอดยกมาของกะถัดไปจะอ่านจาก carry_denominations ก่อน ถ้าไม่มีค่อยใช้ (ที่นับได้ − ที่ให้เจ้าของ)
+--
+-- ภายหลังหน้าปิดกะเขียนคอลัมน์นี้ตั้งแต่ตอนปิดกะไปเลย (ช่อง "เงินทอนที่เหลือไว้ให้พรุ่งนี้" คือช่องนี้)
+-- การ์ดนี้จึงเหลือหน้าที่เป็นทางสำรองตอนเจ้าของมาจัดทีหลัง และต้องอัปเดต cash_to_owner ด้วยทุกครั้ง
+-- เพราะ "ให้เจ้าของ" = ที่นับได้ − ที่เหลือไว้ ไม่ใช่ช่องที่กรอกแยกอีกแล้ว
 ALTER TABLE shifts ADD COLUMN IF NOT EXISTS carry_denominations JSONB;
 ALTER TABLE shifts ADD COLUMN IF NOT EXISTS carry_adjusted_at TIMESTAMPTZ;
 ALTER TABLE shifts ADD COLUMN IF NOT EXISTS carry_adjusted_by UUID REFERENCES profiles(id) ON DELETE SET NULL;

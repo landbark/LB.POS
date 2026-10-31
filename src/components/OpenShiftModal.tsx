@@ -224,6 +224,7 @@ export default function OpenShiftModal({
               <p className="text-xs text-gray-500">
                 ปิดกะ {fmtTime(carry.closedAt)} นับได้ ฿{money(carry.counted)}
                 {carry.toOwner > 0 && <> − แยกให้เจ้าของ ฿{money(carry.toOwner)}</>}
+                {carry.toOwner < 0 && <> + เจ้าของเติมเข้า ฿{money(-carry.toOwner)}</>}
               </p>
               {carry.adjustedAt && (
                 <p className="text-xs text-[#7A4E2D]">
