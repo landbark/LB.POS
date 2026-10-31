@@ -1,15 +1,5 @@
 {
   "regions": [
     "sin1"
-  ],
-  "crons": [
-    {
-      "path": "/api/cron/stock-alerts",
-      "schedule": "0 1 * * *"
-    },
-    {
-      "path": "/api/cron/daily-summary",
-      "schedule": "0 13 * * *"
-    }
   ]
 }
