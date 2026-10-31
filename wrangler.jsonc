@@ -18,6 +18,12 @@
     { "pattern": "pos.landbark.app", "custom_domain": true }
   ],
 
+  // origin ของตัวเอง — ใช้ทำลิงก์กดกลับเข้าหลังร้านในข้อความ Telegram
+  // (ไม่ใช่ความลับ จึงเป็น var ไม่ใช่ secret) ฝั่งเซิร์ฟเวอร์อ่านตอนรัน ไม่ได้ฝังตอน build
+  "vars": {
+    "NEXT_PUBLIC_SITE_URL": "https://pos.landbark.app"
+  },
+
   // ยังเปิด workers.dev ค้างไว้ระหว่างที่ร้านยังขายผ่าน Vercel อยู่ — เป็นทางถอย
   // ถ้าโดเมนใหม่มีปัญหา ตัดทิ้งตอนปิด Vercel จริง (ดู docs/deploy-cloudflare.md ขั้นที่ 1)
   "workers_dev": true,
