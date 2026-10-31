@@ -1,3 +1,4 @@
+import { cache } from 'react'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { isClinicOnly } from '@/lib/clinic'
 import { getReservedQuantities } from '@/lib/order-stock'
@@ -23,7 +24,8 @@ export interface Storefront {
   payment_qr_url: string | null
 }
 
-export async function getStorefront(): Promise<Storefront | null> {
+// cache() = ต่อหนึ่ง request ยิง DB รอบเดียว — layout กับ generateMetadata เรียกตัวนี้ทั้งคู่
+export const getStorefront = cache(async (): Promise<Storefront | null> => {
   const admin = createAdminClient()
   const { data } = await admin
     .from('store_settings')
@@ -33,7 +35,7 @@ export async function getStorefront(): Promise<Storefront | null> {
     .limit(1)
     .maybeSingle()
   return data as Storefront | null
-}
+})
 
 export async function getAnnouncements(limit = 20): Promise<Announcement[]> {
   const admin = createAdminClient()

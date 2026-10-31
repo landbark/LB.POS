@@ -2,9 +2,22 @@ import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 import { homePath } from '@/lib/home-path'
 import { isVet, isVetPlusPath } from '@/lib/roles'
-import { isStaffHost } from '@/lib/staff-host'
+import { isCustomerHost, isStaffHost, isStaffPath, primaryStaffHost } from '@/lib/staff-host'
 
 export async function proxy(request: NextRequest) {
+  const { pathname } = request.nextUrl
+  const host = request.headers.get('host')
+
+  // หน้างานหลังร้านอยู่บนโดเมนพนักงานเท่านั้น — เข้ามาทางโดเมนลูกค้าให้ส่งข้ามไปก่อนเช็คอะไรทั้งสิ้น
+  // (ลิงก์ "สำหรับพนักงาน" ท้ายหน้าร้านเป็นทางเดียวที่คนเดินมาทางนี้) เช็คก่อนคุย Supabase
+  // จะได้ไม่เสียเวลาไปอีกหนึ่งรอบกับ request ที่ยังไงก็ถูกเด้ง
+  if (isCustomerHost(host) && isStaffPath(pathname)) {
+    const target = new URL(`https://${primaryStaffHost()}`)
+    target.pathname = pathname
+    target.search = request.nextUrl.search
+    return NextResponse.redirect(target)
+  }
+
   let supabaseResponse = NextResponse.next({ request })
 
   const supabase = createServerClient(
@@ -29,11 +42,10 @@ export async function proxy(request: NextRequest) {
   )
 
   const { data: { user } } = await supabase.auth.getUser()
-  const { pathname } = request.nextUrl
 
   // บนโดเมนพนักงาน หน้าแรกคือหน้างานของคนนั้น ไม่ใช่หน้าร้านของลูกค้า
   // (เครื่องในร้านติดตั้งเป็นแอปโดย start_url = '/' จึงต้องเด้งตรงนี้ ไม่ใช่ที่ manifest)
-  if (pathname === '/' && isStaffHost(request.headers.get('host'))) {
+  if (pathname === '/' && isStaffHost(host)) {
     if (!user) {
       return NextResponse.redirect(new URL('/login', request.url))
     }

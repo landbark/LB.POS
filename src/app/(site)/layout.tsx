@@ -1,9 +1,25 @@
-import Link from 'next/link'
+import type { Metadata } from 'next'
 import { MapPin, Phone } from 'lucide-react'
 import { FacebookIcon, InstagramIcon, LineIcon } from '@/components/SocialIcons'
 import { getSessionCustomer } from '@/lib/customer-session'
 import { getStorefront } from '@/lib/shop-data'
 import SiteHeader from './SiteHeader'
+
+// หน้าร้านของลูกค้าใช้ชื่อร้าน ไม่ใช่ชื่อระบบหลังบ้านที่ตั้งไว้ใน layout ชั้นนอก
+// (ชื่อนั้นจะไปโผล่ทั้งบนแท็บเบราว์เซอร์และในผลค้นหา)
+export async function generateMetadata(): Promise<Metadata> {
+  const store = await getStorefront()
+  const name = store?.name ?? 'LANDBARK'
+  return {
+    title: { default: name, template: `%s · ${name}` },
+    description: store?.shop_intro ?? 'ร้านเพทชอปและคลินิกรักษาสัตว์',
+    openGraph: {
+      title: name,
+      description: store?.shop_intro ?? 'ร้านเพทชอปและคลินิกรักษาสัตว์',
+      type: 'website',
+    },
+  }
+}
 
 export default async function SiteLayout({ children }: { children: React.ReactNode }) {
   const [store, customer] = await Promise.all([getStorefront(), getSessionCustomer()])
@@ -70,7 +86,8 @@ export default async function SiteLayout({ children }: { children: React.ReactNo
         <div className="border-t border-brand-bg-light">
           <div className="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between text-xs text-brand-muted">
             <span>© {new Date().getFullYear()} {storeName}</span>
-            <Link href="/login" className="hover:text-brand-cream">สำหรับพนักงาน</Link>
+            {/* ข้ามโดเมนไป pos.* (proxy.ts เป็นคนเด้ง) — ใช้ <a> ให้เบราว์เซอร์เดินเอง ไม่ใช่ router */}
+            <a href="/login" className="hover:text-brand-cream">สำหรับพนักงาน</a>
           </div>
         </div>
       </footer>
