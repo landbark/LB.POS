@@ -28,7 +28,7 @@
     "NEXT_PUBLIC_SITE_URL": "https://pos.landbark.app"
   },
 
-  // Worker ปกติรันที่ edge ใกล้คนกด แต่ Supabase อยู่สิงคโปร์ หน้าที่ยิงหลาย query
+  // Worker ปกติรันที่ edge ใกล้คนกด แต่ Supabase อยู่โซล (ap-northeast-2) หน้าที่ยิงหลาย query
   // จึงเสียค่าเดินทางคูณจำนวนครั้ง (วัดได้ /shop ช้ากว่า Vercel ที่ตั้ง regions sin1 อยู่ ~2 เท่า)
   // smart = Cloudflare ย้ายไปรันใกล้ปลายทางให้เองเมื่อเห็นว่า request คุยหลังบ้านหนัก
   "placement": { "mode": "smart" },
