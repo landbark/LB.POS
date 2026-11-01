@@ -154,7 +154,10 @@ LINE callback 4 โดเมน · `NEXT_PUBLIC_SITE_URL` เป็น var ใ�
 วิธีเช็ก: `curl -s https://liff.line.me/<LIFF_ID> | grep -oE 'https?://[a-zA-Z0-9._-]+'`
 (ระวัง regex ที่บังคับว่าต้องมี subdomain — `landbark.app` ไม่มี จะ grep ไม่เจอแล้วเข้าใจผิดว่าว่าง)
 
-**ตอนนี้ลบโปรเจกต์ Vercel ได้แล้ว** ไม่เหลืออะไรพึ่ง `*.vercel.app` อีก
+**ลบโปรเจกต์ Vercel `lb-pos` ทิ้งแล้ว 1 พ.ย. 2026** — `landbarkpos.vercel.app` กับ
+`lb-pos-tan.vercel.app` ตอบ 404 ทั้งคู่ ทีม LANDBARK บน Vercel เหลือ 0 โปรเจกต์
+ยืนยันหลังลบว่า `pos.landbark.app/login` · `landbark.app` · `/member` · `/shop` ตอบ 200 ครบ
+และลบ `vercel.json` ออกจาก repo ด้วย (ไม่มีอะไรอ่านมันอีกแล้ว) — **การย้ายโฮสต์ของ POS จบสมบูรณ์**
 
 ลบโปรเจกต์ Vercel จริงได้เมื่อไล่เครื่องในร้านครบทุกเครื่องแล้ว — **ไม่ใช่ดูจาก log**
 เพราะบัญชีเป็นแพ็ก **Hobby** จึงไม่มี Observability ให้ดูทราฟฟิกย้อนหลัง และ redirect ใน `vercel.json`

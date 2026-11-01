@@ -3,7 +3,7 @@ import { sendStockAlerts } from '@/lib/notify'
 import { expireStaleOrders } from '@/lib/order-stock'
 import { sendCustomerAppointmentReminders } from '@/lib/customer-notify'
 
-// ยิงโดย Vercel Cron ทุกเช้า (ดู vercel.json) — Vercel แนบ Authorization: Bearer CRON_SECRET ให้เอง
+// ยิงโดย worker ตั้งเวลาทุกเช้า (ดู workers/cron/) — แนบ Authorization: Bearer CRON_SECRET มาให้
 export async function GET(request: NextRequest) {
   const secret = process.env.CRON_SECRET
   if (!secret || request.headers.get('authorization') !== `Bearer ${secret}`) {

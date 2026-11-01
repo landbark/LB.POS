@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { buildDailySalesMessage, gatherDailySales, notifyEvent } from '@/lib/notify'
 
-// ยิงโดย Vercel Cron ทุกเย็น (ดู vercel.json) — สรุปยอดขายของวันให้เจ้าของ
+// ยิงโดย worker ตั้งเวลาทุกเย็น (ดู workers/cron/) — สรุปยอดขายของวันให้เจ้าของ
 export async function GET(request: NextRequest) {
   const secret = process.env.CRON_SECRET
   if (!secret || request.headers.get('authorization') !== `Bearer ${secret}`) {
