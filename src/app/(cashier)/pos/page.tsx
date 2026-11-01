@@ -3,7 +3,7 @@ import { thaiToday } from '@/lib/thaiDate'
 import { fetchAll } from '@/lib/supabase/fetch-all'
 import { isClinicOnly } from '@/lib/clinic'
 import { PROMOTION_SELECT, toPromotion } from '@/lib/promotions'
-import type { ClinicQueueItem, Customer } from '@/lib/types'
+import { PENDING_VISIT_SELECT, POS_PRODUCT_SELECT, toQueueVisits, type PendingVisitRow } from '@/lib/clinicQueue'
 import POSClient from './POSClient'
 
 export default async function POSPage() {
@@ -15,12 +15,7 @@ export default async function POSPage() {
     fetchAll((from, to) =>
       supabase
         .from('products')
-        .select(`
-          *,
-          categories(name, vat_applicable, clinic_only),
-          product_lots(id, quantity, expiry_date, lot_number),
-          product_units!product_units_product_id_fkey(id, product_id, unit_name, factor, sku, barcode, price, cost, sellable_pos, sellable_online, purchasable, sort_order, active, created_at)
-        `)
+        .select(POS_PRODUCT_SELECT)
         .eq('active', true)
         .order('name')
         .order('id')   // ชื่อสินค้าซ้ำได้ ต้องมีคีย์ไม่ซ้ำปิดท้าย ไม่งั้นแถวซ้ำ/หายระหว่างหน้า
@@ -39,7 +34,7 @@ export default async function POSPage() {
     // คิวเก็บเงินจากคลินิก — หมอกด "ส่งไปเก็บเงิน" ที่หน้าตรวจรักษาแล้วมาโผล่ตรงนี้
     supabase
       .from('visits')
-      .select('id, visit_number, pets(name), customers(*), visit_items(id, product_id, quantity, unit_price, dosage)')
+      .select(PENDING_VISIT_SELECT)
       .eq('status', 'pending_payment')
       .order('visit_date'),
     // รอบออกบูธที่เปิดอยู่ (มีได้ทีละรอบ) — มีรอบเปิดถึงจะกดโหมดบูธในหน้าขายได้
@@ -62,21 +57,7 @@ export default async function POSPage() {
 
   // ผูกสินค้าเต็มก้อน (พร้อมล็อต) ให้รายการจากคลินิก เพราะยาถูกกรองออกจาก shelfProducts ไปแล้ว
   const productById = new Map(products.map((p) => [p.id, p]))
-  const clinicQueue = (pendingVisits ?? []).map((v) => ({
-    id: v.id,
-    visit_number: v.visit_number,
-    pet_name: (v.pets as unknown as { name: string } | null)?.name ?? '',
-    customer: (v.customers as unknown as Customer | null) ?? null,
-    items: (v.visit_items ?? [])
-      .map((item) => ({
-        quantity: item.quantity,
-        unit_price: item.unit_price,
-        dosage: item.dosage,
-        product: item.product_id ? productById.get(item.product_id) : undefined,
-      }))
-      // สินค้าถูกลบทีหลัง = ข้ามไป ให้แคชเชียร์เก็บรายการที่เหลือได้
-      .filter((item): item is ClinicQueueItem => Boolean(item.product)),
-  }))
+  const clinicQueue = toQueueVisits((pendingVisits ?? []) as unknown as PendingVisitRow[], productById)
 
   // โหมดบูธขายเฉพาะของที่ลงใบเบิกไว้ ส่งรายการ id ไปให้หน้าขายกรอง
   const booth = boothTrip

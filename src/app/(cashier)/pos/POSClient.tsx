@@ -77,6 +77,11 @@ export default function POSClient({ products: allProducts, booth, shiftOpen, shi
   // เวชระเบียนที่เพิ่งเก็บเงินไป — ซ่อนออกจากคิวทันที ไม่ต้องรอ router.refresh() ตามมาทัน
   // (เก็บเป็นรายการ id แทนการ copy คิวมาเป็น state เพราะถ้า refresh คืนข้อมูลเก่ามา ตัวที่จ่ายแล้วจะโผล่ซ้ำ)
   const [paidVisitIds, setPaidVisitIds] = useState<string[]>([])
+  // คิวคลินิกที่ติดมากับหน้าเป็นภาพนิ่ง ณ ตอนเปิดหน้า — ใบที่หมอส่งมาทีหลังจะไม่โผล่
+  // แคชเชียร์เลยต้องรีโหลดหน้า แล้วของที่ยิงไว้ครึ่งบิลก็หายหมด ต้องยิงใหม่
+  // ตรงนี้จึงถามคิวซ้ำเองเป็นระยะ โดยไม่แตะตะกร้า
+  // (ค่าที่ติดมากับหน้าใช้เป็นค่าตั้งต้นเท่านั้น หลังจากนั้นถือตามที่ถามเอง)
+  const [liveQueue, setLiveQueue] = useState<ClinicQueueVisit[]>(clinicQueue)
   // แถวในตะกร้าที่กำลังเปิดช่องลดราคา + โหมดลด (บาท/%) ของแถวนั้น
   const [discountRow, setDiscountRow] = useState<string | null>(null)
   const [discountMode, setDiscountMode] = useState<'amount' | 'percent'>('amount')
@@ -104,6 +109,31 @@ export default function POSClient({ products: allProducts, booth, shiftOpen, shi
   const [lastScanKey, setLastScanKey] = useState<string | null>(null)
   // ปุ่มกล้องโชว์เฉพาะมือถือ/แท็บเล็ตที่เปิดกล้องได้
   const canScan = useSyncExternalStore(neverChanges, canScanOnThisDevice, noCameraOnServer)
+
+  const refreshQueue = useCallback(async () => {
+    try {
+      const res = await fetch('/api/pos/clinic-queue', { cache: 'no-store' })
+      if (!res.ok) return
+      const { visits } = (await res.json()) as { visits: ClinicQueueVisit[] }
+      setLiveQueue(visits)
+    } catch {
+      // เน็ตร้านสะดุดเป็นเรื่องปกติ — รอบหน้าค่อยเอาใหม่ ไม่ต้องขึ้นเตือนให้ตกใจ
+    }
+  }, [])
+
+  // ถามคิวซ้ำเฉพาะตอนแท็บนี้ถูกมองอยู่ — เครื่องที่ร้านเปิดหน้าขายค้างทั้งวันเป็นเรื่องปกติ
+  useEffect(() => {
+    if (boothMode) return // ที่บูธไม่มีคลินิก
+    const tick = () => { if (document.visibilityState === 'visible') refreshQueue() }
+    const timer = setInterval(tick, 15000)
+    window.addEventListener('focus', tick)
+    document.addEventListener('visibilitychange', tick)
+    return () => {
+      clearInterval(timer)
+      window.removeEventListener('focus', tick)
+      document.removeEventListener('visibilitychange', tick)
+    }
+  }, [refreshQueue, boothMode])
 
   function toggleBoothMode(on: boolean) {
     if (cart.length > 0) {
@@ -345,10 +375,12 @@ export default function POSClient({ products: allProducts, booth, shiftOpen, shi
         return
       }
     } else if (cart.length > 0) {
+      // เดิมปุ่มนี้แทนที่ตะกร้าทิ้ง — ของที่ยิงไว้ก่อนหน้าหายหมดต้องยิงใหม่
+      // เติมต่อท้ายแทน ไม่มีเหตุผลอะไรที่ของหน้าร้านกับของคลินิกจะอยู่บิลเดียวกันไม่ได้
       const { confirmed } = await confirmDialog({
-        title: 'แทนที่ตะกร้าเดิม?',
-        message: 'ตะกร้ามีของอยู่แล้ว — จะแทนที่ด้วยรายการจากคลินิก',
-        confirmLabel: 'แทนที่',
+        title: 'เพิ่มเข้าตะกร้าเดิม?',
+        message: 'ตะกร้ามีของอยู่แล้ว — รายการจากคลินิกจะถูกเพิ่มต่อท้าย ของเดิมไม่หาย',
+        confirmLabel: 'เพิ่มเข้าตะกร้า',
         tone: 'primary',
       })
       if (!confirmed) return
@@ -372,7 +404,7 @@ export default function POSClient({ products: allProducts, booth, shiftOpen, shi
       lot_id: getBestLot(i.product),
     }))
 
-    if (merging) {
+    if (cart.length > 0) {
       // ของซ้ำกันที่ราคาเท่ากันรวมเป็นบรรทัดเดียว — ราคาต่างกันต้องแยก (หมอตั้งราคารายใบได้)
       const next = [...cart]
       for (const add of incoming) {
@@ -387,13 +419,20 @@ export default function POSClient({ products: allProducts, booth, shiftOpen, shi
         }
       }
       commitCart(next)
+    } else {
+      commitCart(incoming)
+    }
+
+    if (merging) {
       setActiveVisits([...activeVisits, visit])
       toast.success(`รวมใบ ${visit.visit_number} (${visit.pet_name || 'ไม่ระบุสัตว์'}) เข้าบิลแล้ว`)
     } else {
-      commitCart(incoming)
-      setCustomer(visit.customer)
-      setCustomerPhone(visit.customer?.phone ?? '')
-      setShowAddCustomer(false)
+      // ใบแรก — เจ้าของใบคือลูกค้าของบิลนี้ (ใบไม่มีเจ้าของก็ไม่ไปลบคนที่แคชเชียร์เลือกไว้เองแล้ว)
+      if (visit.customer) {
+        setCustomer(visit.customer)
+        setCustomerPhone(visit.customer.phone ?? '')
+        setShowAddCustomer(false)
+      }
       setActiveVisits([visit])
     }
     setShowQueue(false)
@@ -659,13 +698,31 @@ export default function POSClient({ products: allProducts, booth, shiftOpen, shi
 
   const cartCount = cart.reduce((n, i) => n + baseQty(i), 0)
   const activeVisitIds = activeVisits.map((v) => v.id)
-  const queue = clinicQueue.filter(
+  const queue = liveQueue.filter(
     (v) => !paidVisitIds.includes(v.id) && !activeVisitIds.includes(v.id),
   )
   // ใบของเจ้าของคนเดียวกับที่กำลังเก็บเงินอยู่ — รวมเข้าบิลเดียวกันได้
   const sameOwnerQueue = activeVisits.length > 0
     ? queue.filter((v) => (v.customer?.id ?? null) === (activeVisits[0].customer?.id ?? null))
     : []
+
+  // หมอส่งใบของเจ้าของคนเดิมมาเพิ่มระหว่างที่กำลังเก็บเงินอยู่ — บอกตรงนั้นเลย
+  // ไม่งั้นแคชเชียร์ก้มยิงของอยู่ ไม่ทันเห็นปุ่ม "รวมบิล" ที่เพิ่งโผล่ข้างบน
+  const announcedVisitIds = useRef<string[]>([])
+  const sameOwnerKey = sameOwnerQueue.map((v) => v.id).join(',')
+  useEffect(() => {
+    if (activeVisits.length === 0) {
+      announcedVisitIds.current = []
+      return
+    }
+    const fresh = sameOwnerKey.split(',').filter((id) => id && !announcedVisitIds.current.includes(id))
+    if (fresh.length === 0) return
+    announcedVisitIds.current = [...announcedVisitIds.current, ...fresh]
+    toast(`เจ้าของคนนี้มีใบรอเก็บเงินอีก ${fresh.length} ใบ — กด "รวมบิล" เพิ่มเข้าบิลนี้ได้เลย`, {
+      icon: '🩺',
+      duration: 6000,
+    })
+  }, [sameOwnerKey, activeVisits.length])
 
   return (
     // มือถือ: สินค้าเต็มจอ ตะกร้าซ่อนอยู่หลังแถบล่าง — จอใหญ่: สองคอลัมน์เหมือนเดิม
@@ -888,7 +945,7 @@ export default function POSClient({ products: allProducts, booth, shiftOpen, shi
         {queue.length > 0 && activeVisits.length === 0 && !boothMode && (
           <div className="px-3 pt-3">
             <button
-              onClick={() => setShowQueue(true)}
+              onClick={() => { refreshQueue(); setShowQueue(true) }}
               className="w-full flex items-center justify-center gap-2 bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-800 text-sm font-medium py-2 rounded-lg transition-colors"
             >
               <Stethoscope size={15} />
@@ -911,7 +968,21 @@ export default function POSClient({ products: allProducts, booth, shiftOpen, shi
                   ))}
                 </div>
                 <button
-                  onClick={() => { setActiveVisits([]); setCart([]); setDiscountRow(null) }}
+                  onClick={async () => {
+                    // ปุ่มนี้ล้างตะกร้าทั้งใบ รวมของที่ยิงเพิ่มเองด้วย — ถามก่อน ไม่งั้นกดพลาดทีต้องยิงใหม่หมด
+                    const { confirmed } = await confirmDialog({
+                      title: 'ยกเลิกการเก็บเงินใบนี้?',
+                      message: 'ตะกร้าจะถูกล้างทั้งใบ รวมสินค้าที่ยิงเพิ่มเข้ามาเองด้วย',
+                      confirmLabel: 'ล้างตะกร้า',
+                      tone: 'danger',
+                    })
+                    if (!confirmed) return
+                    setActiveVisits([])
+                    setCart([])
+                    setDiscountRow(null)
+                    setCustomer(null)
+                    setCustomerPhone('')
+                  }}
                   title="ยกเลิกการเก็บเงินรายการนี้"
                   className="text-amber-500 hover:text-amber-700 shrink-0"
                 >
@@ -922,11 +993,22 @@ export default function POSClient({ products: allProducts, booth, shiftOpen, shi
             {/* เจ้าของคนเดียวกันมีใบอื่นค้างอยู่ — รวมเข้าบิลนี้ได้เลย ไม่ต้องเก็บเงินสองรอบ */}
             {sameOwnerQueue.length > 0 && (
               <button
-                onClick={() => setShowQueue(true)}
+                onClick={() => { refreshQueue(); setShowQueue(true) }}
                 className="w-full flex items-center justify-center gap-2 bg-amber-100 hover:bg-amber-200 border border-amber-300 text-amber-900 text-sm font-medium py-2 rounded-lg transition-colors"
               >
                 <Stethoscope size={15} />
                 เจ้าของคนนี้มีอีก {sameOwnerQueue.length} ใบ — รวมบิล
+              </button>
+            )}
+            {/* คนละเจ้าของกันทั้งคิว — ยังให้เปิดดูได้ ไม่งั้นแคชเชียร์ไม่รู้ว่ามีใบค้างอยู่
+                แล้วไปกดกากบาทล้างตะกร้าทิ้งเพื่อหาทางเข้าคิว */}
+            {sameOwnerQueue.length === 0 && queue.length > 0 && !boothMode && (
+              <button
+                onClick={() => { refreshQueue(); setShowQueue(true) }}
+                className="w-full flex items-center justify-center gap-2 border border-gray-200 hover:bg-gray-50 text-gray-600 text-xs font-medium py-1.5 rounded-lg transition-colors"
+              >
+                <Stethoscope size={14} />
+                คิวคลินิกอีก {queue.length} ใบ (คนละเจ้าของ — ต้องแยกบิล)
               </button>
             )}
           </div>
@@ -1215,8 +1297,9 @@ export default function POSClient({ products: allProducts, booth, shiftOpen, shi
             setShowPayment(false)
             setActiveVisits([])
             toast.success(info?.writeoff ? 'ตัดสต็อกออกแล้ว' : 'บันทึกการขายแล้ว')
-            // คิวคลินิกอยู่ฝั่ง server — ต้อง refresh ไม่งั้นรายการที่เพิ่งเก็บเงินยังค้างอยู่
+            // สต็อกที่เพิ่งถูกตัดอยู่ฝั่ง server — ต้อง refresh ไม่งั้นหน้าขายยังโชว์ยอดเดิม
             router.refresh()
+            refreshQueue()
           }}
         />
       )}
@@ -1254,6 +1337,9 @@ export default function POSClient({ products: allProducts, booth, shiftOpen, shi
                           <span className="ml-2 text-xs text-gray-400">{v.customer?.name ?? 'ไม่มีเจ้าของในระบบ'}</span>
                         </p>
                         <p className="text-xs text-gray-400 font-mono">{v.visit_number} · {v.items.length} รายการ</p>
+                        {otherOwner && (
+                          <p className="text-[11px] text-red-500">คนละเจ้าของกับบิลที่เปิดอยู่ — เก็บเงินบิลนี้ให้จบก่อน</p>
+                        )}
                       </div>
                       <p className="text-sm font-semibold text-gray-900 shrink-0">
                         ฿{visitTotal.toLocaleString('th-TH', { minimumFractionDigits: 2 })}
