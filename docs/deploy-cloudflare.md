@@ -135,6 +135,27 @@ LINE callback 4 โดเมน · `NEXT_PUBLIC_SITE_URL` เป็น var ใ�
 **ไม่อัปเดตตามโค้ดอีกแล้ว** ซึ่งตรงกับหน้าที่ที่เหลือของมันพอดี
 ถ้าวันหลังต้องแก้ปลายทาง redirect ต้อง `vercel deploy --prod` ด้วยมือ
 
+### ตรวจรอบสุดท้ายก่อนลบ — 1 พ.ย. 2026
+
+ไล่เครื่องในร้านครบแล้ว และสแกนของที่เหลือทั้งหมดจบแล้ว:
+
+| จุด | ผล |
+|---|---|
+| โค้ดทั้ง repo | ไม่มี hardcode โดเมนเก่า |
+| DB (`store_settings`, `announcements`, `customers`, `notify_settings`, `telegram_recipients`) | ไม่มี URL เก่า |
+| `products` ทั้ง 2,118 แถว | ไม่มี (filter ฝั่ง DB เลี่ยงลิมิต 1000) |
+| **LIFF endpoint** | 🔴 ชี้ `lb-pos-tan.vercel.app/member` → **แก้เป็น `https://landbark.app/member` แล้ว** |
+| ริชเมนู LINE OA "Member LB" | ปุ่มใช้ `liff.line.me/...` + FB/IG ไม่แตะโดเมนเก่า |
+| ข้อความทักทาย + ตอบกลับอัตโนมัติ | ข้อความล้วน ไม่มีลิงก์ |
+
+⚠️ **LIFF endpoint เป็นกับดักที่มองไม่เห็นจากฝั่งโค้ดเลย** — มันเก็บอยู่ใน LINE Developers Console
+ไม่ใช่ใน repo และตอนนั้นยัง "ใช้งานได้ปกติ" เพราะเด้งผ่าน Vercel สองต่อ
+(`lb-pos-tan` → `landbarkpos` → `landbark.app`) จะพังก็ต่อเมื่อลบโปรเจกต์ Vercel เท่านั้น
+วิธีเช็ก: `curl -s https://liff.line.me/<LIFF_ID> | grep -oE 'https?://[a-zA-Z0-9._-]+'`
+(ระวัง regex ที่บังคับว่าต้องมี subdomain — `landbark.app` ไม่มี จะ grep ไม่เจอแล้วเข้าใจผิดว่าว่าง)
+
+**ตอนนี้ลบโปรเจกต์ Vercel ได้แล้ว** ไม่เหลืออะไรพึ่ง `*.vercel.app` อีก
+
 ลบโปรเจกต์ Vercel จริงได้เมื่อไล่เครื่องในร้านครบทุกเครื่องแล้ว — **ไม่ใช่ดูจาก log**
 เพราะบัญชีเป็นแพ็ก **Hobby** จึงไม่มี Observability ให้ดูทราฟฟิกย้อนหลัง และ redirect ใน `vercel.json`
 ทำงานที่ชั้น edge ไม่ผ่าน function เลยไม่โผล่ใน runtime log ด้วย
