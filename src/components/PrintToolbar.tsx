@@ -1,5 +1,7 @@
 'use client'
 
+import { useEffect } from 'react'
+
 interface Props {
   sizes: { value: string; label: string }[]
   /** ตัวเลือกเฉพาะของหน้านั้น (เช่น ติ๊กโชว์รายชื่อสินค้าบนป้ายโปร) — วางต่อจากปุ่มขนาดกระดาษ */
@@ -9,10 +11,22 @@ interface Props {
   backHref: string
   /** close = เปิดมาจากแท็บใหม่ (ค่าเริ่มต้น), back = เปิดทับแท็บเดิม เช่นหน้าเช็คแต้มของลูกค้า */
   variant?: 'close' | 'back'
+  /** ชื่อไฟล์ตอน "บันทึกเป็น PDF" — เบราว์เซอร์ตั้งจาก document.title (เช่น LB_PO011120260001) */
+  fileName?: string
 }
 
 // แถบเครื่องมือด้านบนหน้าพิมพ์เอกสาร (ใบเสร็จ/ใบสั่งซื้อ) — ซ่อนตอนพิมพ์จริงด้วย .no-print
-export default function PrintToolbar({ sizes, size, onSizeChange, backHref, variant = 'close', extra }: Props) {
+export default function PrintToolbar({ sizes, size, onSizeChange, backHref, variant = 'close', extra, fileName }: Props) {
+  // เบราว์เซอร์ตั้งชื่อไฟล์ PDF จาก document.title — ตั้งเป็นเลขที่เอกสารจะได้ไม่ซ้ำกันตอนเซฟหลายใบ
+  useEffect(() => {
+    if (!fileName) return
+    const prev = document.title
+    document.title = fileName.replace(/[\\/:*?"<>|]/g, '-')
+    return () => {
+      document.title = prev
+    }
+  }, [fileName])
+
   // ลิงก์พิมพ์เอกสารของพนักงานเปิดเป็นแท็บใหม่ทั้งหมด — ปิดแท็บจึงตรงกว่าพากลับไปหน้าอื่น
   // เบราว์เซอร์บางตัวปิดแท็บที่ผู้ใช้เปิดเองไม่ได้ ถ้าปิดไม่สำเร็จค่อยย้อนกลับให้แทน
   function closeOrBack() {

@@ -47,6 +47,7 @@ export default function PurchasePrintView({ purchase, store }: { purchase: Purch
       `}</style>
 
       <PrintToolbar
+        fileName={`LB_${purchase.purchase_number}`}
         backHref="/admin/receiving"
         size={size}
         onSizeChange={(v) => setSize(v as PaperSize)}
