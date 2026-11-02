@@ -28,7 +28,11 @@ export default async function ShiftPage() {
       .order('closed_at', { ascending: false })
       .limit(20)
 
-  const [{ data: openShift }, historyRes, { data: store }] = await Promise.all([
+  // ร้านที่ยังไม่ได้รัน supabase-migration-shift-transfer-check.sql ไม่มีคอลัมน์ transfer_accounts
+  // ขอไปทั้งก้อนแล้ว query พังหมด เงินทอนที่ตั้งไว้จะหายไปด้วย — ถอยไปขอเฉพาะคอลัมน์เดิมแทน
+  const storeQuery = (cols: string) =>
+    supabase.from('store_settings').select(cols).limit(1).maybeSingle()
+  const [{ data: openShift }, historyRes, storeRes] = await Promise.all([
     supabase
       .from('shifts')
       .select(`
@@ -38,8 +42,16 @@ export default async function ShiftPage() {
       .is('closed_at', null)
       .maybeSingle(),
     historyQuery(', carry_denominations, carry_adjusted_at'),
-    supabase.from('store_settings').select('float_target, float_denoms, float_keep').limit(1).maybeSingle(),
+    storeQuery('float_target, float_denoms, float_keep, transfer_accounts'),
   ])
+  const store = (storeRes.error
+    ? (await storeQuery('float_target, float_denoms, float_keep')).data
+    : storeRes.data) as {
+      float_target: number | null
+      float_denoms: Record<string, number> | null
+      float_keep: number[] | null
+      transfer_accounts?: string[] | null
+    } | null
   // ยังไม่ได้รัน migration จัดเงินทอนหลังปิดกะ — ประวัติกะต้องยังขึ้น แค่ไม่มีคอลัมน์นั้น
   const history = historyRes.error ? (await historyQuery('')).data : historyRes.data
 
@@ -53,6 +65,7 @@ export default async function ShiftPage() {
       floatTarget={store?.float_target != null ? Number(store.float_target) : null}
       floatDenoms={(store?.float_denoms as Record<string, number> | null) ?? null}
       floatKeep={(store?.float_keep as number[] | null) ?? null}
+      transferAccounts={store?.transfer_accounts ?? null}
     />
   )
 }

@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from 'next/server'
 import { getStaff } from '@/lib/require-staff'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { buildShiftCloseMessage, notifyEvent } from '@/lib/notify'
+import { sumBankMethods, sumByMethod, type PaidTransaction } from '@/lib/payments'
 
 // เรียกจากหน้าปิดกะหลังบันทึกสำเร็จ — พนักงานที่ login แล้วเท่านั้น
 // แยกเป็น route เพราะฝั่ง client ไม่มี TELEGRAM_BOT_TOKEN (และไม่ควรมี)
@@ -13,11 +14,24 @@ export async function POST(request: NextRequest) {
   if (!shiftId) return NextResponse.json({ error: 'missing shiftId' }, { status: 400 })
 
   const admin = createAdminClient()
-  const { data: shift } = await admin
-    .from('shifts')
-    .select('id, opened_at, closed_at, expected_cash, closing_cash_counted, cash_difference, cash_to_owner, notes, closer:profiles!shifts_closed_by_fkey(name)')
-    .eq('id', shiftId)
-    .maybeSingle()
+  // ร้านที่ยังไม่ได้รัน supabase-migration-shift-transfer-check.sql ไม่มี closing_transfers —
+  // ขอไปแล้ว query พังทั้งก้อน แจ้งเตือนปิดกะจะเงียบไปเฉย ๆ เลยถอยไปขอเฉพาะคอลัมน์เดิม
+  const shiftQuery = (cols: string) =>
+    admin.from('shifts').select(cols).eq('id', shiftId).maybeSingle()
+  const SHIFT_COLS = 'id, opened_at, closed_at, expected_cash, closing_cash_counted, cash_difference, cash_to_owner, notes, closer:profiles!shifts_closed_by_fkey(name)'
+  const shiftRes = await shiftQuery(`${SHIFT_COLS}, closing_transfers`)
+  const shift = (shiftRes.error ? (await shiftQuery(SHIFT_COLS)).data : shiftRes.data) as {
+    id: string
+    opened_at: string
+    closed_at: string | null
+    expected_cash: number | null
+    closing_cash_counted: number | null
+    cash_difference: number | null
+    cash_to_owner: number | null
+    closing_transfers?: Record<string, number> | null
+    notes: string | null
+    closer: { name: string } | null
+  } | null
 
   if (!shift?.closed_at) return NextResponse.json({ error: 'ยังไม่ได้ปิดกะ' }, { status: 400 })
 
@@ -33,13 +47,20 @@ export async function POST(request: NextRequest) {
   // (บูธมีสรุปของรอบเอง ส่วนแพลตฟอร์มไม่ใช่เงินที่รับที่ร้าน ยอดจริงดูที่สรุปของแพลตฟอร์ม)
   const { data: tx } = await admin
     .from('transactions')
-    .select('total')
+    .select('total, payment_method, transaction_payments(method, amount)')
     .eq('status', 'completed')
     .eq('sales_channel', 'store')
     .gte('created_at', shift.opened_at)
     .lt('created_at', shift.closed_at)
 
-  const closer = shift.closer as unknown as { name: string } | null
+  const byMethod = sumByMethod((tx ?? []) as unknown as PaidTransaction[])
+  // ยอดที่คนปิดกะเช็คได้จากแอปธนาคาร — ไม่ได้เช็คก็ไม่ต้องขึ้นบรรทัดนั้น
+  const transfers = shift.closing_transfers ?? null
+  const bankActual = transfers
+    ? Object.values(transfers).reduce((s, v) => s + Number(v || 0), 0)
+    : null
+
+  const closer = shift.closer
 
   await notifyEvent(
     'shift_close',
@@ -51,6 +72,9 @@ export async function POST(request: NextRequest) {
       cashToOwner: shift.cash_to_owner ?? 0,
       salesTotal: (tx ?? []).reduce((s, t) => s + t.total, 0),
       txCount: tx?.length ?? 0,
+      byMethod,
+      bankExpected: sumBankMethods(byMethod),
+      bankActual,
       notes: shift.notes,
     }),
     { dedupeKey: `shift:${shift.id}:${shift.closed_at}` }

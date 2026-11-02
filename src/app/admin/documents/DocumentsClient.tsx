@@ -8,6 +8,7 @@ import CancelReceiptModal from './CancelReceiptModal'
 import EditPaymentModal from './EditPaymentModal'
 import type { PaymentMethod, SalesChannel } from '@/lib/types'
 import { CHANNEL_LABEL, CHANNEL_BADGE, channelGroup, isPlatformChannel, platformPaymentLabel } from '@/lib/salesChannel'
+import { PAYMENT_BADGE, PAYMENT_LABEL } from '@/lib/payments'
 
 interface ReceiptRow {
   id: string
@@ -42,12 +43,14 @@ type Tab = 'receipt' | 'purchase'
 const fmtDate = (d: string) =>
   new Date(d).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit', hour: '2-digit', minute: '2-digit' })
 const money = (n: number) => n.toLocaleString('th-TH', { minimumFractionDigits: 2 })
-const PAYMENT_TH: Record<PaymentMethod, string> = {
-  cash: 'เงินสด',
-  transfer: 'โอนเงิน',
-  card: 'บัตรเครดิต',
-  qr: 'QR Code',
-}
+
+// ป้ายสีประจำช่องทางรับเงิน — ไล่สายตาหาบิลเงินสด/เงินโอนในร้อยแถวด้วยสี เร็วกว่าอ่านตัวหนังสือทีละบรรทัด
+const PaymentTag = ({ method, amount }: { method: PaymentMethod; amount?: number }) => (
+  <span className={`inline-flex text-xs px-2 py-0.5 rounded-full font-medium ${PAYMENT_BADGE[method]}`}>
+    {PAYMENT_LABEL[method] ?? method}
+    {amount != null && <span className="ml-1 tabular-nums font-normal">฿{amount.toFixed(2)}</span>}
+  </span>
+)
 
 export default function DocumentsClient({
   receipts,
@@ -151,16 +154,18 @@ export default function DocumentsClient({
                     {platformPaymentLabel(r.sales_channel) ? (
                       <span className="text-gray-500">{platformPaymentLabel(r.sales_channel)}</span>
                     ) : (r.transaction_payments?.length ?? 0) > 1 ? (
-                      <span className="block">
-                        {r.transaction_payments!.map((l) => `${PAYMENT_TH[l.method] ?? l.method} ฿${Number(l.amount).toFixed(2)}`).join(' + ')}
+                      <span className="flex flex-wrap gap-1">
+                        {r.transaction_payments!.map((l, i) => (
+                          <PaymentTag key={i} method={l.method} amount={Number(l.amount)} />
+                        ))}
                       </span>
                     ) : (
-                      PAYMENT_TH[r.payment_method] ?? r.payment_method
+                      <PaymentTag method={r.payment_method} />
                     )}
                     {r.payment_method_original && (
                       <span
                         className="ml-1 text-xs text-amber-600"
-                        title={`แก้จาก${PAYMENT_TH[r.payment_method_original] ?? r.payment_method_original}`}
+                        title={`แก้จาก${PAYMENT_LABEL[r.payment_method_original] ?? r.payment_method_original}`}
                       >
                         (แก้แล้ว)
                       </span>

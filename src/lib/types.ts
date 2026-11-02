@@ -208,6 +208,8 @@ export interface StoreSettings {
   float_denoms: Record<string, number> | null
   /** ชนิดที่เก็บไว้ทั้งหมด เช่น [50] — มีเท่าไหร่เก็บเท่านั้น ไม่หยิบออก ไม่เตือนว่าขาด */
   float_keep: number[] | null
+  /** บัญชี/กระเป๋าที่ให้กรอกยอดโอนจริงตอนปิดกะ เช่น ["K SHOP","ถุงเงิน"] · [] = ไม่ต้องเช็ค */
+  transfer_accounts: string[] | null
   updated_at: string
 }
 

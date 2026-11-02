@@ -3,12 +3,13 @@
 import { useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { Store, QrCode, Trash2 } from 'lucide-react'
+import { Store, QrCode, Trash2, Plus } from 'lucide-react'
 import toast from 'react-hot-toast'
 import ImageInput from '@/components/ImageInput'
 import type { StoreSettings, RoundingMode } from '@/lib/types'
 import { ROUNDING_OPTIONS } from '@/lib/rounding'
 import { DENOMS, SUGGESTED_FLOAT, SUGGESTED_KEEP } from '@/lib/shiftFloat'
+import { DEFAULT_TRANSFER_ACCOUNTS } from '@/lib/payments'
 
 export default function StoreSection({ config }: { config: StoreSettings | null }) {
   const router = useRouter()
@@ -34,6 +35,8 @@ export default function StoreSection({ config }: { config: StoreSettings | null 
   const floatOn = floatTotal > 0 || floatKeep.length > 0
   const toggleKeep = (v: number) =>
     setFloatKeep((k) => (k.includes(v) ? k.filter((x) => x !== v) : [...k, v]))
+  // บัญชีที่ให้กรอกยอดโอนจริงตอนปิดกะ — ยังไม่เคยตั้ง (null) = ใช้ชุดเริ่มต้น · ลบหมด = ไม่ต้องเช็ค
+  const [accounts, setAccounts] = useState<string[]>(config?.transfer_accounts ?? DEFAULT_TRANSFER_ACCOUNTS)
   const [logoBlob, setLogoBlob] = useState<Blob | null>(null)
   const [logoPreview, setLogoPreview] = useState<string | null>(config?.logo_url ?? null)
 
@@ -134,6 +137,8 @@ export default function StoreSection({ config }: { config: StoreSettings | null 
           ? Object.fromEntries(DENOMS.filter((d) => floatQty(d.value) > 0).map((d) => [d.value, floatQty(d.value)]))
           : null,
         float_keep: floatOn && floatKeep.length > 0 ? floatKeep : null,
+        // เก็บ [] ไว้ตรง ๆ ไม่แปลงเป็น null — null แปลว่า "ยังไม่เคยตั้ง" แล้วหน้าปิดกะจะเติมชุดเริ่มต้นกลับมา
+        transfer_accounts: accounts.map((a) => a.trim()).filter(Boolean),
         payment_qr_url: qrUrl,
         logo_url: logoUrl,
         updated_at: new Date().toISOString(),
@@ -335,6 +340,42 @@ export default function StoreSection({ config }: { config: StoreSettings | null 
             <span className="text-gray-400">
               กำหนดทีละชนิดเพราะยอดรวมอย่างเดียวไม่พอ — เหลือ ฿3,000 ที่เป็นแบงค์ร้อยล้วนก็ทอนไม่ได้สักบาท
             </span>
+          </p>
+
+          <label className={labelClass}>บัญชีที่เช็คยอดโอนตอนปิดกะ</label>
+          <div className="space-y-1.5 mb-2">
+            {accounts.map((a, i) => (
+              <div key={i} className="flex items-center gap-2">
+                <input
+                  type="text"
+                  value={a}
+                  onChange={(e) => setAccounts((list) => list.map((x, j) => (j === i ? e.target.value : x)))}
+                  className="flex-1 border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="เช่น K SHOP"
+                />
+                <button
+                  type="button"
+                  onClick={() => setAccounts((list) => list.filter((_, j) => j !== i))}
+                  className="p-1.5 text-gray-300 hover:text-red-500"
+                  title="ลบบัญชีนี้"
+                >
+                  <Trash2 size={15} />
+                </button>
+              </div>
+            ))}
+            <button
+              type="button"
+              onClick={() => setAccounts((list) => [...list, ''])}
+              className="flex items-center gap-1 text-xs font-medium text-blue-600 hover:text-blue-700"
+            >
+              <Plus size={13} /> เพิ่มบัญชี
+            </button>
+          </div>
+          <p className="text-xs text-gray-500 mb-4">
+            ตอนปิดกะจะมีช่องให้กรอกยอดที่เข้าบัญชีจริง (ดูจากแอป) แล้วเทียบกับยอดที่กดว่าโอน/QR ในระบบ —
+            เงินสดขาดเท่าไหร่แล้วบัญชีเกินเท่านั้นพอดี แปลว่าเงินไม่ได้หาย แค่กดช่องทางผิดตอนรับเงิน ระบบจะขึ้นว่า
+            &ldquo;เงินครบ&rdquo; ให้แทนที่จะฟ้องว่าไม่ตรงทั้งสองฝั่ง ·{' '}
+            <span className="text-gray-400">ลบออกให้หมด = ไม่ต้องเช็คยอดโอนตอนปิดกะ</span>
           </p>
 
           <label className={labelClass}>PromptPay ID (ไม่บังคับ)</label>

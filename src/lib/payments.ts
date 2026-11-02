@@ -45,3 +45,42 @@ export function sumByMethod(txs: PaidTransaction[]): Record<string, number> {
 export function sumOfMethod(txs: PaidTransaction[], method: PaymentMethod) {
   return sumByMethod(txs)[method] ?? 0
 }
+
+/** ชื่อไทยของแต่ละช่องทางรับเงิน — ใช้ร่วมกันทุกหน้า */
+export const PAYMENT_LABEL: Record<PaymentMethod, string> = {
+  cash: 'เงินสด',
+  transfer: 'โอนเงิน',
+  card: 'บัตรเครดิต',
+  qr: 'QR Code',
+}
+
+// สีประจำช่องทางรับเงิน — เขียว = เงินสด (เข้าเก๊ะ) · น้ำเงิน/ฟ้า = เข้าบัญชี · ม่วง = ผ่านเครื่องรูดบัตร
+// แยกสีไว้เพราะหน้าเอกสารดูทีละร้อยแถว อ่านเป็นตัวหนังสือล้วนแล้วหาบิลที่รับเงินผิดทางไม่เจอ
+export const PAYMENT_BADGE: Record<PaymentMethod, string> = {
+  cash: 'bg-emerald-100 text-emerald-700',
+  transfer: 'bg-blue-100 text-blue-700',
+  card: 'bg-violet-100 text-violet-700',
+  qr: 'bg-cyan-100 text-cyan-700',
+}
+
+/** จุดสีเล็ก ๆ หน้าชื่อช่องทาง (ใช้ในสรุปที่ไม่มีที่พอให้ใส่ badge เต็ม) */
+export const PAYMENT_DOT: Record<PaymentMethod, string> = {
+  cash: 'bg-emerald-500',
+  transfer: 'bg-blue-500',
+  card: 'bg-violet-500',
+  qr: 'bg-cyan-500',
+}
+
+/**
+ * ช่องทางที่เงินเข้าบัญชีร้าน ไม่ได้เข้าเก๊ะ — QR ของร้านผูกกับบัญชีเดียวกับที่ลูกค้าโอนมา
+ * เงินสองก้อนนี้จึงเช็คจากแอปธนาคารก้อนเดียวกันตอนปิดกะ (บัตรเครดิตเข้าทีหลังเป็นรอบ ไม่นับ)
+ */
+export const BANK_METHODS: PaymentMethod[] = ['transfer', 'qr']
+
+/** ยอดที่ควรเข้าบัญชีจากบิลชุดหนึ่ง = โอน + QR */
+export function sumBankMethods(byMethod: Record<string, number>) {
+  return BANK_METHODS.reduce((s, m) => s + (byMethod[m] ?? 0), 0)
+}
+
+/** บัญชีที่ให้กรอกตอนปิดกะ ถ้าร้านยังไม่ได้ตั้งเอง — K SHOP เป็นหลัก ถุงเงินใช้กับไทยช่วยไทยพลัส */
+export const DEFAULT_TRANSFER_ACCOUNTS = ['K SHOP', 'ถุงเงิน']

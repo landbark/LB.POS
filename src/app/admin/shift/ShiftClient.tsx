@@ -3,8 +3,11 @@
 import { Fragment, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { expectedCash as computeExpectedCash, splitShiftBills, type ShiftBill } from '@/lib/shiftCash'
+import { checkChannels, expectedCash as computeExpectedCash, splitShiftBills, type ShiftBill } from '@/lib/shiftCash'
 import { BANKNOTES, COINS, DENOMS, ownerSide, planByDenom, planOwnerTake } from '@/lib/shiftFloat'
+import { DEFAULT_TRANSFER_ACCOUNTS, PAYMENT_DOT, PAYMENT_LABEL, sumBankMethods } from '@/lib/payments'
+import { CHANNEL_GROUPS } from '@/lib/salesChannel'
+import type { PaymentMethod, SalesChannel } from '@/lib/types'
 import { Wallet, Lock, Unlock, Pencil, StickyNote, ArrowRightLeft } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { confirmDialog } from '@/lib/confirm'
@@ -17,11 +20,11 @@ const fmtDate = (d: string) =>
 const fmtTime = (iso: string) =>
   new Date(iso).toLocaleTimeString('th-TH', { timeZone: 'Asia/Bangkok', hour: '2-digit', minute: '2-digit' })
 
-const PAYMENT_LABELS: Record<string, string> = { cash: 'เงินสด', transfer: 'โอนเงิน', card: 'บัตรเครดิต', qr: 'QR Code' }
 
 // คอลัมน์ใหม่จาก supabase-migration-shift-denominations.sql (ยังไม่อยู่ใน type Shift กลาง)
 type ShiftRow = Shift & {
   opening_denominations?: Record<string, number> | null
+  closing_transfers?: Record<string, number> | null
   carry_denominations?: Record<string, number> | null
   carry_adjusted_at?: string | null
   closing_denominations?: Record<string, number> | null
@@ -73,6 +76,7 @@ export default function ShiftClient({
   floatTarget,
   floatDenoms,
   floatKeep,
+  transferAccounts,
 }: {
   openShift: ShiftRow | null
   history: ShiftRow[]
@@ -85,6 +89,8 @@ export default function ShiftClient({
   floatDenoms: Record<string, number> | null
   /** ชนิดที่เก็บไว้ทั้งหมด — ไม่หยิบออก ไม่เตือนว่าขาด (แบงค์ห้าสิบที่แลกมาไม่ได้) */
   floatKeep: number[] | null
+  /** บัญชี/กระเป๋าที่ให้กรอกยอดโอนจริงตอนปิดกะ · null = ยังไม่ได้ตั้ง ใช้ชุดเริ่มต้น */
+  transferAccounts: string[] | null
 }) {
   const router = useRouter()
   const [showOpenShift, setShowOpenShift] = useState(false)
@@ -106,6 +112,13 @@ export default function ShiftClient({
   const [loading, setLoading] = useState(false)
   const [loadingSummary, setLoadingSummary] = useState(true)
   const [breakdown, setBreakdown] = useState<Record<string, number>>({})
+  const [methodBills, setMethodBills] = useState<Record<string, number>>({})
+  const [salesTotal, setSalesTotal] = useState(0)
+  const [billCount, setBillCount] = useState(0)
+  // ยอดขายช่องทางอื่นในช่วงกะเดียวกัน (บูธ/ออนไลน์) — ไม่เข้าเก๊ะ แต่กลุ่มไลน์อยากเห็นในรูปเดียวกัน
+  const [otherChannels, setOtherChannels] = useState<{ label: string; amount: number; count: number }[]>([])
+  // ยอดที่เช็คได้จากแอปธนาคารตอนปิดกะ แยกตามบัญชี — ว่างหมด = ยังไม่ได้เช็ค ไม่เตือนอะไร
+  const [transfers, setTransfers] = useState<Record<string, string>>({})
   const [cashRefunds, setCashRefunds] = useState(0)
   // เงินสดจากบิลในกะนี้ที่ถูกยกเลิกทีหลัง — รับไว้แล้วตอนขาย ต้องนับเป็นเงินเข้าเก๊ะ (ดู lib/shiftCash)
   const [cashFromCancelled, setCashFromCancelled] = useState(0)
@@ -133,19 +146,32 @@ export default function ShiftClient({
     async function loadSummary(shift: Shift) {
       const supabase = createClient()
       const [{ data: sold }, { data: refunds }, { data: moves }] = await Promise.all([
+        // ดึงทุกช่องทางมา แล้วคัดเฉพาะ 'store' ไปคิดเงินในเก๊ะ — ที่เหลือโชว์เป็นบรรทัดข้อมูลในสรุป
         // ยอดขายที่บูธไม่เข้าเก๊ะที่ร้าน — คนที่ไปงานถือเงินทอนแยกไปต่างหาก (ดูสรุปที่ /admin/booth)
         // ขายผ่านแพลตฟอร์ม (Shopee/TikTok/Lazada) ก็ไม่ใช่เงินที่รับหน้าร้าน แพลตฟอร์มหักค่าธรรมเนียมแล้วโอนทีหลัง
         // ไม่กรอง status — บิลที่ยกเลิกทีหลังก็เคยรับเงินสดเข้าเก๊ะตอนขาย ต้องเอามาคิดด้วย
-        supabase.from('transactions').select('status, total, payment_method, transaction_payments(method, amount)').eq('sales_channel', 'store').gte('created_at', shift.opened_at),
+        supabase.from('transactions').select('status, total, payment_method, sales_channel, transaction_payments(method, amount)').gte('created_at', shift.opened_at),
         supabase.from('transactions').select('total').eq('status', 'cancelled').eq('refund_method', 'cash').gte('cancelled_at', shift.opened_at),
         supabase.from('cash_movements').select('*, profiles(name)').eq('shift_id', shift.id).order('created_at'),
       ])
       if (cancelled) return
       setMovements((moves as unknown as CashMovement[]) ?? [])
-      const split = splitShiftBills((sold ?? []) as unknown as ShiftBill[])
+      const all = (sold ?? []) as unknown as (ShiftBill & { sales_channel: SalesChannel })[]
+      const split = splitShiftBills(all.filter((b) => b.sales_channel === 'store'))
       setBreakdown(split.byMethod)
+      setMethodBills(split.countByMethod)
+      setSalesTotal(split.salesTotal)
+      setBillCount(split.bills)
       setCashFromCancelled(split.cashFromCancelled)
       setCancelledBills(split.cancelledBills)
+      setOtherChannels(
+        CHANNEL_GROUPS.filter((g) => g.value !== 'store')
+          .map((g) => {
+            const rows = all.filter((b) => b.status !== 'cancelled' && g.channels.includes(b.sales_channel))
+            return { label: g.label, amount: rows.reduce((sum, b) => sum + Number(b.total), 0), count: rows.length }
+          })
+          .filter((g) => g.count > 0),
+      )
       setCashRefunds((refunds ?? []).reduce((s, t) => s + t.total, 0))
       setLoadingSummary(false)
     }
@@ -171,6 +197,14 @@ export default function ShiftClient({
   const counted = DENOMS.reduce((s, d) => s + d.value * (parseInt(counts[d.value] || '0', 10) || 0), 0)
   const qtyOf = (c: Record<number, string>, v: number) => parseInt(c[v] || '0', 10) || 0
   const difference = counted - expectedCash
+  // เงินเข้าบัญชี (โอน + QR) — ระบบรู้แค่ยอดที่พนักงานกด ส่วนยอดจริงต้องเปิดแอปดูแล้วกรอกเอง
+  const accounts = transferAccounts ?? DEFAULT_TRANSFER_ACCOUNTS
+  const bankExpected = sumBankMethods(breakdown)
+  const bankChecked = accounts.some((a) => (transfers[a] ?? '').trim() !== '')
+  const bankActual = accounts.reduce((sum, a) => sum + (parseFloat(transfers[a] || '0') || 0), 0)
+  const bankDiff = bankChecked ? bankActual - bankExpected : 0
+  // เงินสดขาดเท่าที่บัญชีเกินพอดี = ไม่มีเงินหาย แค่กดช่องทางผิดตอนรับเงิน (ดู lib/shiftCash)
+  const channels = checkChannels(difference, bankDiff)
   // เงินทอนตั้งต้นคงที่ — กำหนดรายชนิดจะคิดทีละกอง (คุมได้ว่าเหลือเป็นแบงค์อะไร)
   // ตั้งแค่ยอดรวมก็ยังใช้ได้ แต่ไล่หยิบใบใหญ่ลงมาเฉย ๆ ไม่รู้ว่าเหลือแล้วทอนได้จริงไหม
   const floatTargetDenoms: Record<number, number> | null = floatDenoms
@@ -206,12 +240,21 @@ export default function ShiftClient({
     }))
   // กดปุ่มเดียวให้เหลือในเก๊ะ "เท่าชุดที่ตั้งไว้พอดี" — ไม่ใช่ค่าที่ระบบคิดให้ซึ่งขาดก็เหลือไว้ทั้งเก๊ะ
   // แบงค์ที่ขาดจะขึ้นเป็น "เจ้าของเติม n" ให้เห็นทันทีว่าต้องเอาอะไรมาเติมกี่ใบ
-  // เหรียญกับชนิดที่ตั้งว่าเก็บไว้ทั้งหมด (แบงค์ห้าสิบ) เหลือไว้ตามที่นับได้ หยิบออกไม่ได้อยู่ดี
+  //
+  // เหรียญก็ต้องสแน็ปขึ้นให้ถึงเป้าด้วย ไม่งั้นกดปุ่ม "ใช้ชุดที่ตั้งไว้ ฿4,000" แล้วยังขึ้นว่าขาดอยู่ ฿48
+  // เพราะเหรียญบาทในเก๊ะมี 17 แต่ชุดต้องการ 50 — คนกดงงว่าตกลงกดไปทำไม (2 พ.ย. 69)
+  // แต่สแน็ปลงไม่ได้: เหรียญที่เกินเป้าหยิบออกให้เจ้าของไม่ได้ ต้องคาไว้ในเก๊ะตามที่นับได้
+  // ส่วนชนิดที่ตั้งว่าเก็บไว้ทั้งหมด (แบงค์ห้าสิบ) เหลือไว้ตามที่นับได้เสมอ ไม่มีเป้าให้เทียบ
   const applyFloatSet = () => {
     if (!floatTargetDenoms) return
     setKeepEdit(Object.fromEntries(DENOMS.map((d) => {
-      const snap = takeable.includes(d.value) && !keepAll.includes(d.value)
-      const qty = snap ? (floatTargetDenoms[d.value] ?? 0) : (countedDenoms[d.value] ?? 0)
+      const want = floatTargetDenoms[d.value] ?? 0
+      const have = countedDenoms[d.value] ?? 0
+      const qty = keepAll.includes(d.value)
+        ? have
+        : takeable.includes(d.value)
+          ? want
+          : Math.max(have, want)
       return [d.value, qty ? String(qty) : '']
     })))
   }
@@ -428,16 +471,31 @@ export default function ShiftClient({
           owner.net < 0
             ? `เจ้าของเติมเงินทอนเข้าเก๊ะ ฿${money(-owner.net)} (${DENOMS.filter((d) => owner.add[d.value]).map((d) => `${d.label} ${owner.add[d.value]}`).join(' · ')})`
             : '',
+          // เช็คยอดบัญชีแล้วต้องจดไว้ ไม่งั้นพรุ่งนี้ไม่มีใครรู้ว่าวันนั้นเงินครบหรือหายจริง
+          bankChecked
+            ? `เข้าบัญชีจริง ฿${money(bankActual)} (${accounts.map((a) => `${a} ฿${money(parseFloat(transfers[a] || '0') || 0)}`).join(' · ')}) · ในระบบกดว่าโอน/QR ฿${money(bankExpected)}`
+            : '',
+          channels.swapped > 0
+            ? `เงินครบทั้งก้อน แต่ลงช่องทางผิด ฿${money(channels.swapped)} — เงินสด${difference > 0 ? 'เกิน' : 'ขาด'} ฿${money(Math.abs(difference))} หักกับบัญชีที่${bankDiff > 0 ? 'เกิน' : 'ขาด'}เท่ากันพอดี`
+            : '',
         ].filter(Boolean).join('\n') || null,
     }
-    const save = (extra: Record<string, unknown>) =>
-      supabase.from('shifts').update({ ...closeFields, ...extra }).eq('id', openShift.id)
-    let { error } = await save({
+    const carryFields = {
       carry_denominations: carryDenominations,
       // ยังไม่มีใครมาจัดทีหลัง — ใบนับนี้มาจากตอนปิดกะตรง ๆ
       carry_adjusted_at: null,
       carry_adjusted_by: null,
+    }
+    const save = (extra: Record<string, unknown>) =>
+      supabase.from('shifts').update({ ...closeFields, ...extra }).eq('id', openShift.id)
+    let { error } = await save({
+      ...carryFields,
+      closing_transfers: bankChecked
+        ? Object.fromEntries(accounts.map((a) => [a, parseFloat(transfers[a] || '0') || 0]))
+        : null,
     })
+    // ยังไม่ได้รัน supabase-migration-shift-transfer-check.sql — ยอดที่เช็คได้ยังอยู่ในหมายเหตุอยู่ดี
+    if (error) ({ error } = await save(carryFields))
     // ปิดกะต้องไม่พังเพราะเขียน carry ไม่ได้ — ยอดยกไปยังคิดจาก (นับได้ − ให้เจ้าของ) ได้ผลเท่ากัน
     // เขียนไม่ได้ได้สองเหตุ: ยังไม่ได้รัน migration จัดเงินทอนหลังปิดกะ (ไม่มีคอลัมน์)
     // หรือร้านยังไม่ได้รัน supabase-migration-shift-close-carry.sql แล้ว trigger กันพนักงานไว้
@@ -477,6 +535,7 @@ export default function ShiftClient({
     setLoading(false)
     setCounts({})
     setKeepEdit(null)
+    setTransfers({})
     setNotes('')
     router.refresh()
   }
@@ -736,10 +795,14 @@ export default function ShiftClient({
               <p className="text-gray-400">กำลังคำนวณ...</p>
             ) : (
               <>
-                {Object.entries(PAYMENT_LABELS).map(([key, label]) =>
+                {Object.entries(PAYMENT_LABEL).map(([key, label]) =>
                   breakdown[key] ? (
                     <div key={key} className="flex justify-between text-gray-600">
-                      <span>ขาย{label}</span><span>฿{money(breakdown[key])}</span>
+                      <span className="flex items-center gap-1.5">
+                        <span className={`w-2 h-2 rounded-full ${PAYMENT_DOT[key as PaymentMethod]}`} />
+                        ขาย{label}
+                      </span>
+                      <span>฿{money(breakdown[key])}</span>
                     </div>
                   ) : null
                 )}
@@ -873,11 +936,62 @@ export default function ShiftClient({
               <span>รวมนับได้</span><span>฿{money(counted)}</span>
             </div>
             {hasCount && (
-              <p className={`text-xs font-medium ${difference === 0 ? 'text-green-600' : difference > 0 ? 'text-blue-600' : 'text-red-600'}`}>
-                {difference === 0 ? 'ตรงกับที่ควรมีพอดี' : difference > 0 ? `เกิน ฿${money(difference)}` : `ขาด ฿${money(Math.abs(difference))}`}
-              </p>
+              channels.swapped > 0 ? (
+                // เงินสดขาดเท่าที่บัญชีเกินพอดี — เงินไม่ได้หาย อย่าขึ้นแดงให้พนักงานตกใจเปล่า ๆ
+                <p className="text-xs font-medium text-green-600">
+                  เงินครบ — แค่ลงช่องทางผิด ฿{money(channels.swapped)}
+                  <span className="block font-normal text-gray-500">
+                    เงินสด{difference > 0 ? 'เกิน' : 'ขาด'} ฿{money(Math.abs(difference))} ·
+                    เข้าบัญชี{bankDiff > 0 ? 'เกิน' : 'ขาด'} ฿{money(Math.abs(bankDiff))} — หักกันแล้วลงตัว
+                  </span>
+                </p>
+              ) : (
+                <p className={`text-xs font-medium ${difference === 0 ? 'text-green-600' : difference > 0 ? 'text-blue-600' : 'text-red-600'}`}>
+                  {difference === 0 ? 'ตรงกับที่ควรมีพอดี' : difference > 0 ? `เกิน ฿${money(difference)}` : `ขาด ฿${money(Math.abs(difference))}`}
+                  {bankChecked && !channels.matched && (
+                    <span className="block font-normal text-gray-500">
+                      รวมกับฝั่งบัญชีแล้วยัง{channels.total > 0 ? 'เกิน' : 'ขาด'} ฿{money(Math.abs(channels.total))}
+                    </span>
+                  )}
+                </p>
+              )
             )}
           </div>
+
+          {accounts.length > 0 && (
+            <div className="border border-gray-200 rounded-lg p-3 mb-4">
+              <div className="flex items-center justify-between mb-0.5">
+                <p className="text-xs font-medium text-gray-600">เช็คยอดเงินเข้าบัญชี (โอน + QR)</p>
+                <p className="text-xs text-gray-500">ในระบบ ฿{money(bankExpected)}</p>
+              </div>
+              <p className="text-xs text-gray-400 mb-2">
+                เปิดแอปดูยอดที่เข้าจริงในช่วงกะนี้แล้วใส่ตรงนี้ — ไม่ใส่ก็ปิดกะได้ตามปกติ
+                แต่ใส่แล้วระบบจะแยกออกว่า &ldquo;เงินหาย&rdquo; กับ &ldquo;กดช่องทางผิด&rdquo; คนละเรื่องกัน
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1.5">
+                {accounts.map((a) => (
+                  <div key={a} className="flex items-center gap-2">
+                    <span className="text-sm text-gray-600 flex-1 min-w-0 truncate">{a}</span>
+                    <input
+                      type="number" min={0} step="0.01" inputMode="decimal"
+                      value={transfers[a] ?? ''}
+                      onChange={(e) => setTransfers((t) => ({ ...t, [a]: e.target.value }))}
+                      className="w-28 border border-gray-300 rounded-lg px-2 py-1.5 text-sm text-right focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      placeholder="0.00"
+                    />
+                  </div>
+                ))}
+              </div>
+              {bankChecked && (
+                <p className={`text-xs font-medium mt-2 ${bankDiff === 0 ? 'text-green-600' : 'text-amber-600'}`}>
+                  รวมเข้าบัญชีจริง ฿{money(bankActual)}
+                  {bankDiff === 0
+                    ? ' — ตรงกับที่กดในระบบพอดี'
+                    : ` — ${bankDiff > 0 ? 'มากกว่า' : 'น้อยกว่า'}ที่กดในระบบ ฿${money(Math.abs(bankDiff))}`}
+                </p>
+              )}
+            </div>
+          )}
 
           <div className="flex items-center justify-between gap-3 mb-1">
             <label className="block text-xs font-medium text-gray-600">เงินทอนที่เหลือไว้ให้พรุ่งนี้</label>
@@ -905,49 +1019,58 @@ export default function ShiftClient({
           <p className="text-xs text-gray-500 mb-2">
             ใส่ว่าจะเหลือเงินทอนไว้ในเก๊ะชนิดไหนกี่ใบ — ส่วนที่เหลือคือเงินที่ออกไปหาเจ้าของ ไม่ต้องกรอกซ้ำ
             {floatPlan && (
-              floatPlan.short > 0 ? (
-                <span className="block mt-0.5 text-red-600 font-medium">
-                  ชุดเงินทอนที่ตั้งไว้ ฿{money(floatTotal!)} — นับได้น้อยกว่าอยู่ ฿{money(floatPlan.short)}
-                  {' '}วันนี้เหลือไว้ทั้งเก๊ะ หรือถ้าเจ้าของเอามาเติมตรงนี้ ใส่มากกว่าที่นับได้ได้เลย
-                </span>
-              ) : (
-                <span className="block mt-0.5">
-                  ชุดเงินทอนที่ตั้งไว้ ฿{money(floatTotal!)}
-                  {floatPlan.kept > 0 && <> + {keptLabels} ที่มี ฿{money(floatPlan.kept)}</>}
-                  {floatPlan.over > 0 && (
-                    <span className="text-amber-600"> · เกินเป้า ฿{money(floatPlan.over)} เพราะเศษนี้เป็นเหรียญ หยิบออกไม่ได้</span>
-                  )}
-                </span>
-              )
+              <span className="block mt-0.5">
+                {/* ยอดที่ต้องเหลือไว้จริงคือชุดที่ตั้ง + ชนิดที่เก็บทั้งหมดที่มีในเก๊ะ — กางให้เห็นทั้งสองก้อน
+                    ไม่งั้นปุ่มขึ้น ฿4,000 แต่บรรทัดล่างเทียบกับ ฿4,150 แล้วไม่มีใครรู้ว่า ฿150 มาจากไหน */}
+                ชุดเงินทอนที่ตั้งไว้ ฿{money(floatTotal!)}
+                {floatPlan.kept > 0 && <> + {keptLabels}ที่มี ฿{money(floatPlan.kept)} = ต้องเหลือไว้ ฿{money(floatExpected!)}</>}
+                {floatPlan.short > 0 && (
+                  <span className="block text-red-600 font-medium">
+                    ในเก๊ะมีน้อยกว่าชุดที่ตั้งไว้อยู่ ฿{money(floatPlan.short)} — กดปุ่มข้างบนเพื่อเหลือไว้เท่าชุดที่ตั้ง
+                    (ส่วนที่ขาดจะขึ้นเป็น &ldquo;เจ้าของเติม&rdquo; ให้รู้ว่าต้องเอาอะไรมาใส่)
+                    หรือจะเหลือไว้ทั้งเก๊ะตามที่นับได้ก็ได้
+                  </span>
+                )}
+                {floatPlan.over > 0 && (
+                  <span className="text-amber-600"> · เกินเป้า ฿{money(floatPlan.over)} เพราะเศษนี้เป็นเหรียญ หยิบออกไม่ได้</span>
+                )}
+              </span>
             )}
           </p>
 
+          {/* แบงค์คอลัมน์ซ้าย เหรียญคอลัมน์ขวา — เรียงให้ตรงกับช่องนับเงินข้างบนเป๊ะ ๆ
+              เดิมไล่ DENOMS ลงในกริดตรง ๆ กริดเลยวางทีละแถว ได้ "แบงค์ยี่สิบ | เหรียญสิบ"
+              คู่กันอยู่บรรทัดเดียว คนกรอกต้องไล่สายตาข้ามไปมาระหว่างสองกล่องที่ลำดับไม่ตรงกัน */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1.5 mb-3">
-            {DENOMS.map((d) => {
-              const keep = keepCounts[d.value]
-              const diff = (countedDenoms[d.value] ?? 0) - keep
-              const want = floatTargetDenoms?.[d.value] ?? 0
-              const lacking = want > keep && !keepAll.includes(d.value)
-              return (
-                <div key={d.value} className="flex items-center gap-2">
-                  <span className="text-sm text-gray-600 w-[5.5rem] shrink-0">{d.label}</span>
-                  <input
-                    type="number" min={0} step={1} inputMode="numeric"
-                    value={keepValue(d.value)}
-                    onChange={(e) => editKeep(d.value, e.target.value)}
-                    className={`w-16 border rounded-lg px-2 py-1.5 text-sm text-right focus:outline-none focus:ring-2 ${
-                      lacking ? 'border-red-300 focus:ring-red-400' : 'border-gray-300 focus:ring-blue-500'
-                    }`}
-                    placeholder="0"
-                  />
-                  <span className="text-xs flex-1 tabular-nums">
-                    {diff > 0 && <span className="text-gray-500">ให้เจ้าของ {diff}</span>}
-                    {diff < 0 && <span className="text-blue-600 font-medium">เจ้าของเติม {-diff}</span>}
-                    {lacking && <span className="text-red-500 font-medium">{diff !== 0 ? ' · ' : ''}ต้องการ {want}</span>}
-                  </span>
-                </div>
-              )
-            })}
+            {[BANKNOTES, COINS].map((group, gi) => (
+              <div key={gi} className="space-y-1.5">
+                {group.map((d) => {
+                  const keep = keepCounts[d.value]
+                  const diff = (countedDenoms[d.value] ?? 0) - keep
+                  const want = floatTargetDenoms?.[d.value] ?? 0
+                  const lacking = want > keep && !keepAll.includes(d.value)
+                  return (
+                    <div key={d.value} className="flex items-center gap-2">
+                      <span className="text-sm text-gray-600 w-[5.5rem] shrink-0">{d.label}</span>
+                      <input
+                        type="number" min={0} step={1} inputMode="numeric"
+                        value={keepValue(d.value)}
+                        onChange={(e) => editKeep(d.value, e.target.value)}
+                        className={`w-16 border rounded-lg px-2 py-1.5 text-sm text-right focus:outline-none focus:ring-2 ${
+                          lacking ? 'border-red-300 focus:ring-red-400' : 'border-gray-300 focus:ring-blue-500'
+                        }`}
+                        placeholder="0"
+                      />
+                      <span className="text-xs flex-1 tabular-nums">
+                        {diff > 0 && <span className="text-gray-500">ให้เจ้าของ {diff}</span>}
+                        {diff < 0 && <span className="text-blue-600 font-medium">เจ้าของเติม {-diff}</span>}
+                        {lacking && <span className="text-red-500 font-medium">{diff !== 0 ? ' · ' : ''}ต้องการ {want}</span>}
+                      </span>
+                    </div>
+                  )
+                })}
+              </div>
+            ))}
           </div>
           {floatPlan && floatPlan.shortages.length > 0 && (
             <p className="text-xs font-medium text-red-600 mb-3">
@@ -997,6 +1120,80 @@ export default function ShiftClient({
             className={inputClass}
             placeholder="เช่น เหตุผลที่เงินขาด/เกิน"
           />
+
+
+          {/* สรุปทั้งกะในกล่องเดียว — ถ่ายรูปกล่องนี้ส่งกลุ่มไลน์ได้เลย
+              เดิมต้องถ่ายสองรูป (หน้าสรุปรายวันเอายอดแยกช่องทาง + หน้านี้เอายอดเงินในเก๊ะ)
+              แล้วคนในกลุ่มต้องเอามาต่อกันเอง ตกรูปไหนไปก็ดูไม่ออกว่าวันนั้นขายได้เท่าไหร่ */}
+          <div className="mt-4 rounded-lg border-2 border-gray-200 p-3.5 text-sm">
+            <div className="flex items-baseline justify-between mb-2">
+              <p className="font-semibold text-gray-900">สรุปกะนี้</p>
+              <p className="text-xs text-gray-400">ถ่ายรูปกล่องนี้ส่งกลุ่มได้เลย</p>
+            </div>
+
+            <div className="flex justify-between font-semibold text-gray-900">
+              <span>ขายหน้าร้าน</span>
+              <span className="tabular-nums">
+                ฿{money(salesTotal)} <span className="text-xs font-normal text-gray-400">({billCount} บิล)</span>
+              </span>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 mt-1.5">
+              {Object.entries(PAYMENT_LABEL).map(([key, label]) => (
+                <div key={key} className={`flex justify-between ${breakdown[key] ? 'text-gray-700' : 'text-gray-300'}`}>
+                  <span className="flex items-center gap-1.5">
+                    <span className={`w-2 h-2 rounded-full shrink-0 ${breakdown[key] ? PAYMENT_DOT[key as PaymentMethod] : 'bg-gray-200'}`} />
+                    {label}
+                    {methodBills[key] ? <span className="text-xs text-gray-400">({methodBills[key]} บิล)</span> : null}
+                  </span>
+                  <span className="tabular-nums">฿{money(breakdown[key] ?? 0)}</span>
+                </div>
+              ))}
+            </div>
+            {otherChannels.length > 0 && (
+              <p className="text-xs text-gray-500 mt-1.5">
+                ช่องทางอื่นในช่วงกะนี้ (ไม่เข้าเก๊ะ):{' '}
+                {otherChannels.map((c) => `${c.label} ฿${money(c.amount)} (${c.count} บิล)`).join(' · ')}
+              </p>
+            )}
+
+            <div className="mt-2 pt-2 border-t border-gray-100 space-y-1">
+              <div className="flex justify-between text-gray-600">
+                <span>เงินสดที่ควรมีในลิ้นชัก</span><span className="tabular-nums">฿{money(expectedCash)}</span>
+              </div>
+              <div className="flex justify-between font-medium text-gray-900">
+                <span>นับได้จริง</span><span className="tabular-nums">฿{money(counted)}</span>
+              </div>
+              {bankChecked && (
+                <div className="flex justify-between text-gray-600">
+                  <span>เข้าบัญชีจริง (โอน + QR)</span>
+                  <span className="tabular-nums">
+                    ฿{money(bankActual)} <span className="text-xs text-gray-400">/ ในระบบ ฿{money(bankExpected)}</span>
+                  </span>
+                </div>
+              )}
+              <p className={`text-sm font-semibold ${
+                !hasCount ? 'text-gray-400' : channels.swapped > 0 || channels.matched ? 'text-green-600' : channels.total > 0 ? 'text-blue-600' : 'text-red-600'
+              }`}>
+                {!hasCount
+                  ? 'ยังไม่ได้นับเงิน'
+                  : channels.swapped > 0
+                    ? `เงินครบ — แต่ลงช่องทางผิด ฿${money(channels.swapped)}`
+                    : channels.matched
+                      ? 'เงินตรงพอดี'
+                      : `เงิน${channels.total > 0 ? 'เกิน' : 'ขาด'} ฿${money(Math.abs(channels.total))}${bankChecked ? ' (รวมเก๊ะ + บัญชี)' : ''}`}
+              </p>
+            </div>
+
+            <div className="mt-2 pt-2 border-t border-gray-100 space-y-1">
+              <div className="flex justify-between text-gray-600">
+                <span>{cashToOwner < 0 ? 'เจ้าของเติมเข้าเก๊ะ' : 'ให้เจ้าของ'}</span>
+                <span className="tabular-nums">{cashToOwner === 0 ? '—' : `฿${money(Math.abs(cashToOwner))}`}</span>
+              </div>
+              <div className="flex justify-between font-medium text-gray-900">
+                <span>เหลือเป็นเงินทอนพรุ่งนี้</span><span className="tabular-nums">฿{money(leftover)}</span>
+              </div>
+            </div>
+          </div>
 
           <button
             onClick={closeShift}

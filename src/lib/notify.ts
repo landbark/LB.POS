@@ -1,5 +1,6 @@
 import { createAdminClient } from '@/lib/supabase/admin'
 import { sumByMethod, type PaidTransaction } from '@/lib/payments'
+import { checkChannels } from '@/lib/shiftCash'
 import { dueVaccinations, graceDaysFrom, groupDueByPet } from '@/lib/vaccines'
 import { fetchAll } from '@/lib/supabase/fetch-all'
 import { isOwnMoney, CHANNEL_LABEL, totalsByChannelGroup, type ChannelGroup } from '@/lib/salesChannel'
@@ -542,23 +543,41 @@ export interface ShiftCloseInfo {
   salesTotal: number
   txCount: number
   notes: string | null
+  /** ยอดขายแยกตามช่องทางรับเงินในกะนี้ (เฉพาะหน้าร้าน) */
+  byMethod?: Record<string, number>
+  /** ยอดที่ควรเข้าบัญชี = โอน + QR */
+  bankExpected?: number
+  /** ยอดที่คนปิดกะเช็คได้จากแอปจริง · null = ไม่ได้เช็ค */
+  bankActual?: number | null
 }
 
 export function buildShiftCloseMessage(s: ShiftCloseInfo): string {
+  // เช็คยอดบัญชีมาด้วยแล้วต้องตัดสินจากสองฝั่งรวมกัน — เงินสดขาดเท่าที่บัญชีเกิน = กดช่องทางผิด ไม่ใช่เงินหาย
+  const bankDiff = s.bankActual != null ? s.bankActual - (s.bankExpected ?? 0) : 0
+  const { swapped, matched, total } = checkChannels(s.difference, bankDiff)
   const diffLine =
-    s.difference === 0
-      ? '✅ เงินตรงพอดี'
-      : s.difference > 0
-        ? `🔵 เงินเกิน ${baht(s.difference)}`
-        : `🔴 เงินขาด ${baht(Math.abs(s.difference))}`
+    swapped > 0
+      ? `✅ เงินครบ — แต่ลงช่องทางผิด ${baht(swapped)}`
+      : matched
+        ? '✅ เงินตรงพอดี'
+        : total > 0
+          ? `🔵 เงินเกิน ${baht(total)}`
+          : `🔴 เงินขาด ${baht(Math.abs(total))}`
+  const methodLines = Object.entries(s.byMethod ?? {})
+    .filter(([, amount]) => amount)
+    .map(([method, amount]) => `  · ${PAYMENT_TH[method] ?? method}: ${baht(amount)}`)
 
   return [
     `🧾 ปิดกะแล้ว — ${timeThai()} น.`,
     `ผู้ปิดกะ: ${s.closedBy ?? '—'}`,
     '',
     `ยอดขายในกะ: ${baht(s.salesTotal)} (${s.txCount} บิล)`,
+    ...methodLines,
     `เงินสดที่ควรมี: ${baht(s.expectedCash)}`,
     `นับได้จริง: ${baht(s.countedCash)}`,
+    ...(s.bankActual != null
+      ? [`เข้าบัญชีจริง: ${baht(s.bankActual)} (ในระบบ ${baht(s.bankExpected ?? 0)})`]
+      : []),
     diffLine,
     // ติดลบ = วันที่เงินทอนขาดแล้วเจ้าของเอาเงินมาเติมเข้าเก๊ะ ไม่ใช่หยิบออก
     ...(s.cashToOwner > 0 ? [`👜 แยกให้เจ้าของ: ${baht(s.cashToOwner)}`] : []),
