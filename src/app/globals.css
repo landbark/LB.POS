@@ -26,3 +26,28 @@ body {
   color: #3D2B1A;
   font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
 }
+
+/*
+ * ใบสรุปปิดกะ — พิมพ์/เซฟเป็น PDF จากหน้า /admin/shift ก่อนกดปิดกะ
+ *
+ * ใบนี้อยู่ในหน้าเดียวกับฟอร์ม (ตัวเลขยังไม่ได้บันทึกลง DB จะทำเป็นหน้า /print/... แยกไม่ได้)
+ * ตอนสั่งพิมพ์จึงต้องซ่อนทั้งหน้าไว้แล้วโชว์เฉพาะใบ — ใช้ visibility ไม่ใช่ display
+ * เพราะ display:none กับตัวแม่จะพาลูกหายไปด้วย ต่อให้ลูกสั่ง display:block ไว้ก็ตาม
+ */
+@media print {
+  @page { size: A5 portrait; margin: 10mm; }
+
+  body * { visibility: hidden !important; }
+  #shift-print, #shift-print * { visibility: visible !important; }
+  #shift-print {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    background: white;
+  }
+  /* ไม่งั้นเส้นคั่นกับพื้นหลังหายตอนพิมพ์ (Chrome ปิด background graphics ไว้เป็นค่าตั้งต้น) */
+  #shift-print * { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+
+  body { background: white !important; }
+}

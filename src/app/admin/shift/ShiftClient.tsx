@@ -1,6 +1,7 @@
 'use client'
 
 import { Fragment, useEffect, useState } from 'react'
+import { flushSync } from 'react-dom'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { checkChannels, expectedCash as computeExpectedCash, splitShiftBills, type ShiftBill } from '@/lib/shiftCash'
@@ -8,7 +9,7 @@ import { BANKNOTES, COINS, DENOMS, ownerSide, planByDenom, planOwnerTake } from 
 import { DEFAULT_TRANSFER_ACCOUNTS, PAYMENT_DOT, PAYMENT_LABEL, sumBankMethods } from '@/lib/payments'
 import { CHANNEL_GROUPS } from '@/lib/salesChannel'
 import type { PaymentMethod, SalesChannel } from '@/lib/types'
-import { Wallet, Lock, Unlock, Pencil, StickyNote, ArrowRightLeft } from 'lucide-react'
+import { Wallet, Lock, Unlock, Pencil, StickyNote, ArrowRightLeft, Printer } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { confirmDialog } from '@/lib/confirm'
 import OpenShiftModal from '@/components/OpenShiftModal'
@@ -77,6 +78,7 @@ export default function ShiftClient({
   floatDenoms,
   floatKeep,
   transferAccounts,
+  storeName,
 }: {
   openShift: ShiftRow | null
   history: ShiftRow[]
@@ -91,6 +93,8 @@ export default function ShiftClient({
   floatKeep: number[] | null
   /** บัญชี/กระเป๋าที่ให้กรอกยอดโอนจริงตอนปิดกะ · null = ยังไม่ได้ตั้ง ใช้ชุดเริ่มต้น */
   transferAccounts: string[] | null
+  /** ชื่อร้านบนหัวใบสรุปที่พิมพ์ออกมา */
+  storeName: string
 }) {
   const router = useRouter()
   const [showOpenShift, setShowOpenShift] = useState(false)
@@ -119,6 +123,8 @@ export default function ShiftClient({
   const [otherChannels, setOtherChannels] = useState<{ label: string; amount: number; count: number }[]>([])
   // ยอดที่เช็คได้จากแอปธนาคารตอนปิดกะ แยกตามบัญชี — ว่างหมด = ยังไม่ได้เช็ค ไม่เตือนอะไร
   const [transfers, setTransfers] = useState<Record<string, string>>({})
+  // เวลาที่พิมพ์ใบสรุป — ตั้งตอนกดพิมพ์เท่านั้น (คิดตอน render จะได้ HTML ฝั่ง server ไม่ตรงกับ client)
+  const [printedAt, setPrintedAt] = useState('')
   const [cashRefunds, setCashRefunds] = useState(0)
   // เงินสดจากบิลในกะนี้ที่ถูกยกเลิกทีหลัง — รับไว้แล้วตอนขาย ต้องนับเป็นเงินเข้าเก๊ะ (ดู lib/shiftCash)
   const [cashFromCancelled, setCashFromCancelled] = useState(0)
@@ -138,6 +144,25 @@ export default function ShiftClient({
   const [editOpening, setEditOpening] = useState(false)
   const [openingEdit, setOpeningEdit] = useState('')
   const [openingNote, setOpeningNote] = useState('')
+
+  const stampNow = () =>
+    new Date().toLocaleString('th-TH', {
+      timeZone: 'Asia/Bangkok', day: 'numeric', month: 'short', year: '2-digit',
+      hour: '2-digit', minute: '2-digit',
+    })
+  /**
+   * พิมพ์ใบสรุป / เซฟเป็น PDF ก่อนกดปิดกะ
+   *
+   * ใบนี้คิดจากเลขที่กรอกค้างอยู่บนหน้าจอ ยังไม่ได้บันทึกอะไรลงฐานข้อมูล — ตั้งใจให้เป็นแบบนั้น
+   * พนักงานจะได้ส่งใบสรุปเข้ากลุ่มก่อน แล้วถ้านับพลาดก็แก้ตัวเลขแล้วพิมพ์ใหม่ได้ ไม่ต้องปิดกะก่อน
+   * (ปิดไปแล้วเหลือแค่เจ้าของที่แก้ยอดได้จากตารางประวัติ)
+   *
+   * flushSync เพื่อให้เวลาบนหัวใบถูกวาดลง DOM ก่อน window.print() จะหยุดเธรด
+   */
+  const printSummary = () => {
+    flushSync(() => setPrintedAt(stampNow()))
+    window.print()
+  }
 
   useEffect(() => {
     if (!openShift) return
@@ -272,6 +297,9 @@ export default function ShiftClient({
   const adjustTotal = DENOMS.reduce((sum, d) => sum + d.value * adjustQty(d.value), 0)
   const adjustDiff = adjustTotal - (carryOf(lastClosed) ?? 0)
   const keptLabels = DENOMS.filter((d) => keepAll.includes(d.value)).map((d) => d.label).join('/')
+  // "พัน 3 · ร้อย 34 · ยี่สิบ 26" — ใบพิมพ์ไม่มีที่พอให้กางเป็นตาราง เอาเฉพาะกองที่มีของ
+  const denomLine = (c: Record<number, number>) =>
+    DENOMS.filter((d) => c[d.value]).map((d) => `${d.label.replace(/^(แบงค์|เหรียญ)/, '')} ${c[d.value]}`).join(' · ')
   // เงินตั้งต้นของกะที่เปิดอยู่ ห่างจากชุดเงินทอนที่ตั้งไว้เท่าไหร่ — ชนิดที่เก็บทั้งหมดคิดตามที่นับได้เช้านั้น
   // ไม่ได้นับแยกตอนเปิดกะและมีชนิดที่เก็บทั้งหมดอยู่ = เทียบไม่ได้ ไม่ต้องเตือน
   const openingDenoms = openShift?.opening_denominations ?? null
@@ -1126,9 +1154,19 @@ export default function ShiftClient({
               เดิมต้องถ่ายสองรูป (หน้าสรุปรายวันเอายอดแยกช่องทาง + หน้านี้เอายอดเงินในเก๊ะ)
               แล้วคนในกลุ่มต้องเอามาต่อกันเอง ตกรูปไหนไปก็ดูไม่ออกว่าวันนั้นขายได้เท่าไหร่ */}
           <div className="mt-4 rounded-lg border-2 border-gray-200 p-3.5 text-sm">
-            <div className="flex items-baseline justify-between mb-2">
+            <div className="flex items-baseline justify-between gap-2 mb-2">
               <p className="font-semibold text-gray-900">สรุปกะนี้</p>
-              <p className="text-xs text-gray-400">ถ่ายรูปกล่องนี้ส่งกลุ่มได้เลย</p>
+              <div className="flex items-baseline gap-3">
+                <p className="text-xs text-gray-400">ถ่ายรูปกล่องนี้ส่งกลุ่มได้เลย</p>
+                <button
+                  type="button"
+                  onClick={printSummary}
+                  className="flex items-center gap-1 text-xs font-medium text-blue-600 hover:text-blue-700 shrink-0"
+                  title="เปิดกล่องพิมพ์ — เลือก &ldquo;บันทึกเป็น PDF&rdquo; ก็ได้ใบสรุปหน้าเดียวไว้ส่งกลุ่ม"
+                >
+                  <Printer size={13} /> พิมพ์ / PDF
+                </button>
+              </div>
             </div>
 
             <div className="flex justify-between font-semibold text-gray-900">
@@ -1193,6 +1231,95 @@ export default function ShiftClient({
                 <span>เหลือเป็นเงินทอนพรุ่งนี้</span><span className="tabular-nums">฿{money(leftover)}</span>
               </div>
             </div>
+          </div>
+
+          {/* ใบสรุปสำหรับพิมพ์ / เซฟเป็น PDF — บนจอซ่อนไว้ โผล่เฉพาะตอนสั่งพิมพ์ (ดู globals.css)
+              จงใจให้พิมพ์ได้ "ก่อน" ปิดกะ: นับพลาดก็แก้เลขแล้วพิมพ์ใหม่ได้ ไม่ต้องไปแก้กะที่ปิดไปแล้ว */}
+          <div id="shift-print" className="hidden print:block text-[12px] leading-snug text-black">
+            <div className="flex items-end justify-between border-b border-black pb-1">
+              <div>
+                <p className="text-[16px] font-bold">{storeName || 'สรุปปิดกะ'}</p>
+                <p className="text-[11px]">ใบสรุปปิดกะ · พิมพ์เมื่อ {printedAt}</p>
+              </div>
+              <p className="text-[11px] text-right">
+                เปิดกะ {fmtDate(openShift.opened_at)}<br />
+                โดย {openShift.opener?.name ?? '—'} · ปิดโดย {currentUserName || '—'}
+              </p>
+            </div>
+
+            <table className="w-full mt-2">
+              <tbody>
+                <tr><td className="font-bold pt-1" colSpan={2}>ยอดขายหน้าร้าน {billCount} บิล</td></tr>
+                {Object.entries(PAYMENT_LABEL).map(([key, label]) =>
+                  breakdown[key] ? (
+                    <tr key={key}>
+                      <td className="pl-3">{label} ({methodBills[key] ?? 0} บิล)</td>
+                      <td className="text-right tabular-nums">฿{money(breakdown[key])}</td>
+                    </tr>
+                  ) : null,
+                )}
+                <tr className="border-b border-gray-400">
+                  <td className="font-medium">รวมขายหน้าร้าน</td>
+                  <td className="text-right font-medium tabular-nums">฿{money(salesTotal)}</td>
+                </tr>
+                {otherChannels.map((c) => (
+                  <tr key={c.label}>
+                    <td className="pl-3">{c.label} ({c.count} บิล) — ไม่เข้าเก๊ะ</td>
+                    <td className="text-right tabular-nums">฿{money(c.amount)}</td>
+                  </tr>
+                ))}
+
+                <tr><td className="font-bold pt-2" colSpan={2}>เงินสดในลิ้นชัก</td></tr>
+                <tr><td className="pl-3">เงินตั้งต้นเช้านี้</td><td className="text-right tabular-nums">฿{money(openShift.opening_cash)}</td></tr>
+                {cashIn > 0 && <tr><td className="pl-3">เติมเงินเข้าเก๊ะ</td><td className="text-right tabular-nums">+฿{money(cashIn)}</td></tr>}
+                {cashOut > 0 && <tr><td className="pl-3">หยิบเงินออกจากเก๊ะ</td><td className="text-right tabular-nums">-฿{money(cashOut)}</td></tr>}
+                {cashRefunds > 0 && <tr><td className="pl-3">คืนเงินสด (บิลยกเลิก)</td><td className="text-right tabular-nums">-฿{money(cashRefunds)}</td></tr>}
+                <tr><td className="font-medium">เงินสดที่ควรมี</td><td className="text-right font-medium tabular-nums">฿{money(expectedCash)}</td></tr>
+                <tr className="border-b border-gray-400">
+                  <td className="font-medium">นับได้จริง</td>
+                  <td className="text-right font-bold tabular-nums">฿{money(counted)}</td>
+                </tr>
+                {bankChecked && (
+                  <tr className="border-b border-gray-400">
+                    <td>เข้าบัญชีจริง (โอน + QR) · ในระบบ ฿{money(bankExpected)}</td>
+                    <td className="text-right tabular-nums">฿{money(bankActual)}</td>
+                  </tr>
+                )}
+                <tr>
+                  <td className="font-bold pt-1" colSpan={2}>
+                    {!hasCount
+                      ? 'ยังไม่ได้นับเงิน'
+                      : channels.swapped > 0
+                        ? `ผลต่าง: เงินครบ — แต่ลงช่องทางผิด ฿${money(channels.swapped)}`
+                        : channels.matched
+                          ? 'ผลต่าง: เงินตรงพอดี'
+                          : `ผลต่าง: เงิน${channels.total > 0 ? 'เกิน' : 'ขาด'} ฿${money(Math.abs(channels.total))}${bankChecked ? ' (รวมเก๊ะ + บัญชี)' : ''}`}
+                  </td>
+                </tr>
+
+                <tr><td className="font-bold pt-2" colSpan={2}>ส่งต่อ</td></tr>
+                <tr>
+                  <td className="pl-3">{cashToOwner < 0 ? 'เจ้าของเติมเข้าเก๊ะ' : 'ให้เจ้าของ'}</td>
+                  <td className="text-right tabular-nums">{cashToOwner === 0 ? '—' : `฿${money(Math.abs(cashToOwner))}`}</td>
+                </tr>
+                <tr>
+                  <td className="pl-3 font-medium">เหลือเป็นเงินทอนพรุ่งนี้</td>
+                  <td className="text-right font-bold tabular-nums">฿{money(leftover)}</td>
+                </tr>
+              </tbody>
+            </table>
+
+            <p className="mt-2 text-[11px]"><span className="font-medium">นับได้:</span> {denomLine(countedDenoms) || '—'}</p>
+            <p className="text-[11px]"><span className="font-medium">เหลือไว้:</span> {denomLine(keepCounts) || '—'}</p>
+            {notes.trim() && <p className="mt-1 text-[11px]"><span className="font-medium">หมายเหตุ:</span> {notes.trim()}</p>}
+
+            <div className="mt-6 flex justify-between text-[11px]">
+              <span>ผู้ปิดกะ ______________________</span>
+              <span>ผู้รับเงิน ______________________</span>
+            </div>
+            <p className="mt-2 text-[10px] text-gray-500">
+              ใบนี้พิมพ์จากตัวเลขบนหน้าจอตอน {printedAt} — ยังไม่ได้กดปิดกะ ถ้านับใหม่แล้วไม่ตรง แก้แล้วพิมพ์ใหม่ได้เลย
+            </p>
           </div>
 
           <button
