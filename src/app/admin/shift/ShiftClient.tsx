@@ -204,6 +204,17 @@ export default function ShiftClient({
       ...(c ?? Object.fromEntries(DENOMS.map((d) => [d.value, keepValue(d.value)]))),
       [v]: raw,
     }))
+  // กดปุ่มเดียวให้เหลือในเก๊ะ "เท่าชุดที่ตั้งไว้พอดี" — ไม่ใช่ค่าที่ระบบคิดให้ซึ่งขาดก็เหลือไว้ทั้งเก๊ะ
+  // แบงค์ที่ขาดจะขึ้นเป็น "เจ้าของเติม n" ให้เห็นทันทีว่าต้องเอาอะไรมาเติมกี่ใบ
+  // เหรียญกับชนิดที่ตั้งว่าเก็บไว้ทั้งหมด (แบงค์ห้าสิบ) เหลือไว้ตามที่นับได้ หยิบออกไม่ได้อยู่ดี
+  const applyFloatSet = () => {
+    if (!floatTargetDenoms) return
+    setKeepEdit(Object.fromEntries(DENOMS.map((d) => {
+      const snap = takeable.includes(d.value) && !keepAll.includes(d.value)
+      const qty = snap ? (floatTargetDenoms[d.value] ?? 0) : (countedDenoms[d.value] ?? 0)
+      return [d.value, qty ? String(qty) : '']
+    })))
+  }
   // ให้เจ้าของ = ที่นับได้ − ที่เหลือไว้ · ติดลบ = วันที่เงินทอนขาดแล้วเจ้าของเอามาเติม
   const owner = ownerSide(countedDenoms, keepCounts)
   const cashToOwner = owner.net
@@ -868,17 +879,28 @@ export default function ShiftClient({
             )}
           </div>
 
-          <div className="flex items-center justify-between mb-1">
+          <div className="flex items-center justify-between gap-3 mb-1">
             <label className="block text-xs font-medium text-gray-600">เงินทอนที่เหลือไว้ให้พรุ่งนี้</label>
-            {keepEdit && (
-              <button
-                type="button"
-                onClick={() => setKeepEdit(null)}
-                className="text-xs font-medium text-blue-600 hover:text-blue-700"
-              >
-                คืนค่าที่ระบบคิดให้
-              </button>
-            )}
+            <div className="flex items-center gap-3">
+              {floatTargetDenoms && (
+                <button
+                  type="button"
+                  onClick={applyFloatSet}
+                  className="text-xs font-medium text-blue-600 hover:text-blue-700"
+                >
+                  ใช้ชุดที่ตั้งไว้ ฿{money(floatTotal!)}
+                </button>
+              )}
+              {keepEdit && (
+                <button
+                  type="button"
+                  onClick={() => setKeepEdit(null)}
+                  className="text-xs font-medium text-gray-400 hover:text-gray-600"
+                >
+                  คืนค่าที่ระบบคิดให้
+                </button>
+              )}
+            </div>
           </div>
           <p className="text-xs text-gray-500 mb-2">
             ใส่ว่าจะเหลือเงินทอนไว้ในเก๊ะชนิดไหนกี่ใบ — ส่วนที่เหลือคือเงินที่ออกไปหาเจ้าของ ไม่ต้องกรอกซ้ำ

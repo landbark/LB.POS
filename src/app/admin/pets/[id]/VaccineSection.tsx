@@ -1,9 +1,9 @@
 'use client'
 
-import { useState } from 'react'
+import { Fragment, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { Check, Plus, Syringe, Trash2, X } from 'lucide-react'
+import { CalendarCheck, Check, Plus, Syringe, Trash2, X } from 'lucide-react'
 import toast from 'react-hot-toast'
 import type { PetVaccination, Vaccine } from '@/lib/types'
 import { addDaysISO, dueVaccinations, OVERDUE_GRACE_DAYS } from '@/lib/vaccines'
@@ -14,6 +14,12 @@ const inputClass = 'w-full border border-gray-300 rounded-lg px-3 py-2 text-sm f
 const labelClass = 'block text-xs font-medium text-gray-600 mb-1'
 const fmtDate = (d: string) => new Date(`${d}T00:00:00`).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' })
 const todayISO = () => new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Bangkok' })
+
+/** เข็มที่ฉีดวันเดียวกัน — นัดรอบหน้าตั้งทีเดียวได้ทั้งกอง */
+interface DoseGroup {
+  date: string
+  rows: PetVaccination[]
+}
 
 export default function VaccineSection({
   petId,
@@ -40,6 +46,9 @@ export default function VaccineSection({
   const router = useRouter()
   const [adding, setAdding] = useState(false)
   const [saving, setSaving] = useState(false)
+  // วันนัดที่กรอกไว้ในแถบ "ฉีดพร้อมกัน" ของแต่ละวัน — key = วันที่ฉีด
+  const [batch, setBatch] = useState<Record<string, string>>({})
+  const [batching, setBatching] = useState<string | null>(null)
   const [form, setForm] = useState({
     vaccine_id: '',
     vaccine_name: '',
@@ -94,6 +103,24 @@ export default function VaccineSection({
     router.refresh()
   }
 
+  // ฉีดหลายเข็มวันเดียวกันก็นัดวันเดียวกัน — แต่ประวัติต้องแยกเข็มละแถว (ไว้ดูว่าเข็มไหนครบกำหนดเมื่อไหร่)
+  // กรอกวันนัดช่องเดียวแล้วยิงให้ทุกเข็มของวันนั้นทีเดียว ไม่ต้องไล่กรอกซ้ำทุกแถว
+  async function applyBatch(g: DoseGroup) {
+    const date = batchValue(g)
+    if (!date) return
+    setBatching(g.date)
+    const supabase = createClient()
+    const { error } = await supabase
+      .from('pet_vaccinations')
+      .update({ next_due_date: date })
+      .in('id', g.rows.map((r) => r.id))
+    setBatching(null)
+    if (error) { toast.error('ตั้งวันนัดไม่สำเร็จ'); return }
+    toast.success(`นัดรอบหน้า ${fmtDate(date)} ให้ทั้ง ${g.rows.length} เข็มแล้ว`)
+    setBatch((b) => { const next = { ...b }; delete next[g.date]; return next })
+    router.refresh()
+  }
+
   async function remove(v: PetVaccination) {
     if (!(await confirmDialog({ message: `ลบประวัติวัคซีน "${v.vaccine_name}" (${fmtDate(v.dose_date)})?` })).confirmed) return
     const supabase = createClient()
@@ -102,6 +129,19 @@ export default function VaccineSection({
     toast.success('ลบแล้ว')
     router.refresh()
   }
+
+  // รวมเข็มที่ฉีดวันเดียวกันเป็นกอง (รายการเรียงวันที่ฉีดจากใหม่ไปเก่ามาแล้ว)
+  const groups = vaccinations.reduce<DoseGroup[]>((acc, v) => {
+    const last = acc[acc.length - 1]
+    if (last && last.date === v.dose_date) last.rows.push(v)
+    else acc.push({ date: v.dose_date, rows: [v] })
+    return acc
+  }, [])
+  // ค่าตั้งต้นของแถบนัดพร้อมกัน = วันที่ใกล้สุดในกอง (เข็มที่ต้องมาเร็วสุดคือวันที่ต้องนัด)
+  const batchValue = (g: DoseGroup) =>
+    batch[g.date] ??
+    g.rows.map((r) => r.next_due_date).filter((d): d is string => !!d).sort()[0] ??
+    ''
 
   // เข็มที่ครบกำหนดกระตุ้น (ภายใน 30 วัน หรือเพิ่งเลยกำหนดมาไม่นานเกินค่าที่ตั้งไว้)
   const due = dueVaccinations(
@@ -170,40 +210,67 @@ export default function VaccineSection({
       )}
 
       <div className="bg-white rounded-xl border border-gray-100 divide-y divide-gray-50">
-        {vaccinations.map((v) => (
-          <div key={v.id} className="flex items-center justify-between gap-3 px-4 py-2.5">
-            <div className="min-w-0">
-              <p className="text-sm text-gray-900">
-                {v.vaccine_name}
-                {v.dose_label && <span className="ml-1.5 text-xs text-gray-400">({v.dose_label})</span>}
-              </p>
-              <p className="text-xs text-gray-400">
-                ฉีด {fmtDate(v.dose_date)}
-                {v.lot_number && ` · Lot ${v.lot_number}`}
-              </p>
-            </div>
-            <div className="flex items-center gap-2 shrink-0">
-              {readOnly ? (
-                v.next_due_date && <span className="text-xs text-gray-500">นัดถัดไป {fmtDate(v.next_due_date)}</span>
-              ) : (
-                <>
-                  {/* เลื่อนวันนัดกระตุ้นได้ตรงนี้ */}
-                  <label className="flex items-center gap-1 text-xs text-gray-500">
-                    นัดถัดไป
-                    <input
-                      type="date"
-                      defaultValue={v.next_due_date ?? ''}
-                      onChange={(e) => updateNextDue(v, e.target.value)}
-                      className="border border-gray-200 rounded px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                  </label>
-                  <button onClick={() => remove(v)} className="p-1.5 text-gray-300 hover:text-red-600 rounded">
-                    <Trash2 size={14} />
-                  </button>
-                </>
-              )}
-            </div>
-          </div>
+        {groups.map((g) => (
+          <Fragment key={g.date}>
+            {/* ฉีดพร้อมกันหลายเข็ม → กรอกวันนัดช่องเดียว แล้วตั้งให้ทุกเข็มของวันนั้นทีเดียว */}
+            {!readOnly && g.rows.length > 1 && (
+              <div className="flex flex-wrap items-center gap-2 px-4 py-2 bg-blue-50/70">
+                <span className="text-xs text-gray-600 flex items-center gap-1.5">
+                  <CalendarCheck size={13} className="text-blue-500" />
+                  ฉีดพร้อมกัน {g.rows.length} เข็ม ({fmtDate(g.date)}) — นัดรอบหน้าวันเดียวกัน
+                </span>
+                <input
+                  type="date"
+                  value={batchValue(g)}
+                  onChange={(e) => setBatch((b) => ({ ...b, [g.date]: e.target.value }))}
+                  className="border border-gray-200 rounded px-2 py-1 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <button
+                  onClick={() => applyBatch(g)}
+                  disabled={!batchValue(g) || batching === g.date}
+                  className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-xs font-medium px-2.5 py-1 rounded"
+                >
+                  {batching === g.date ? 'บันทึก...' : `ตั้งให้ทั้ง ${g.rows.length} เข็ม`}
+                </button>
+              </div>
+            )}
+            {g.rows.map((v) => (
+              <div key={v.id} className="flex items-center justify-between gap-3 px-4 py-2.5">
+                <div className="min-w-0">
+                  <p className="text-sm text-gray-900">
+                    {v.vaccine_name}
+                    {v.dose_label && <span className="ml-1.5 text-xs text-gray-400">({v.dose_label})</span>}
+                  </p>
+                  <p className="text-xs text-gray-400">
+                    ฉีด {fmtDate(v.dose_date)}
+                    {v.lot_number && ` · Lot ${v.lot_number}`}
+                  </p>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  {readOnly ? (
+                    v.next_due_date && <span className="text-xs text-gray-500">นัดถัดไป {fmtDate(v.next_due_date)}</span>
+                  ) : (
+                    <>
+                      {/* เลื่อนวันนัดกระตุ้นของเข็มเดียวได้ตรงนี้ · key ผูกวันนัดไว้ ตั้งพร้อมกันแล้วช่องนี้จะได้ขยับตาม */}
+                      <label className="flex items-center gap-1 text-xs text-gray-500">
+                        นัดถัดไป
+                        <input
+                          key={`${v.id}-${v.next_due_date ?? ''}`}
+                          type="date"
+                          defaultValue={v.next_due_date ?? ''}
+                          onChange={(e) => updateNextDue(v, e.target.value)}
+                          className="border border-gray-200 rounded px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                      </label>
+                      <button onClick={() => remove(v)} className="p-1.5 text-gray-300 hover:text-red-600 rounded">
+                        <Trash2 size={14} />
+                      </button>
+                    </>
+                  )}
+                </div>
+              </div>
+            ))}
+          </Fragment>
         ))}
         {vaccinations.length === 0 && <p className="px-4 py-6 text-center text-sm text-gray-400">ยังไม่มีประวัติวัคซีน</p>}
       </div>
