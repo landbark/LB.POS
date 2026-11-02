@@ -18,6 +18,8 @@ interface Props {
 // แถบเครื่องมือด้านบนหน้าพิมพ์เอกสาร (ใบเสร็จ/ใบสั่งซื้อ) — ซ่อนตอนพิมพ์จริงด้วย .no-print
 export default function PrintToolbar({ sizes, size, onSizeChange, backHref, variant = 'close', extra, fileName }: Props) {
   // เบราว์เซอร์ตั้งชื่อไฟล์ PDF จาก document.title — ตั้งเป็นเลขที่เอกสารจะได้ไม่ซ้ำกันตอนเซฟหลายใบ
+  // ตัวหลักคือ generateMetadata ของหน้านั้น (Next แทรก metadata ทีหลังเลยทับค่าที่ตั้งตรงนี้)
+  // ตรงนี้กันไว้เผื่อหน้าไหนยังไม่ได้ตั้ง metadata หรือ title ถูกรีเซ็ตระหว่างเปลี่ยนขนาดกระดาษ
   useEffect(() => {
     if (!fileName) return
     const prev = document.title
