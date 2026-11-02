@@ -1,6 +1,6 @@
 'use client'
 
-import { Fragment, useEffect, useState } from 'react'
+import { Fragment, useEffect, useRef, useState } from 'react'
 import { flushSync } from 'react-dom'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
@@ -150,6 +150,18 @@ export default function ShiftClient({
       timeZone: 'Asia/Bangkok', day: 'numeric', month: 'short', year: '2-digit',
       hour: '2-digit', minute: '2-digit',
     })
+  // ชื่อไฟล์ PDF เช่น "LANDBARK-ปิดกะ-2026-11-02-2305" — วันที่แบบ ISO เพราะเรียงตามชื่อแล้วตรงตามเวลา
+  const printFileName = () => {
+    const now = new Date()
+    const date = now.toLocaleDateString('en-CA', { timeZone: 'Asia/Bangkok' })
+    const time = now
+      .toLocaleTimeString('en-GB', { timeZone: 'Asia/Bangkok', hour: '2-digit', minute: '2-digit' })
+      .replace(':', '')
+    return [storeName.trim().replace(/\s+/g, '-'), 'ปิดกะ', date, time].filter(Boolean).join('-')
+  }
+  // ชื่อแท็บเดิม — เก็บไว้ครั้งแรกที่กดพิมพ์ ไม่งั้นกดรอบสองจะจำชื่อไฟล์ของรอบแรกเป็นของเดิม
+  const pageTitle = useRef<string | null>(null)
+
   /**
    * พิมพ์ใบสรุป / เซฟเป็น PDF ก่อนกดปิดกะ
    *
@@ -158,9 +170,20 @@ export default function ShiftClient({
    * (ปิดไปแล้วเหลือแค่เจ้าของที่แก้ยอดได้จากตารางประวัติ)
    *
    * flushSync เพื่อให้เวลาบนหัวใบถูกวาดลง DOM ก่อน window.print() จะหยุดเธรด
+   *
+   * เบราว์เซอร์ตั้งชื่อไฟล์ "บันทึกเป็น PDF" จาก document.title — ปล่อยไว้จะได้ "LANDBARK POS.pdf"
+   * ทุกใบ ส่งเข้ากลุ่มแล้วทับกันเอง หาไม่เจอว่าใบไหนของวันไหน เปลี่ยนชื่อแท็บชั่วคราวตอนพิมพ์แทน
+   * แล้วคืนค่าเมื่อกล่องพิมพ์ปิด (afterprint) — ไม่ใช้ตัวตั้งเวลา เพราะกล่องเปิดค้างนานแค่ไหนก็ได้
    */
   const printSummary = () => {
+    if (pageTitle.current === null) pageTitle.current = document.title
     flushSync(() => setPrintedAt(stampNow()))
+    document.title = printFileName()
+    const restore = () => {
+      document.title = pageTitle.current!
+      window.removeEventListener('afterprint', restore)
+    }
+    window.addEventListener('afterprint', restore)
     window.print()
   }
 
