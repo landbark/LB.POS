@@ -83,6 +83,8 @@ export default function LabelView({ visit, store }: { visit: Visit; store: Store
         @media print {
           .no-print { display: none !important; }
           body { background: #fff; }
+          /* ตอนพิมพ์ต้องเลิกเป็น flex ก่อน ไม่งั้น Chrome ไม่สนใจ page-break-after ของลูก */
+          .labels { display: block !important; }
           .label { page-break-after: always; box-shadow: none !important; border: none !important; }
           .label:last-child { page-break-after: auto; }
         }
@@ -138,7 +140,7 @@ export default function LabelView({ visit, store }: { visit: Visit; store: Store
         </div>
       )}
 
-      <div className="p-4 flex flex-wrap gap-4 print:p-0 print:gap-0">
+      <div className="labels p-4 flex flex-wrap gap-4 print:p-0 print:gap-0">
         {toPrint.map((item) => {
           const sig = sigText({
             dose_amount: item.dose_amount,

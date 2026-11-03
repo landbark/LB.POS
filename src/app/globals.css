@@ -33,11 +33,13 @@ body {
  * ใบนี้อยู่ในหน้าเดียวกับฟอร์ม (ตัวเลขยังไม่ได้บันทึกลง DB จะทำเป็นหน้า /print/... แยกไม่ได้)
  * ตอนสั่งพิมพ์จึงต้องซ่อนทั้งหน้าไว้แล้วโชว์เฉพาะใบ — ใช้ visibility ไม่ใช่ display
  * เพราะ display:none กับตัวแม่จะพาลูกหายไปด้วย ต่อให้ลูกสั่ง display:block ไว้ก็ตาม
+ *
+ * ต้องผูกกับ body:has(#shift-print) ไว้ทุกกฎ ไม่งั้นมันซ่อนทุกหน้าในเว็บตอนสั่งพิมพ์
+ * — หน้า /print/* (ฉลากยา ใบเสร็จ ฯลฯ) เคยพิมพ์ออกมาเป็นหน้าขาวเพราะกฎนี้
+ * ขนาดกระดาษ A5 ก็ย้ายไปไว้ใน ShiftClient แล้ว เพราะหน้าอื่นมี @page ของตัวเอง
  */
 @media print {
-  @page { size: A5 portrait; margin: 10mm; }
-
-  body * { visibility: hidden !important; }
+  body:has(#shift-print) * { visibility: hidden !important; }
   #shift-print, #shift-print * { visibility: visible !important; }
   #shift-print {
     position: absolute;

@@ -1258,6 +1258,7 @@ export default function ShiftClient({
 
           {/* ใบสรุปสำหรับพิมพ์ / เซฟเป็น PDF — บนจอซ่อนไว้ โผล่เฉพาะตอนสั่งพิมพ์ (ดู globals.css)
               จงใจให้พิมพ์ได้ "ก่อน" ปิดกะ: นับพลาดก็แก้เลขแล้วพิมพ์ใหม่ได้ ไม่ต้องไปแก้กะที่ปิดไปแล้ว */}
+          <style>{`@page { size: A5 portrait; margin: 10mm; }`}</style>
           <div id="shift-print" className="hidden print:block text-[12px] leading-snug text-black">
             <div className="flex items-end justify-between border-b border-black pb-1">
               <div>
