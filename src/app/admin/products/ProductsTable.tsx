@@ -30,7 +30,8 @@ export default function ProductsTable({ products }: { products: Product[] }) {
   const [picked, setPicked] = useState<Set<string>>(new Set())
   const [saving, setSaving] = useState(false)
   const [query, setQuery] = useState('')
-  const [hideStopped, setHideStopped] = useState(false)
+  // ตั้งต้นเป็นซ่อน — ที่งดจำหน่ายแล้วแทบไม่ต้องแก้อะไรอีก มีแต่จะปนตาตอนไล่ดูของที่ขายอยู่
+  const [hideStopped, setHideStopped] = useState(true)
   // '' = ทุกตัว, 'yes' = เฉพาะที่เข้าข่าย VAT, 'no' = เฉพาะที่ไม่เข้าข่าย
   const [vatFilter, setVatFilter] = useState<'' | 'yes' | 'no'>('')
   // '' = ทุกตัว, 'yes' = เฉพาะที่ตั้งราคาบูธไว้ (ไว้ไล่ตรวจราคาก่อนออกงาน)
