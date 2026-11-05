@@ -5,17 +5,10 @@ import { thaiDateIn, thaiDayRange, thaiToday } from '@/lib/thaiDate'
 import { ArrowLeft } from 'lucide-react'
 import SearchBox from '@/components/SearchBox'
 import type { StockMovementType } from '@/lib/types'
+import { MOVEMENT_LABEL } from '@/lib/stockMovements'
 import HistoryFilters from './HistoryFilters'
 
 const PAGE_SIZE = 100
-
-const TYPE_LABEL: Record<StockMovementType, { text: string; className: string; sign: '+' | '-' }> = {
-  sale: { text: 'ขาย', className: 'bg-gray-100 text-gray-600', sign: '-' },
-  receive: { text: 'รับเข้า', className: 'bg-green-100 text-green-700', sign: '+' },
-  adjust_in: { text: 'ปรับเพิ่ม', className: 'bg-blue-100 text-blue-700', sign: '+' },
-  adjust_out: { text: 'ปรับลด', className: 'bg-orange-100 text-orange-700', sign: '-' },
-  cancel: { text: 'คืนจากยกเลิก', className: 'bg-purple-100 text-purple-700', sign: '+' },
-}
 
 const ADJUST_TYPES = ['adjust_in', 'adjust_out']
 
@@ -106,7 +99,10 @@ export default async function StockHistoryPage({
       </Link>
       <h1 className="text-2xl font-bold text-gray-900 mb-1">ประวัติสต็อค</h1>
       <p className="text-sm text-gray-500 mb-4">
-        ทุกการเคลื่อนไหวของสต็อกทั้งร้านไว้ที่เดียว — ใครปรับอะไร เมื่อไหร่ ด้วยเหตุผลอะไร
+        ทุกการเคลื่อนไหวของสต็อกทั้งร้านไว้ที่เดียว — ใครปรับอะไร เมื่อไหร่ ด้วยเหตุผลอะไร ·{' '}
+        <Link href={`/admin/reports/stock?from=${from}&to=${to}`} className="text-blue-600 hover:text-blue-700 font-medium">
+          ดูยอดรวมแยกตามสินค้า →
+        </Link>
       </p>
 
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 mb-4 space-y-3">
@@ -148,7 +144,7 @@ export default async function StockHistoryPage({
               </tr>
             )}
             {rows.map((m) => {
-              const cfg = TYPE_LABEL[m.type] ?? TYPE_LABEL.adjust_in
+              const cfg = MOVEMENT_LABEL[m.type] ?? MOVEMENT_LABEL.adjust_in
               return (
                 <tr key={m.id} className="hover:bg-gray-50">
                   <td className="px-4 py-3 text-sm text-gray-600 whitespace-nowrap">

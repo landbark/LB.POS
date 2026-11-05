@@ -1,13 +1,6 @@
 import { History } from 'lucide-react'
-import type { StockMovement, StockMovementType } from '@/lib/types'
-
-const TYPE_LABEL: Record<StockMovementType, { text: string; className: string; sign: '+' | '-' }> = {
-  sale: { text: 'ขาย', className: 'bg-gray-100 text-gray-600', sign: '-' },
-  receive: { text: 'รับเข้า', className: 'bg-green-100 text-green-700', sign: '+' },
-  adjust_in: { text: 'ปรับเพิ่ม', className: 'bg-blue-100 text-blue-700', sign: '+' },
-  adjust_out: { text: 'ปรับลด', className: 'bg-orange-100 text-orange-700', sign: '-' },
-  cancel: { text: 'คืนจากยกเลิก', className: 'bg-purple-100 text-purple-700', sign: '+' },
-}
+import type { StockMovement } from '@/lib/types'
+import { MOVEMENT_LABEL } from '@/lib/stockMovements'
 
 type Movement = Omit<StockMovement, 'profiles'> & {
   profiles: { name: string } | null
@@ -32,7 +25,7 @@ export default function StockHistory({ movements, unit }: { movements: Movement[
         </thead>
         <tbody className="divide-y divide-gray-50">
           {movements.map((m) => {
-            const cfg = TYPE_LABEL[m.type]
+            const cfg = MOVEMENT_LABEL[m.type]
             return (
               <tr key={m.id} className="hover:bg-gray-50">
                 <td className="px-4 py-3 text-sm text-gray-600 whitespace-nowrap">

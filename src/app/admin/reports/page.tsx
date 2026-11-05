@@ -5,6 +5,8 @@ import { thaiDayRange, thaiMonthStart } from '@/lib/thaiDate'
 import { sumByMethod, type PaidTransaction } from '@/lib/payments'
 import { isOwnMoney, OWN_MONEY_CHANNELS, CHANNEL_GROUP_COLOR, CHANNEL_LABEL, totalsByChannelGroup } from '@/lib/salesChannel'
 import { toOne } from '@/lib/supabase/embed'
+import type { StockMovementType } from '@/lib/types'
+import { IN_TYPES, MOVEMENT_LABEL, OUT_TYPES } from '@/lib/stockMovements'
 
 export default async function ReportsPage() {
   const supabase = await createClient()
@@ -12,7 +14,7 @@ export default async function ReportsPage() {
   const startOfMonth = thaiDayRange(thaiMonthStart()).startISO
 
   // ยอดทั้งเดือนอาจเกิน 1000 แถว — ต้องไล่ดึงทีละหน้า ไม่งั้นตัวเลขจะขาดแบบไม่มี error
-  const [todayTx, monthTx, { data: recentTx }, monthItems, { data: store }] = await Promise.all([
+  const [todayTx, monthTx, { data: recentTx }, monthItems, { data: store }, monthMoves] = await Promise.all([
     fetchAll((from, to) =>
       supabase.from('transactions').select('total, sales_channel, payment_method, transaction_payments(method, amount)')
         .neq('status', 'cancelled')
@@ -40,7 +42,24 @@ export default async function ReportsPage() {
         .range(from, to)
     ),
     supabase.from('store_settings').select('vat_registered, vat_rate').limit(1).single(),
+    // ความเคลื่อนไหวสต็อคทั้งเดือน — ขายวันละหลายสิบแถว ต้องไล่ดึงทีละหน้าเหมือนยอดขาย
+    fetchAll<{ type: StockMovementType; quantity: number }>((from, to) =>
+      supabase
+        .from('stock_movements')
+        .select('type, quantity')
+        .gte('created_at', startOfMonth)
+        .order('id')
+        .range(from, to)
+    ),
   ])
+
+  // สรุปของเข้า-ออกจากชั้นเดือนนี้ไว้ข้างยอดขาย รายละเอียดอยู่หน้า /admin/reports/stock
+  const moveByType = monthMoves.reduce((acc, m) => {
+    acc[m.type] = (acc[m.type] ?? 0) + m.quantity
+    return acc
+  }, {} as Partial<Record<StockMovementType, number>>)
+  const moveIn = IN_TYPES.reduce((s, t) => s + (moveByType[t] ?? 0), 0)
+  const moveOut = OUT_TYPES.reduce((s, t) => s + (moveByType[t] ?? 0), 0)
 
   const vatBase = monthItems?.reduce((s, i) => s + (i.vat_applicable ? i.subtotal : 0), 0) ?? 0
   const nonVatBase = monthItems?.reduce((s, i) => s + (i.vat_applicable ? 0 : i.subtotal), 0) ?? 0
@@ -196,6 +215,36 @@ export default async function ReportsPage() {
             ร้านยังไม่ได้จดทะเบียน VAT — ตัวเลขนี้เป็นการประมาณไว้ดูเฉยๆ ยังไม่ได้เก็บเงินลูกค้าจริง
           </p>
         )}
+      </div>
+
+      <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 mb-6">
+        <div className="flex items-baseline justify-between mb-3 gap-3 flex-wrap">
+          <h2 className="font-semibold text-gray-900">ความเคลื่อนไหวสต็อคเดือนนี้</h2>
+          <Link href="/admin/reports/stock" className="text-sm text-blue-600 hover:text-blue-700 font-medium">
+            ดูแยกตามสินค้า / เลือกช่วงวัน →
+          </Link>
+        </div>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+          <div>
+            <p className="text-sm text-gray-500">ของเข้า</p>
+            <p className="text-xl font-bold text-green-600 mt-0.5">+{moveIn.toLocaleString('th-TH')}</p>
+          </div>
+          <div>
+            <p className="text-sm text-gray-500">ของออก</p>
+            <p className="text-xl font-bold text-red-500 mt-0.5">-{moveOut.toLocaleString('th-TH')}</p>
+          </div>
+          <div>
+            <p className="text-sm text-gray-500">{MOVEMENT_LABEL.sale.text} (ตัดจากบิล)</p>
+            <p className="text-xl font-bold text-gray-900 mt-0.5">-{(moveByType.sale ?? 0).toLocaleString('th-TH')}</p>
+          </div>
+          <div>
+            <p className="text-sm text-gray-500">{MOVEMENT_LABEL.adjust_out.text} / ตัดออก</p>
+            <p className="text-xl font-bold text-orange-600 mt-0.5">-{(moveByType.adjust_out ?? 0).toLocaleString('th-TH')}</p>
+          </div>
+        </div>
+        <p className="text-xs text-gray-400 mt-3">
+          นับเป็นหน่วยฐานของสินค้า · ของเข้า = รับเข้า + ปรับเพิ่ม + คืนจากบิลที่ยกเลิก · ของออก = ขาย + ปรับลด/ตัดออก
+        </p>
       </div>
 
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-x-auto">
