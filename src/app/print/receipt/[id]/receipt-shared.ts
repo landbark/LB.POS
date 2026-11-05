@@ -39,7 +39,9 @@ export interface ReceiptTx {
 export type PaperSize = '80mm' | 'a4' | 'a5'
 
 export const PAPER_CONFIG: Record<PaperSize, { page: string; margin: string; width: string; font: string; pad: string }> = {
-  '80mm': { page: '80mm auto', margin: '2mm 3mm', width: '300px', font: '12px', pad: 'p-4' },
+  // กว้าง 72mm + ขอบข้างละ 4mm = 80mm พอดีแผ่น — ตรงกับพื้นที่พิมพ์จริงของหัวพิมพ์ (72.1mm / 576 จุด)
+  // ห้ามให้เนื้อหากว้างเกินนี้ ไม่งั้น Chrome จะย่อทั้งหน้าลงเป็นทศนิยม ตัวอักษรตกร่องจุดแล้วพิมพ์ออกมาฟุ้ง
+  '80mm': { page: '80mm auto', margin: '0 4mm', width: '72mm', font: '13px', pad: 'py-3' },
   // A4/A5 ใช้ความกว้าง/ระยะขอบชุดเดียวกับใบสั่งซื้อ เอกสารของร้านจะได้หน้าตาเป็นชุดเดียวกัน
   a4: { page: 'A4', margin: '15mm', width: '650px', font: '14px', pad: 'p-8' },
   // A5 แคบกว่ามาก ขอบหนาเท่า A4 จะกินที่ตารางจนชื่อสินค้าแตกบรรทัด

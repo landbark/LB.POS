@@ -65,7 +65,15 @@ export default function ReceiptView({
       <div className={isEmbed ? '' : 'flex justify-center py-6 print:py-0'}>
         <div
           className={`bg-white ${cfg.pad}${isEmbed ? '' : ' shadow-lg print:shadow-none'}`}
-          style={{ width: cfg.width, fontSize: cfg.font, maxWidth: '100%' }}
+          style={{
+            width: cfg.width,
+            fontSize: cfg.font,
+            maxWidth: '100%',
+            // สลิปความร้อน 203dpi — Tahoma เส้นหนาสม่ำเสมอ ออกแบบมาสำหรับจอความละเอียดต่ำ
+            // มีไทยครบและติดมากับ Windows อยู่แล้ว ไม่ต้องโหลดฟอนต์เพิ่มให้ช้าก่อนสั่งพิมพ์
+            // ดำล้วนทั้งใบ — เทาบนเครื่องความร้อนกลายเป็นจุดโปรย ไม่ใช่สีจาง
+            ...(isSlip ? { fontFamily: 'Tahoma, "Leelawadee UI", sans-serif', color: '#000' } : {}),
+          }}
         >
           {isSlip ? <ReceiptSlip tx={tx} store={store} /> : <ReceiptDocument tx={tx} store={store} />}
         </div>

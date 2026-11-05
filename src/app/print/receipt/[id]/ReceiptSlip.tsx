@@ -24,12 +24,12 @@ export default function ReceiptSlip({ tx, store }: { tx: ReceiptTx; store: Store
           <img src={store.logo_url} alt={store.name} className="mx-auto mb-1 h-14 w-14 object-contain" />
         )}
         <p className="font-bold" style={{ fontSize: '1.15em' }}>{store?.name ?? 'LANDBARK'}</p>
-        {store?.address && <p className="text-gray-600 whitespace-pre-line" style={{ fontSize: '0.85em' }}>{store.address}</p>}
-        {store?.phone && <p className="text-gray-600" style={{ fontSize: '0.85em' }}>โทร {store.phone}</p>}
-        {store?.tax_id && <p className="text-gray-600" style={{ fontSize: '0.85em' }}>เลขผู้เสียภาษี {store.tax_id}</p>}
+        {store?.address && <p className="whitespace-pre-line" style={{ fontSize: '0.9em' }}>{store.address}</p>}
+        {store?.phone && <p style={{ fontSize: '0.9em' }}>โทร {store.phone}</p>}
+        {store?.tax_id && <p style={{ fontSize: '0.9em' }}>เลขผู้เสียภาษี {store.tax_id}</p>}
       </div>
 
-      <div className="border-t border-dashed border-gray-400 my-2" />
+      <div className="border-t border-dashed border-black my-2" />
 
       <p className="font-semibold text-center mb-2">ใบเสร็จรับเงิน</p>
       <div className="space-y-0.5 mb-2" style={{ fontSize: '0.9em' }}>
@@ -49,7 +49,7 @@ export default function ReceiptSlip({ tx, store }: { tx: ReceiptTx; store: Store
         {tx.customers && <div className="flex justify-between"><span>ลูกค้า</span><span>{tx.customers.name}</span></div>}
       </div>
 
-      <div className="border-t border-dashed border-gray-400 my-2" />
+      <div className="border-t border-dashed border-black my-2" />
 
       {/* รายการสินค้า */}
       <div className="space-y-1.5 mb-2">
@@ -59,7 +59,7 @@ export default function ReceiptSlip({ tx, store }: { tx: ReceiptTx; store: Store
               <span>{item.products?.name ?? 'สินค้า'}</span>
               <span>{money(item.subtotal)}</span>
             </div>
-            <div className="flex justify-between text-gray-500" style={{ fontSize: '0.85em' }}>
+            <div className="flex justify-between" style={{ fontSize: '0.9em' }}>
               <span>
                 {item.quantity} {item.unit_name ?? item.products?.unit ?? ''} x {money(item.unit_price)}
                 {/* ขายยกกล่อง/ยกลัง — กำกับไว้ว่าได้ของไปกี่หน่วยย่อย */}
@@ -71,7 +71,7 @@ export default function ReceiptSlip({ tx, store }: { tx: ReceiptTx; store: Store
         ))}
       </div>
 
-      <div className="border-t border-dashed border-gray-400 my-2" />
+      <div className="border-t border-dashed border-black my-2" />
 
       {/* สรุปยอด */}
       <div className="space-y-0.5" style={{ fontSize: '0.9em' }}>
@@ -81,7 +81,7 @@ export default function ReceiptSlip({ tx, store }: { tx: ReceiptTx; store: Store
         {!!tx.rounding && tx.rounding !== 0 && (
           <div className="flex justify-between"><span>ปัดเศษ</span><span>{tx.rounding > 0 ? '+' : '-'}{money(Math.abs(tx.rounding))}</span></div>
         )}
-        <div className="flex justify-between font-bold border-t border-gray-300 pt-1 mt-1" style={{ fontSize: '1.05em' }}>
+        <div className="flex justify-between font-bold border-t border-black pt-1 mt-1" style={{ fontSize: '1.05em' }}>
           <span>ยอดสุทธิ</span><span>{money(tx.total)}</span>
         </div>
         {splitLines.length > 1 ? (
@@ -116,7 +116,7 @@ export default function ReceiptSlip({ tx, store }: { tx: ReceiptTx; store: Store
           </>
         )}
         {(tx.points_earned > 0 || tx.points_used > 0) && (
-          <div className="flex justify-between text-gray-500 pt-1" style={{ fontSize: '0.85em' }}>
+          <div className="flex justify-between pt-1" style={{ fontSize: '0.9em' }}>
             <span>แต้มสะสม</span>
             <span>
               {tx.points_used > 0 && `ใช้ ${tx.points_used} `}
@@ -126,8 +126,8 @@ export default function ReceiptSlip({ tx, store }: { tx: ReceiptTx; store: Store
         )}
       </div>
 
-      <div className="border-t border-dashed border-gray-400 my-2" />
-      <p className="text-center text-gray-500" style={{ fontSize: '0.85em' }}>ขอบคุณที่ใช้บริการค่ะ</p>
+      <div className="border-t border-dashed border-black my-2" />
+      <p className="text-center" style={{ fontSize: '0.9em' }}>ขอบคุณที่ใช้บริการค่ะ</p>
     </>
   )
 }
