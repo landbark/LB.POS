@@ -21,7 +21,16 @@ export default function ReceiptSlip({ tx, store }: { tx: ReceiptTx; store: Store
       <div className="text-center mb-3">
         {store?.logo_url && (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={store.logo_url} alt={store.name} className="mx-auto mb-1 h-14 w-14 object-contain" />
+          // โลโก้เป็นเส้นสีน้ำตาลอ่อนบนพื้นโปร่งใส — หัวพิมพ์ความร้อนพิมพ์ได้แค่ดำ/ไม่ดำ
+          // สีกลาง ๆ แบบนี้เลยถูกแปลงเป็นจุดโปรยจนแทบไม่ติดกระดาษ
+          // brightness(0) ทับเนื้อโลโก้ให้ดำล้วน (พื้นโปร่งใสยังโปร่งอยู่ ไม่กลายเป็นกล่องดำ)
+          // และต้องใหญ่พอด้วย — ย่อจาก 800px เหลือ 56px เส้นบาง ๆ ขาดหายไปทั้งลาย
+          <img
+            src={store.logo_url}
+            alt={store.name}
+            className="mx-auto mb-2 w-[25mm] object-contain"
+            style={{ filter: 'brightness(0)' }}
+          />
         )}
         <p className="font-bold" style={{ fontSize: '1.15em' }}>{store?.name ?? 'LANDBARK'}</p>
         {store?.address && <p className="whitespace-pre-line" style={{ fontSize: '0.9em' }}>{store.address}</p>}
