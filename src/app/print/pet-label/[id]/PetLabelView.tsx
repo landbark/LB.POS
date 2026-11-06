@@ -11,6 +11,10 @@ interface Store {
 /** เจ้าของเอาแต่ชื่อ ไม่เอานามสกุล — คำแรกของชื่อที่กรอกไว้ */
 const firstName = (name: string | null | undefined) => (name ?? '').trim().split(/\s+/)[0] || '—'
 
+/** วันเกิดแบบไทย เช่น "1 ม.ค. 2568" */
+const fmtDate = (d: string) =>
+  new Date(d).toLocaleDateString('th-TH', { timeZone: 'Asia/Bangkok', day: 'numeric', month: 'short', year: 'numeric' })
+
 /** เบอร์โทรโชว์แค่ 4 ตัวท้าย กันคนอื่นอ่านเบอร์ลูกค้าจากฉลากที่แปะไว้ */
 function tailPhone(phone: string | null | undefined) {
   const digits = (phone ?? '').replace(/\D/g, '')
@@ -36,6 +40,8 @@ export default function PetLabelView({ pet, store, weight }: { pet: Pet; store: 
 
   const phone = tailPhone(pet.customers?.phone)
   const age = petAge(pet.birth_date)
+  // ฉลากโชว์วันเกิดเป็นหลัก อายุต่อท้ายในวงเล็บ — ฉลากที่แปะค้างไว้นานอายุจะไม่เพี้ยน
+  const birth = pet.birth_date ? `${fmtDate(pet.birth_date)}${age ? ` (${age})` : ''}` : '—'
 
   // ฉลากมีใบเดียว ต้องใส่ให้พอดี — ตัวที่กรอกครบและมีแถบเตือนด้วยจะย่อฟอนต์ลงหนึ่งสเต็ป
   const extraRows = (pet.color ? 1 : 0) + (pet.microchip ? 1 : 0)
@@ -110,8 +116,11 @@ export default function PetLabelView({ pet, store, weight }: { pet: Pet; store: 
             </p>
 
             <div className="grid grid-cols-2 gap-x-2 mt-0.5">
+              <p className="row col-span-2">
+                <span className="text-gray-500">วันเกิด </span>
+                {birth}
+              </p>
               <Field label="เพศ" value={pet.sex ? (pet.sex === 'male' ? 'ผู้' : 'เมีย') : '—'} />
-              <Field label="อายุ" value={age ?? '—'} />
               <Field label="ทำหมัน" value={pet.sterilized ? 'ทำแล้ว' : 'ยังไม่ทำ'} />
               <Field label="น้ำหนัก" value={weight != null ? `${weight} กก.` : '—'} />
               {pet.color && <Field label="สี" value={pet.color} />}
