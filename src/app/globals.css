@@ -40,7 +40,10 @@ body {
  */
 @media print {
   body:has(#shift-print) * { visibility: hidden !important; }
-  #shift-print, #shift-print * { visibility: visible !important; }
+  /* ต้องนำหน้าด้วย body:has(...) เหมือนกฎซ่อน ไม่งั้นแพ้ค่าความจำเพาะแล้วใบสรุปหายทั้งใบ
+     — (1,0,1) ของ "body:has(#id) *" ชนะ (1,0,0) ของ "#shift-print *" ทั้งที่ !important เท่ากัน */
+  body:has(#shift-print) #shift-print,
+  body:has(#shift-print) #shift-print * { visibility: visible !important; }
   #shift-print {
     position: absolute;
     left: 0;
