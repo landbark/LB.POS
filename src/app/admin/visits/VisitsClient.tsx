@@ -389,12 +389,40 @@ export default function VisitsClient({
                 <td className="px-4 py-3 text-sm text-gray-600">
                   {new Date(v.visit_date).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })} น.
                 </td>
+                {/* ชื่อสัตว์/HN ลัดไปหน้าประวัติสัตว์ — stopPropagation กันแถวพาไปหน้า VN ทับ */}
                 <td className="px-4 py-3 text-sm font-medium text-gray-900">
-                  {v.pets?.name ?? '—'}
-                  {v.pets?.hn && <span className="block text-xs font-mono text-gray-400">{v.pets.hn}</span>}
+                  {v.pet_id ? (
+                    <Link
+                      href={`/admin/pets/${v.pet_id}`}
+                      onClick={(e) => e.stopPropagation()}
+                      className="inline-block hover:text-blue-600 hover:underline"
+                    >
+                      {v.pets?.name ?? '—'}
+                      {v.pets?.hn && <span className="block text-xs font-mono text-gray-400">{v.pets.hn}</span>}
+                    </Link>
+                  ) : (
+                    <>
+                      {v.pets?.name ?? '—'}
+                      {v.pets?.hn && <span className="block text-xs font-mono text-gray-400">{v.pets.hn}</span>}
+                    </>
+                  )}
                   {v.pets && <span className="block text-xs text-gray-400">{SPECIES_LABELS[v.pets.species]}</span>}
                 </td>
-                <td className="px-4 py-3 text-sm text-gray-600">{v.customers?.name ?? '—'}</td>
+                {/* ชื่อ/เลขเจ้าของ ลัดไปหน้าเจ้าของ */}
+                <td className="px-4 py-3 text-sm text-gray-600">
+                  {v.customer_id ? (
+                    <Link
+                      href={`/admin/customers/${v.customer_id}`}
+                      onClick={(e) => e.stopPropagation()}
+                      className="inline-block hover:text-blue-600 hover:underline"
+                    >
+                      {v.customers?.name ?? '—'}
+                      {v.customers?.hn && <span className="block text-xs font-mono text-gray-400">{v.customers.hn}</span>}
+                    </Link>
+                  ) : (
+                    (v.customers?.name ?? '—')
+                  )}
+                </td>
                 <td className="px-4 py-3 text-sm text-gray-600 max-w-[220px] truncate">
                   {v.healthy && (
                     <span className="mr-1.5 inline-flex rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">

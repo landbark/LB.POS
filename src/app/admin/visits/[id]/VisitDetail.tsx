@@ -871,6 +871,14 @@ export default function VisitDetail({
               <Tag size={15} /> ฉลากยา
             </a>
           )}
+          {/* ฉลากแปะแฟ้ม/กรง — ข้อมูลสัตว์กับเจ้าของ ไม่ขึ้นกับรายการยาใน VN นี้ */}
+          <a
+            href={`/print/pet-label/${visit.pet_id}`}
+            target="_blank"
+            className="flex items-center gap-1.5 border border-gray-300 text-gray-600 text-sm px-3 py-2 rounded-lg hover:bg-gray-50"
+          >
+            <Tag size={15} /> ฉลากสัตว์ป่วย
+          </a>
           {canEdit && (
             <button
               onClick={() => saveVisit()}
