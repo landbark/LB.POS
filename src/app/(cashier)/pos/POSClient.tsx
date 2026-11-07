@@ -902,7 +902,7 @@ export default function POSClient({ products: allProducts, booth, shiftOpen, shi
                       '🐾'
                     )}
                   </div>
-                  <p className="text-xs font-medium text-gray-900 line-clamp-2 leading-tight">
+                  <p className="text-xs font-medium text-gray-900 line-clamp-2">
                     {product.name}
                   </p>
                   {product.sku && (
@@ -1141,7 +1141,7 @@ export default function POSClient({ products: allProducts, booth, shiftOpen, shi
               {cart.map((item, i) => (
                 <div key={lineKey(item)} className="px-3 py-2.5">
                   <div className="flex justify-between items-start gap-2">
-                    <p className="text-base font-medium text-gray-900 flex-1 leading-snug">
+                    <p className="text-base font-medium text-gray-900 flex-1">
                       {item.product.name}
                       {item.unit && (
                         <span className="ml-1.5 text-xs font-semibold text-blue-600 whitespace-nowrap">

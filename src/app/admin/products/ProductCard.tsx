@@ -46,7 +46,7 @@ export default function ProductCard({
         <div className="min-w-0 flex-1">
           <Link
             href={`/admin/products/${product.id}`}
-            className="block text-sm font-medium leading-snug text-gray-900"
+            className="block text-sm font-medium text-gray-900"
           >
             {product.name}
           </Link>
