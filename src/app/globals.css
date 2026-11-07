@@ -18,15 +18,31 @@
   --color-brand-cream: var(--brand-cream);
   --color-brand-light: var(--brand-light);
   --color-brand-muted: var(--brand-muted);
-  --font-sans: var(--font-geist-sans), var(--font-thai);
+  --font-sans: var(--font-sarabun);
 }
 
 body {
   background: var(--brand-light);
   color: #3D2B1A;
-  /* Geist ก่อน (ละติน/ตัวเลข) แล้วค่อย Noto Sans Thai รับภาษาไทย
-     — ต้องมาก่อน Arial เสมอ ไม่งั้นวรรณยุกต์ที่ซ้อนบนสระบนจะหาย */
-  font-family: var(--font-geist-sans), var(--font-thai), Arial, Helvetica, sans-serif;
+  /* Sarabun รับทั้งไทยและละตินในตัวเดียว
+     fallback ทุกตัวต้องมีกลิฟไทย — ห้ามใส่ Arial/Helvetica กลับมาเด็ดขาด
+     เพราะสองตัวนั้นไม่มีกลิฟไทย เครื่องจะไปหยิบฟอนต์ระบบตัวแรกที่เจอ
+     ซึ่งวางวรรณยุกต์ซ้อนบนสระบนไม่เป็น แล้วไม้เอกบนคำอย่าง "มีมี่" จะหายตอนพิมพ์ฉลาก */
+  font-family: var(--font-sarabun), "Noto Sans Thai", Sarabun, Thonburi, "Leelawadee UI", sans-serif;
+
+  /* หมายเหตุเรื่อง line-height กับภาษาไทย — อย่าตั้งตรงนี้ มันไม่มีผล
+     เพราะ text-xs/text-sm/text-base ของ Tailwind กำหนด line-height มาด้วย
+     แล้วทับค่าของ body ทุกที่ที่ใช้คลาสพวกนั้น (คือแทบทุกจุดในแอป)
+
+     ตัวเลขที่ต้องรู้: ไทยกินความสูงสองชั้น (สระบน + วรรณยุกต์ซ้อนทับ) ของ Sarabun
+     หมึกพุ่ง 1.22 em เหนือเส้นฐาน (ตัวหนา 1.25) กล่องบรรทัดต้อง >= 1.60 สำหรับตัวปกติ
+     และ >= 1.66 สำหรับตัวหนา ไม่งั้นหัววรรณยุกต์โดนตัด "เฉพาะในกล่องที่ overflow:hidden"
+     เช่น truncate หรือ line-clamp (กล่องที่ไม่ซ่อนส่วนเกิน แค่หมึกเฉียดบรรทัดบน ไม่ขาด)
+
+     ตอนนี้แก้ไว้เฉพาะฉลาก 80x50 มม. ทั้งสองแบบใน print/label กับ print/pet-label
+     ซึ่งเป็น overflow:hidden ทุกบรรทัดและเคยทำไม้เอกหายจริง
+     จะยกพื้นทั้งแอปต้องไปทับ --text-sm--line-height ฯลฯ ใน @theme ซึ่งขยับ layout
+     ทั้งระบบ ยังไม่ทำ */
 }
 
 /*

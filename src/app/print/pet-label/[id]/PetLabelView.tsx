@@ -46,9 +46,14 @@ export default function PetLabelView({ pet, store, weight }: { pet: Pet; store: 
   // ฉลากมีใบเดียว ต้องใส่ให้พอดี — ตัวที่กรอกครบและมีแถบเตือนด้วยจะย่อฟอนต์ลงหนึ่งสเต็ป
   const extraRows = (pet.color ? 1 : 0) + (pet.microchip ? 1 : 0)
   const dense = Boolean(warning) && extraRows > 0
+  // lh 1.62 เป็นค่าที่วัดมา ไม่ใช่กะเอา — Sarabun เวลาวรรณยุกต์ซ้อนบนสระบน (ชื่อสัตว์อย่าง
+  // "ตั๊กแตน" "ผู้ใหญ่" เจอบ่อยมาก) หมึกพุ่ง 1.22 em เหนือเส้นฐาน ต่ำกว่า 1.60 แล้วหัว
+  // วรรณยุกต์โดนตัด เพราะทุกบรรทัดบนฉลากนี้เป็น nowrap+overflow:hidden หรือ truncate
+  // ไม่ขึ้นไปถึง 1.7 เพราะช่องกลางของใบ dense (มีแถบเตือน + สีขน + ไมโครชิป) จะล้น 2px
+  // แล้วบรรทัดไมโครชิปโดนตัดหาย — ตัวหนาที่ต้องการ 1.66 แยกไปใส่ leading-[1.7] เป็นราย ๆ
   const f = dense
-    ? { base: '8pt', lh: 1.3, name: '13.5pt', species: '8.4pt', warn: '7.2pt', owner: '10pt' }
-    : { base: '8.4pt', lh: 1.45, name: '15pt', species: '8.8pt', warn: '7.4pt', owner: '10.5pt' }
+    ? { base: '8pt', lh: 1.62, name: '13.5pt', species: '8.4pt', warn: '7.2pt', owner: '10pt' }
+    : { base: '8.4pt', lh: 1.62, name: '15pt', species: '8.8pt', warn: '7.4pt', owner: '10.5pt' }
 
   return (
     <>
@@ -98,7 +103,7 @@ export default function PetLabelView({ pet, store, weight }: { pet: Pet; store: 
           </div>
 
           <div className="flex items-baseline justify-between gap-2 mt-0.5">
-            <span className="font-bold leading-tight truncate" style={{ fontSize: f.name }}>
+            <span className="font-bold leading-[1.7] truncate" style={{ fontSize: f.name }}>
               {pet.name}
             </span>
             {pet.hn && (
@@ -135,7 +140,7 @@ export default function PetLabelView({ pet, store, weight }: { pet: Pet; store: 
 
           {warning && (
             <p
-              className="clamp2 font-semibold text-gray-900 leading-snug border border-gray-400 rounded px-1 mb-0.5"
+              className="clamp2 font-semibold text-gray-900 leading-[1.7] border border-gray-400 rounded px-1 mb-0.5"
               style={{ fontSize: f.warn }}
             >
               ⚠ {warning}

@@ -1,22 +1,28 @@
 import type { Metadata, Viewport } from "next";
-import { Geist, Noto_Sans_Thai } from "next/font/google";
+import { Sarabun } from "next/font/google";
 import { Toaster } from "react-hot-toast";
 import TopLoader from "@/components/TopLoader";
 import ConfirmHost from "@/components/ConfirmHost";
 import RegisterSW from "@/components/RegisterSW";
 import "./globals.css";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
-
-// Geist ไม่มีกลิฟไทย ภาษาไทยเลยตกไปใช้ฟอนต์ระบบ (Arial) ที่วางวรรณยุกต์ซ้อนบนสระบนไม่เป็น
-// — "มีมี่" พิมพ์ออกฉลากแล้วไม้เอกหาย ต้องโหลดฟอนต์ไทยจริงมาคั่นก่อนฟอนต์ระบบ
-const notoThai = Noto_Sans_Thai({
-  variable: "--font-thai",
-  subsets: ["thai"],
-  // ฉลาก/ใบเสร็จพิมพ์ตัวหนาบาง ๆ ไล่ตั้งแต่ปกติถึง bold
+// Sarabun ตัวเดียวรับทั้งไทยและละติน — เลิกผสมสองตระกูล (เดิม Geist รับละติน + Noto Sans Thai รับไทย)
+// 45% ของชื่อสินค้าในฐานข้อมูลมีไทยปนอังกฤษอยู่ในบรรทัดเดียวกัน คนละตระกูลแล้วความสูงตัวอักษรไม่เท่ากัน
+//
+// ผลพลอยได้สองอย่างจากการทิ้ง Geist:
+// 1. ตัวเลข Sarabun กว้างเท่ากันหมด (550/1000 em) ยอดเงินเลยเรียงหลักเองโดยไม่ต้องใช้ tabular-nums
+//    — Geist เลขกว้างไม่เท่ากัน (1 = 384 แต่ 0 = 663) ทศนิยมในตะกร้าจึงไม่เคยตรงหลัก
+// 2. ตัวพิมพ์ใหญ่ Sarabun แคบกว่า Geist ~9% ชื่อสินค้าแบบ ALL CAPS ยาว ๆ (40% ของสินค้ายาวเกิน
+//    40 ตัวอักษร) กินบรรทัดบนสลิป 72 มม. น้อยลง
+//
+// ข้อแลก: สระบนของ Sarabun อยู่สูงกว่า Noto Sans Thai มาก (952 vs 800 หน่วย) ตอนวรรณยุกต์ซ้อน
+// หมึกพุ่ง 1.22 em เหนือเส้นฐาน (ตัวหนา 1.25) แปลว่า line-height ต่ำกว่า 1.60 สำหรับตัวปกติ
+// หรือ 1.66 สำหรับตัวหนา จะตัดหัววรรณยุกต์ทิ้งถ้ากล่องนั้น overflow:hidden
+// (ของ Noto Sans Thai เส้นแบ่งอยู่แค่ 1.41/1.46 จึงไม่เคยเจอปัญหานี้มาก่อน)
+// วัดในเบราว์เซอร์จริงด้วย actualBoundingBoxAscent — ดู globals.css และ print/label
+const sarabun = Sarabun({
+  variable: "--font-sarabun",
+  subsets: ["thai", "latin"],
   weight: ["400", "500", "600", "700"],
 });
 
@@ -40,7 +46,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="th" className={`${geistSans.variable} ${notoThai.variable} h-full antialiased`}>
+    <html lang="th" className={`${sarabun.variable} h-full antialiased`}>
       <body className="min-h-full flex flex-col bg-gray-50">
         <TopLoader />
         <Toaster position="top-center" />

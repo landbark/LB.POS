@@ -92,12 +92,24 @@ export default function LabelView({ visit, store }: { visit: Visit; store: Store
           display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
           overflow: hidden;
         }
+        .clamp1 {
+          display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 1;
+          overflow: hidden;
+        }
         .label {
           width: 80mm; height: 50mm;
           padding: 2.5mm 3mm;
           box-sizing: border-box;
           display: flex; flex-direction: column;
-          font-size: 8.4pt; line-height: 1.32;
+          font-size: 8.4pt;
+          /* 1.7 ไม่ใช่เรื่องสวยงาม แต่เป็นค่าที่วัดมา — Sarabun เวลาวรรณยุกต์ซ้อนบนสระบน
+             ("มีมี่" "ผู้ป่วย" "กึ่ง") หมึกพุ่ง 1.22 em เหนือเส้นฐานที่น้ำหนักปกติ
+             และ 1.25 em ที่ตัวหนา กล่อง overflow:hidden จะตัดหัววรรณยุกต์ถ้า line-height
+             ต่ำกว่า 1.60 (ปกติ) หรือ 1.66 (หนา) — วัดในเบราว์เซอร์จริง ไม่ได้กะเอา
+             ค่าเดิม 1.32 ตัดหัวชื่อยาไป 2.18px ทุกใบที่ชื่อยามีวรรณยุกต์ซ้อน
+             ทุกบรรทัดบนฉลากนี้เป็นไทยได้หมดและเป็น overflow:hidden หมด เลยยกพื้นทั้งใบ
+             ทีเดียว แล้วเลิกใส่ leading-tight/leading-snug ทับเป็นราย ๆ */
+          line-height: 1.7;
           overflow: hidden;
         }
       `}</style>
@@ -170,7 +182,7 @@ export default function LabelView({ visit, store }: { visit: Visit; store: Store
               </div>
 
               <div className="mt-1">
-                <p className="font-bold leading-tight clamp2" style={{ fontSize: '10.5pt' }}>
+                <p className="font-bold clamp2" style={{ fontSize: '10pt' }}>
                   {item.products ? labelName(item.products, lang) : ''}
                 </p>
                 {item.products?.brand && (
@@ -180,12 +192,14 @@ export default function LabelView({ visit, store }: { visit: Visit; store: Store
                 )}
               </div>
 
-              <p className="mt-0.5 flex-1 leading-snug" style={{ fontSize: '9pt' }}>
+              <p className="mt-0.5 flex-1" style={{ fontSize: '9pt' }}>
                 {sig || (lang === 'th' ? '— ยังไม่ได้ระบุวิธีใช้ —' : '— no directions —')}
               </p>
 
+              {/* สรรพคุณเหลือบรรทัดเดียว (เดิม 2) — line-height 1.6 กินที่เพิ่ม ถ้ายังให้ 2 บรรทัด
+                  วิธีใช้ยาจะเหลือไม่ถึงบรรทัด ซึ่งสำคัญกว่าสรรพคุณ */}
               {indication && (
-                <p className="text-gray-600 italic leading-snug clamp2 mb-0.5" style={{ fontSize: '7.2pt' }}>
+                <p className="text-gray-600 italic clamp1 mb-0.5" style={{ fontSize: '7.2pt' }}>
                   {t.indication}: {indication}
                 </p>
               )}
