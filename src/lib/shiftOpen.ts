@@ -11,7 +11,7 @@
 // ตอนนี้จึงเติมยอดยกมาให้ก่อน แล้วถ้าคนนับได้ไม่เท่ากันก็ยังแก้ได้ แต่ส่วนต่างถูกเขียนลง `notes`
 
 import { createClient } from '@/lib/supabase/client'
-import { sumByMethod, type PaidTransaction } from '@/lib/payments'
+import { splitShiftBills, type ShiftBill } from '@/lib/shiftCash'
 import { DENOMS } from '@/lib/shiftFloat'
 import { thaiDayRange } from '@/lib/thaiDate'
 
@@ -21,25 +21,53 @@ type Db = Pick<ReturnType<typeof createClient>, 'from'>
 const money = (n: number) => n.toLocaleString('th-TH', { minimumFractionDigits: 2 })
 const fmtTime = (iso: string) =>
   new Date(iso).toLocaleTimeString('th-TH', { timeZone: 'Asia/Bangkok', hour: '2-digit', minute: '2-digit' })
+/** เวลาพร้อมวันที่ถ้าไม่ใช่วันนี้ — บิลหลังปิดกะอยู่คนละวันกับเช้าที่มาเปิดกะ เขียนเวลาเปล่าแล้วอ่านผิด */
+const fmtWhen = (iso: string) => {
+  const day = (d: Date | string) =>
+    new Date(d).toLocaleDateString('en-CA', { timeZone: 'Asia/Bangkok' })
+  return day(iso) === day(new Date())
+    ? fmtTime(iso)
+    : new Date(iso).toLocaleString('th-TH', {
+        timeZone: 'Asia/Bangkok', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit',
+      })
+}
 
 export interface OrphanSales {
   /** เวลาบิลแรกของช่วงที่ไม่มีกะ — ใช้เป็น `opened_at` ถ้าเลือกรวมเข้ากะ */
   firstAt: string
-  /** บิลหน้าร้านในช่วงนั้นทั้งหมด (ทุกวิธีจ่าย) */
+  /** เวลาบิลสุดท้าย — โชว์ช่วงเวลาให้คนเปิดกะเห็นว่าขายกันตอนไหน */
+  lastAt: string
+  /** บิลหน้าร้านที่ยังไม่ถูกยกเลิกในช่วงนั้น (ทุกวิธีจ่าย) */
   bills: number
-  /** เงินสดที่รับไว้ — ก้อนที่ทำให้ยอดปิดกะไม่ตรงกับเงินในเก๊ะ */
+  /** เงินสดที่รับไว้ทั้งช่วง — รวมบิลที่ยกเลิกทีหลังด้วย เงินเข้าเก๊ะไปแล้วตอนขาย */
   cash: number
+  /** เงินสดที่คืนลูกค้าในช่วงนั้น — ออกจากเก๊ะไปแล้ว */
+  refunds: number
+  /** เงินสดสุทธิที่ตอนนี้อยู่ในเก๊ะเพราะช่วงนี้ = cash − refunds (ติดลบได้ถ้าคืนมากกว่าขาย) */
+  net: number
+  /** จุดเริ่มของช่วง = เวลาปิดกะที่แล้ว หรือต้นวันไทยถ้ายังไม่เคยปิดกะ */
+  since: string
+  /** ช่วงนี้เริ่มจากตอนปิดกะที่แล้วจริง ๆ = บิลพวกนี้คือ "ขายหลังปิดกะ" */
+  afterClose: boolean
+  /** บิลแรกเก่ากี่ชั่วโมงแล้ว — เกิน 36 ชม. หน้าเปิดกะจะไม่ติ๊กรวมให้เอง */
+  hours: number
 }
 
 /**
- * บิลขายหน้าร้านของวันนี้ (เวลาไทย) ที่ขายไปตอนไม่มีกะเปิด — ไม่มีเงินสดเลยคืน null
- * เงินสดเท่านั้นที่มีผลกับเก๊ะ บิลโอน/บัตรไม่เตือน แต่ถ้ามีเงินสดจะนับบิลรวมมาด้วยเพื่อ
- * ให้กะครอบช่วงที่ขายจริงทั้งช่วง (ยอดแยกวิธีจ่ายในสรุปกะจะตรงกับที่ขายไป)
+ * บิลขายหน้าร้านที่ยังไม่อยู่ในกะไหนเลย — ขายหลังปิดกะเมื่อคืน หรือขายไปแล้วตอนยังไม่เปิดกะวันนี้
+ * ไม่มีเงินสดขยับเลยคืน null
+ *
+ * ช่วงที่นับเริ่มจาก "เวลาที่กะล่าสุดปิด" ข้ามคืนได้ — ร้านปิดสี่ทุ่มแล้วลูกค้ามาเพิ่มอีกบิล
+ * บิลนั้นอยู่คนละวันไทยกับเช้าวันรุ่งขึ้น เดิมตัดที่ต้นวันจึงตกขอบ ไม่มีใครเห็น เงินอยู่ในเก๊ะ
+ * แต่เช้ามาขึ้นแค่ว่า "นับได้เกินยอดยกมา" เฉย ๆ แล้วกลบเงินขาดจริงไปด้วย (เจอ 2026-11-07)
+ *
+ * บูธ/ออนไลน์ไม่ใช่เงินในเก๊ะร้าน — สูตรของกะก็กรองเหลือ 'store' เหมือนกัน
+ * ไม่กรอง `status` ฝั่งขาย เพราะบิลที่ยกเลิกทีหลังก็รับเงินสดเข้าเก๊ะไปแล้วตอนขาย (ดู lib/shiftCash)
  */
 export async function findOrphanSales(supabase: Db = createClient()): Promise<OrphanSales | null> {
-  const { startISO, endISO } = thaiDayRange()
+  const { startISO } = thaiDayRange()
 
-  // บิลก่อนกะล่าสุดที่ปิดไปแล้วถูกนับในกะนั้นเรียบร้อย เริ่มนับจากเวลาที่กะล่าสุดปิด (ถ้าปิดวันนี้)
+  // บิลก่อนกะล่าสุดที่ปิดไปแล้วถูกนับในกะนั้นเรียบร้อย เริ่มนับจากเวลาที่กะล่าสุดปิด
   const { data: last } = await supabase
     .from('shifts')
     .select('closed_at')
@@ -47,32 +75,75 @@ export async function findOrphanSales(supabase: Db = createClient()): Promise<Or
     .order('closed_at', { ascending: false })
     .limit(1)
     .maybeSingle()
-  const from = last?.closed_at && last.closed_at > startISO ? last.closed_at : startISO
+  const since = (last?.closed_at as string | undefined) ?? startISO
+  const afterClose = !!last?.closed_at
 
-  // บูธ/ออนไลน์ไม่ใช่เงินในเก๊ะร้าน — สูตรของกะก็กรองเหลือ 'store' เหมือนกัน
-  const { data, error } = await supabase
-    .from('transactions')
-    .select('created_at, total, payment_method, transaction_payments(method, amount)')
-    .eq('status', 'completed')
-    .eq('sales_channel', 'store')
-    .gte('created_at', from)
-    .lt('created_at', endISO)
-    .order('created_at')
+  const [{ data, error }, { data: refundRows }] = await Promise.all([
+    supabase
+      .from('transactions')
+      .select('created_at, status, total, payment_method, transaction_payments(method, amount)')
+      .eq('sales_channel', 'store')
+      .gte('created_at', since)
+      .order('created_at'),
+    // ยกเลิกบิลแล้วคืนเงินสดหลังปิดกะ — เงินออกจากเก๊ะไปแล้วหลังกะที่แล้วนับเสร็จ
+    supabase
+      .from('transactions')
+      .select('total')
+      .eq('status', 'cancelled')
+      .eq('refund_method', 'cash')
+      .eq('sales_channel', 'store')
+      .gte('cancelled_at', since),
+  ])
   if (error) return null
 
-  const bills = (data ?? []) as unknown as (PaidTransaction & { created_at: string })[]
-  if (bills.length === 0) return null
-  const cash = sumByMethod(bills).cash ?? 0
-  if (cash <= 0) return null
-  return { firstAt: bills[0].created_at, bills: bills.length, cash }
+  const rows = (data ?? []) as unknown as (ShiftBill & { created_at: string })[]
+  const refunds = (refundRows ?? []).reduce((s, t) => s + Number(t.total), 0)
+  if (rows.length === 0 && refunds <= 0) return null
+  const split = splitShiftBills(rows)
+  const cash = (split.byMethod.cash ?? 0) + split.cashFromCancelled
+  if (cash <= 0 && refunds <= 0) return null
+  const firstAt = rows[0]?.created_at ?? since
+  return {
+    firstAt,
+    lastAt: rows[rows.length - 1]?.created_at ?? firstAt,
+    bills: split.bills,
+    cash,
+    refunds,
+    net: cash - refunds,
+    since,
+    afterClose,
+    hours: (Date.now() - new Date(firstAt).getTime()) / 3_600_000,
+  }
 }
 
 /** ข้อความ audit ที่เขียนลง `shifts.notes` ตอนย้อนเวลาเปิดกะ (รูปแบบเดียวกับการแก้ยอดย้อนหลัง) */
-export function orphanNote(orphan: OrphanSales, byName: string) {
+export function orphanNote(
+  orphan: OrphanSales,
+  byName: string,
+  opts: { counted?: number; pulledIn?: boolean } = {},
+) {
   const stamp = new Date().toLocaleString('th-TH', {
     timeZone: 'Asia/Bangkok', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit',
   })
-  return `[รวมบิลก่อนเปิดกะ ${stamp} โดย ${byName || 'พนักงาน'}] ย้อนเวลาเปิดกะไปที่ ${fmtTime(orphan.firstAt)} · บิลหน้าร้าน ${orphan.bills} ใบ เงินสด ฿${money(orphan.cash)}`
+  const pulledIn = opts.pulledIn ?? true
+  const what =
+    `บิลหน้าร้าน ${orphan.bills} ใบ ${fmtWhen(orphan.firstAt)}-${fmtTime(orphan.lastAt)} ` +
+    `เงินสด ฿${money(orphan.cash)}` +
+    (orphan.refunds > 0 ? ` − คืนเงินสด ฿${money(orphan.refunds)}` : '')
+  if (!pulledIn) {
+    return (
+      `[บิลที่ยังไม่เข้ากะ ${stamp} โดย ${byName || 'พนักงาน'}] ไม่รวมเข้ากะนี้ · ${what} · ` +
+      `เงินสด ฿${money(orphan.net)} ก้อนนี้อยู่ในยอดตั้งต้นของกะนี้แทน ไม่ได้อยู่ในยอดขายของกะไหน`
+    )
+  }
+  const math =
+    opts.counted != null
+      ? ` · ยอดตั้งต้น = ที่นับได้ ฿${money(opts.counted)} − ฿${money(orphan.net)} = ฿${money(opts.counted - orphan.net)}`
+      : ''
+  return (
+    `[รวมบิลที่ยังไม่เข้ากะ ${stamp} โดย ${byName || 'พนักงาน'}] ` +
+    `ย้อนเวลาเปิดกะไปที่ ${fmtWhen(orphan.firstAt)} · ${what}${math}`
+  )
 }
 
 export interface CarryOver {
@@ -146,8 +217,11 @@ export function denomDiffs(carry: CarryOver, counted: Record<number, number> | n
 }
 
 /**
- * ข้อความ audit ตอนเงินที่นับได้เช้านี้ไม่เท่ายอดยกมา — เขียนลง `shifts.notes`
+ * ข้อความ audit ตอนเงินที่นับได้เช้านี้ไม่เท่ายอดที่ควรมี — เขียนลง `shifts.notes`
  * ส่วนต่างตรงนี้คือเงินที่หายหรือเกินระหว่างปิดกะเมื่อวานกับเปิดกะวันนี้ ต้องมีหลักฐานไว้
+ *
+ * `pending` = เงินสดสุทธิจากบิลที่ขายหลังปิดกะ (ดู findOrphanSales) เงินก้อนนั้นอยู่ในเก๊ะด้วย
+ * ควรมี = ยกมา + ขายหลังปิดกะ — ไม่บวกเข้าไปจะขึ้นว่า "เกิน" ทุกคืนที่ลูกค้ามาเพิ่มตอนนับเงิน
  */
 export function carryNote(
   carry: CarryOver,
@@ -155,9 +229,12 @@ export function carryNote(
   byName: string,
   reason = '',
   counted: Record<number, number> | null = null,
+  pending = 0,
 ) {
-  const diff = openingCash - carry.amount
-  const diffs = denomDiffs(carry, counted)
+  const expected = carry.amount + pending
+  const diff = openingCash - expected
+  // มีบิลหลังปิดกะ = กองแบงค์ย่อมไม่ตรงกับใบนับเมื่อคืนอยู่แล้ว ไล่กองไม่ได้ว่าใบไหนมาจากบิลไหน
+  const diffs = pending !== 0 ? [] : denomDiffs(carry, counted)
   const stamp = new Date().toLocaleString('th-TH', {
     timeZone: 'Asia/Bangkok', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit',
   })
@@ -166,6 +243,7 @@ export function carryNote(
     `ยกมา ฿${money(carry.amount)} (ปิดกะ ${fmtTime(carry.closedAt)} นับได้ ฿${money(carry.counted)}` +
     `${carry.toOwner > 0 ? ` − แยกให้เจ้าของ ฿${money(carry.toOwner)}` : ''}` +
     `${carry.toOwner < 0 ? ` + เจ้าของเติมเข้า ฿${money(-carry.toOwner)}` : ''}) · ` +
+    `${pending !== 0 ? `บิลที่ขายหลังปิดกะ ฿${money(pending)} · ควรมี ฿${money(expected)} · ` : ''}` +
     `เช้านี้นับได้ ฿${money(openingCash)} · ${diff > 0 ? 'เกิน' : 'ขาด'} ฿${money(Math.abs(diff))}` +
     `${diffs.length ? ` · กองที่ไม่ตรง: ${diffs.map((x) => `${x.label} ${x.was}→${x.now}`).join(' · ')}` : ''}` +
     `${reason.trim() ? ` · ${reason.trim()}` : ''}`
@@ -173,15 +251,25 @@ export function carryNote(
 }
 
 /**
- * เปิดกะใหม่ — ส่ง `orphan` มาด้วยถ้าจะรวมบิลที่ขายก่อนเปิดกะ (ย้อน `opened_at` ไปที่บิลแรก)
+ * เปิดกะใหม่ — `openingCash` คือยอดที่ "นับได้จริงในเก๊ะ" ตอนเปิด
  * คืน error เป็นข้อความไทยพร้อมโชว์ ไม่โยน throw
+ *
+ * มีบิลที่ยังไม่เข้ากะ (`orphan`) แล้วรวมเข้ากะนี้ (`pullIn`) จะทำสองอย่างคู่กัน:
+ * ย้อน `opened_at` ไปที่บิลแรก เพื่อให้ยอดขายก้อนนั้นมาอยู่ในกะนี้ · และหักเงินสดสุทธิของก้อนนั้น
+ * ออกจากยอดตั้งต้น เพราะเงินนั้นอยู่ในเก๊ะที่เพิ่งนับไปแล้ว — ไม่หักออกจะถูกนับสองรอบ
+ * (ตั้งต้น + ขายเงินสดในกะ) ตอนปิดกะจะขึ้นว่าเงินขาดเท่ายอดก้อนนี้ทั้งที่ไม่มีอะไรหาย
+ * เดิมหน้าเปิดกะบอกให้คนหักเอง ("ถ้านับตอนนี้ได้เท่าไหร่ ให้หัก ฿X ออกก่อน") — คิดในใจพลาดง่าย
  */
 export async function openShift(
   opts: {
+    /** ยอดที่นับได้จริงในเก๊ะตอนเปิดกะ (ไม่ใช่ยอดหลังหักบิลที่ยังไม่เข้ากะ — ระบบหักเอง) */
     openingCash: number
     openedBy: string
     openedByName?: string
+    /** บิลที่ยังไม่อยู่ในกะไหน — ขายหลังปิดกะเมื่อคืน หรือขายก่อนเปิดกะวันนี้ */
     orphan?: OrphanSales | null
+    /** รวมบิลพวกนั้นเข้ากะนี้ไหม · ไม่ส่งมา = รวม (ค่าเริ่มต้นเดิม) */
+    pullIn?: boolean
     /** ยอดยกมาจากกะที่แล้ว — ส่งมาด้วยเพื่อบันทึกส่วนต่างถ้านับได้ไม่เท่ากัน */
     carry?: CarryOver | null
     /** เหตุผลที่คนเปิดกะกรอกไว้ตอนนับได้ไม่ตรงยอดยกมา */
@@ -191,19 +279,26 @@ export async function openShift(
   },
   supabase: Db = createClient(),
 ): Promise<{ error?: string }> {
+  const orphan = opts.orphan ?? null
+  const pullIn = orphan ? opts.pullIn ?? true : false
+  const pending = orphan ? orphan.net : 0
   const row: Record<string, unknown> = {
-    opening_cash: opts.openingCash,
+    opening_cash: pullIn ? opts.openingCash - pending : opts.openingCash,
     opened_by: opts.openedBy,
   }
   if (opts.openingDenoms) row.opening_denominations = opts.openingDenoms
   const notes: string[] = []
-  if (opts.orphan) {
-    row.opened_at = opts.orphan.firstAt
-    notes.push(orphanNote(opts.orphan, opts.openedByName ?? ''))
+  if (orphan && pullIn) {
+    row.opened_at = orphan.firstAt
+    notes.push(orphanNote(orphan, opts.openedByName ?? '', { counted: opts.openingCash, pulledIn: true }))
+  } else if (orphan) {
+    notes.push(orphanNote(orphan, opts.openedByName ?? '', { pulledIn: false }))
   }
-  if (opts.carry && opts.carry.amount !== opts.openingCash) {
+  // เทียบ "ที่นับได้จริง" กับ "ยกมา + บิลหลังปิดกะ" — ไม่ใช่กับยอดตั้งต้นที่หักแล้ว
+  if (opts.carry && opts.carry.amount + pending !== opts.openingCash) {
     notes.push(carryNote(
-      opts.carry, opts.openingCash, opts.openedByName ?? '', opts.carryReason, opts.openingDenoms ?? null,
+      opts.carry, opts.openingCash, opts.openedByName ?? '', opts.carryReason,
+      opts.openingDenoms ?? null, pending,
     ))
   }
   if (notes.length) row.notes = notes.join('\n')

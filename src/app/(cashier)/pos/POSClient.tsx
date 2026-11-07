@@ -773,20 +773,24 @@ export default function POSClient({ products: allProducts, booth, shiftOpen, shi
     <div className="flex h-[calc(100dvh-56px)]">
       {/* Left: Product Grid */}
       <div className="flex-1 flex flex-col bg-gray-50 overflow-hidden">
-        {/* ยังไม่ได้เปิดกะ — เตือนคนขายหน้าร้าน (ที่บูธไม่เกี่ยว ไม่ได้ใช้เก๊ะร้าน) */}
+        {/* ไม่มีกะเปิดอยู่ — ปิดกะไปแล้วแต่ลูกค้ายังมา หรือเช้ามายังไม่ได้กดเปิดกะ
+            ขายได้ทั้งสองกรณี เงินสดเก็บไว้ในเก๊ะแล้วหน้าเปิดกะจะยกบิลพวกนี้มารวมให้เอง
+            (ดู findOrphanSales ใน lib/shiftOpen — หักเงินสดก้อนนี้ออกจากยอดตั้งต้นให้ด้วย)
+            เดิมแถบนี้เป็นสีแดงว่า "ตอนปิดกะยอดจะไม่ตรงกับเงินในเก๊ะ" ซึ่งไม่จริงอีกแล้ว
+            และทำให้คนขายไม่กล้าคิดเงินตอนปิดกะ (ปัญหาที่เจอจริง 7 พ.ย. 69) */}
         {!shiftOpen && !boothMode && (
-          <div className="px-4 py-2.5 bg-red-50 border-b border-red-200">
+          <div className="px-4 py-2.5 bg-amber-50 border-b border-amber-200">
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-              <span className="inline-flex items-center gap-1.5 text-sm font-bold text-red-800">
+              <span className="inline-flex items-center gap-1.5 text-sm font-bold text-amber-900">
                 <AlertTriangle size={16} />
-                ยังไม่ได้เปิดกะ
+                ยังไม่มีกะเปิดอยู่
               </span>
-              <span className="text-xs text-red-700">
-                ขายได้ตามปกติ แต่เงินสดที่รับไว้ก่อนเปิดกะจะไม่ถูกนับในกะ — ตอนปิดกะยอดจะไม่ตรงกับเงินในเก๊ะ
+              <span className="text-xs text-amber-800">
+                คิดเงินได้ตามปกติ — เงินสดเก็บไว้ในเก๊ะ ระบบจะยกบิลพวกนี้ไปรวมตอนเปิดกะครั้งถัดไปให้เอง
               </span>
               <button
                 onClick={() => setShowOpenShift(true)}
-                className="ml-auto shrink-0 inline-flex items-center rounded-lg bg-red-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-red-700"
+                className="ml-auto shrink-0 inline-flex items-center rounded-lg bg-[#C4865A] px-3 py-1.5 text-sm font-semibold text-white hover:bg-[#7A4E2D]"
               >
                 เปิดกะ
               </button>

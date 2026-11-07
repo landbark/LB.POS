@@ -12,6 +12,11 @@ const fmtTime = (iso: string) =>
   new Date(iso).toLocaleTimeString('th-TH', { timeZone: 'Asia/Bangkok', hour: '2-digit', minute: '2-digit' })
 const fmtDay = (iso: string) =>
   new Date(iso).toLocaleDateString('th-TH', { timeZone: 'Asia/Bangkok', day: 'numeric', month: 'short' })
+/** เวลาพร้อมวันถ้าไม่ใช่วันนี้ — บิลหลังปิดกะเป็นของเมื่อคืน เขียนเวลาเปล่าแล้วอ่านผิดว่าเพิ่งขาย */
+const fmtWhen = (iso: string) => {
+  const dayOf = (d: Date | string) => new Date(d).toLocaleDateString('en-CA', { timeZone: 'Asia/Bangkok' })
+  return dayOf(iso) === dayOf(new Date()) ? fmtTime(iso) : `${fmtDay(iso)} ${fmtTime(iso)}`
+}
 
 /**
  * เปิดกะได้จากทุกหน้า — หน้าขายเรียกจากแถบเตือน "ยังไม่ได้เปิดกะ" (ไม่ต้องทิ้งตะกร้าไปหน้าอื่น)
@@ -58,6 +63,9 @@ export default function OpenShiftModal({
     ]).then(([found, over, store]) => {
       if (cancelled) return
       setOrphan(found)
+      // ช่วงที่ค้างมานานกว่าวันครึ่ง = ไม่ใช่ "ลูกค้ามาเพิ่มตอนปิดกะ" แล้ว (ลืมเปิดกะมาหลายวัน/
+      // เจ้าของมารับเงินไปแล้วก็ได้) ไม่ติ๊กให้เอง ให้คนเปิดกะอ่านแล้วตัดสินใจ
+      if (found && found.hours > 36) setPullIn(false)
       setCarry(over)
       setFloatTarget(store.data?.float_target != null ? Number(store.data.float_target) : null)
       const fd = store.data?.float_denoms as Record<string, number> | null | undefined
@@ -78,8 +86,14 @@ export default function OpenShiftModal({
   const countedDenoms: Record<number, number> = Object.fromEntries(DENOMS.map((d) => [d.value, qtyOf(d.value)]))
   const denomTotal = DENOMS.reduce((s, d) => s + d.value * qtyOf(d.value), 0)
   const typed = byDenom ? denomTotal : parseFloat(cash || '0')
-  // ต่างจากยอดยกมาเท่าไหร่ — ค่านี้จะถูกเขียนลง shifts.notes ตอนเปิดกะ
-  const carryDiff = carry && !Number.isNaN(typed) ? typed - carry.amount : 0
+  // เงินสดสุทธิจากบิลที่ยังไม่เข้ากะ — อยู่ในเก๊ะที่กำลังนับอยู่นี่แล้ว ทั้งกรณีรวมและไม่รวมเข้ากะ
+  const pending = orphan ? orphan.net : 0
+  // เงินในเก๊ะเช้านี้ควรมีเท่าไหร่ = ยกมาจากกะที่แล้ว + บิลที่ขายหลังปิดกะ
+  const shouldCount = carry ? carry.amount + pending : null
+  // ต่างจากที่ควรมีเท่าไหร่ — ค่านี้จะถูกเขียนลง shifts.notes ตอนเปิดกะ
+  const carryDiff = shouldCount != null && !Number.isNaN(typed) ? typed - shouldCount : 0
+  // ยอดตั้งต้นที่จะถูกบันทึกจริง — รวมบิลเข้ากะแล้วต้องหักเงินก้อนนั้นออก ไม่งั้นนับสองรอบ
+  const openingStored = pullIn && orphan ? typed - pending : typed
   const diffs = byDenom && carry ? denomDiffs(carry, countedDenoms) : []
   // กองที่เงินทอนไม่พอตั้งแต่ก่อนเปิดร้าน — ตัวที่เคยทำให้ต้องวิ่งหาเงินทอนตอนบ่าย
   const shortages = byDenom && floatDenoms
@@ -105,7 +119,8 @@ export default function OpenShiftModal({
       openingCash: amount,
       openedBy: userId,
       openedByName: userName,
-      orphan: pullIn ? orphan : null,
+      orphan,
+      pullIn,
       carry,
       carryReason,
       openingDenoms: byDenom ? countedDenoms : null,
@@ -117,9 +132,9 @@ export default function OpenShiftModal({
     }
     toast.success(
       carryDiff !== 0
-        ? `เปิดกะแล้ว — บันทึกส่วนต่างจากยอดยกมา ${carryDiff > 0 ? '+' : '−'}฿${money(Math.abs(carryDiff))} ไว้ในกะนี้`
+        ? `เปิดกะแล้ว — บันทึกส่วนต่างจากที่ควรมี ${carryDiff > 0 ? '+' : '−'}฿${money(Math.abs(carryDiff))} ไว้ในกะนี้`
         : pullIn && orphan
-          ? `เปิดกะแล้ว — รวมบิลตั้งแต่ ${fmtTime(orphan.firstAt)} เข้ากะนี้`
+          ? `เปิดกะแล้ว — ยกบิลตั้งแต่ ${fmtWhen(orphan.firstAt)} มารวมกะนี้ · ตั้งต้น ฿${money(openingStored)}`
           : 'เปิดกะแล้ว',
     )
     onOpened()
@@ -238,20 +253,31 @@ export default function OpenShiftModal({
                   {carry.amount !== floatExpected && <> — กะที่แล้วเหลือไว้ไม่ตรงยอดนี้ ฿{money(Math.abs(carry.amount - floatExpected))}</>}
                 </p>
               )}
+              {pending !== 0 && (
+                <p className="text-xs text-[#7A4E2D]">
+                  + ขายหลังปิดกะอีก ฿{money(pending)} (เงินอยู่ในเก๊ะแล้ว) ·{' '}
+                  <b>เช้านี้ควรนับได้ ฿{money(shouldCount ?? 0)}</b>
+                </p>
+              )}
               {carryDiff === 0 ? (
                 <p className="text-xs text-gray-500">
-                  {byDenom
-                    ? 'เติมใบนับของกะที่แล้วให้แล้ว — นับในเก๊ะแล้วแก้เฉพาะกองที่ไม่ตรง'
-                    : 'เติมยอดนี้ให้แล้ว — นับเงินในเก๊ะดูก่อน ถ้าไม่เท่ากันให้แก้ตามที่นับได้จริง'}
+                  {pending !== 0
+                    ? 'ใบนับที่เติมให้คือของเมื่อคืน — เงินจากบิลหลังปิดกะยังไม่อยู่ในนั้น นับเก๊ะจริงแล้วแก้กองที่เพิ่มมา'
+                    : byDenom
+                      ? 'เติมใบนับของกะที่แล้วให้แล้ว — นับในเก๊ะแล้วแก้เฉพาะกองที่ไม่ตรง'
+                      : 'เติมยอดนี้ให้แล้ว — นับเงินในเก๊ะดูก่อน ถ้าไม่เท่ากันให้แก้ตามที่นับได้จริง'}
                 </p>
               ) : (
                 <p className="text-xs font-medium text-amber-800">
-                  นับได้{carryDiff > 0 ? 'เกิน' : 'ขาด'}ไป ฿{money(Math.abs(carryDiff))} จากยอดยกมา
+                  นับได้{carryDiff > 0 ? 'เกิน' : 'ขาด'}ไป ฿{money(Math.abs(carryDiff))} จาก
+                  {pending !== 0 ? 'ยอดที่ควรมี' : 'ยอดยกมา'}
                 </p>
               )}
               {diffs.length > 0 && (
                 <div className="pt-1.5 border-t border-gray-200 space-y-0.5">
-                  <p className="text-xs font-medium text-gray-600">กองที่ไม่ตรงกับใบนับเมื่อคืน</p>
+                  <p className="text-xs font-medium text-gray-600">
+                    {pending !== 0 ? 'กองที่ต่างจากเมื่อคืน (รวมแบงค์ที่รับจากบิลหลังปิดกะ)' : 'กองที่ไม่ตรงกับใบนับเมื่อคืน'}
+                  </p>
                   {diffs.map((x) => (
                     <p key={x.value} className="text-xs text-gray-600 tabular-nums">
                       {x.label} <span className="text-gray-400">เมื่อคืน {x.was} → เช้านี้ {x.now}</span>{' '}
@@ -268,7 +294,9 @@ export default function OpenShiftModal({
           {carryDiff !== 0 && (
             <div className="rounded-lg border-2 border-amber-300 bg-amber-50 p-3 space-y-2">
               <p className="text-xs text-amber-900">
-                เปิดกะได้เลย ระบบจะใช้ยอดที่นับได้จริงเป็นตั้งต้น และ<b>บันทึกส่วนต่าง ฿{money(Math.abs(carryDiff))} ไว้ในกะนี้</b>
+                เปิดกะได้เลย ระบบจะใช้ยอดที่นับได้จริงเป็นตั้งต้น
+                {pullIn && orphan && <> (หักบิลที่ยกมารวม ฿{money(pending)} ออกแล้วเหลือ ฿{money(openingStored)})</>}
+                {' '}และ<b>บันทึกส่วนต่าง ฿{money(Math.abs(carryDiff))} ไว้ในกะนี้</b>
                 {diffs.length > 0 && <> พร้อมกองที่ไม่ตรง</>} เพื่อให้ย้อนดูได้ว่าคืนก่อนนับผิดหรือเงินหายระหว่างคืน
               </p>
               <input
@@ -280,7 +308,7 @@ export default function OpenShiftModal({
             </div>
           )}
 
-          {loadingOrphan && <p className="text-xs text-gray-400">กำลังดูบิลของวันนี้...</p>}
+          {loadingOrphan && <p className="text-xs text-gray-400">กำลังดูบิลที่ยังไม่เข้ากะ...</p>}
 
           {orphan && (
             <div className="rounded-lg border-2 border-amber-300 bg-amber-50 p-3 space-y-2">
@@ -292,29 +320,48 @@ export default function OpenShiftModal({
                   className="mt-0.5 w-4 h-4 shrink-0 accent-amber-600"
                 />
                 <span>
-                  <b>รวมบิลที่ขายไปก่อนเปิดกะ</b> — วันนี้มีบิลหน้าร้าน {orphan.bills} ใบ
-                  (เงินสด ฿{money(orphan.cash)}) ที่ขายตอนไม่มีกะเปิด
+                  {orphan.afterClose ? (
+                    <>
+                      <b>ยกบิลที่ขายหลังปิดกะมารวมกะนี้</b> — หลังปิดกะ {fmtWhen(orphan.since)} มีขายอีก{' '}
+                      {orphan.bills} ใบ ({fmtWhen(orphan.firstAt)}
+                      {orphan.lastAt !== orphan.firstAt && <>-{fmtTime(orphan.lastAt)}</>})
+                    </>
+                  ) : (
+                    <>
+                      <b>รวมบิลที่ขายไปก่อนเปิดกะ</b> — วันนี้มีบิลหน้าร้าน {orphan.bills} ใบ ที่ขายตอนไม่มีกะเปิด
+                    </>
+                  )}
+                  {' '}เงินสด ฿{money(orphan.cash)}
+                  {orphan.refunds > 0 && <> − คืนเงินสด ฿{money(orphan.refunds)}</>}
                 </span>
               </label>
               <p className="text-xs text-amber-800">
                 {pullIn ? (
                   <>
-                    กะนี้จะเริ่มนับตั้งแต่ <b>{fmtTime(orphan.firstAt)}</b> (เวลาบิลแรก) ยอดปิดกะจะได้ตรงกับเงินในเก๊ะ ·
-                    เงินสดตั้งต้นให้ใส่เงินในเก๊ะ <b>ก่อน</b> ขายบิลพวกนี้ — ถ้านับตอนนี้ได้เท่าไหร่ ให้หัก ฿{money(orphan.cash)} ออกก่อน
+                    ยอดขายก้อนนี้จะมาอยู่ในกะนี้ (กะเริ่มนับตั้งแต่ <b>{fmtWhen(orphan.firstAt)}</b>) ·
+                    เงินสด ฿{money(pending)} อยู่ในเก๊ะที่นับอยู่นี่แล้ว <b>ระบบหักออกจากยอดตั้งต้นให้เอง</b>{' '}
+                    (ตั้งต้น ฿{money(openingStored)}) ตอนปิดกะเย็นนี้ยอดจะตรงกับเงินในเก๊ะ
                   </>
                 ) : (
                   <>
-                    ไม่ติ๊ก = เงินสด ฿{money(orphan.cash)} ก้อนนี้จะไม่อยู่ในกะไหนเลย ตอนปิดกะจะขึ้นว่าเงินเกินเท่ายอดนี้
+                    ไม่ติ๊ก = ยอดขายก้อนนี้ไม่อยู่ในกะไหนเลย (ยังอยู่ในสรุปยอดขายรายวันตามปกติ) ·
+                    เงินสด ฿{money(pending)} จะถูกนับเป็นเงินตั้งต้นของกะนี้แทน
                   </>
                 )}
               </p>
+              {orphan.hours > 36 && (
+                <p className="text-xs font-medium text-red-700">
+                  บิลแรกเก่ากว่า {Math.floor(orphan.hours / 24)} วันแล้ว — เช็กก่อนว่าเงินก้อนนี้ยังอยู่ในเก๊ะจริง
+                  (ถ้าเจ้าของรับไปแล้วอย่าติ๊ก)
+                </p>
+              )}
             </div>
           )}
 
           {!loadingOrphan && !orphan && (
             <p className="flex items-start gap-1.5 text-xs text-gray-500">
               <AlertTriangle size={14} className="mt-0.5 shrink-0 text-gray-400" />
-              วันนี้ยังไม่มีบิลเงินสดที่ขายนอกกะ — เปิดกะได้เลย
+              ไม่มีบิลเงินสดที่ค้างอยู่นอกกะ — เปิดกะได้เลย
             </p>
           )}
         </div>

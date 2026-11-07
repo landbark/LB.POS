@@ -13,6 +13,7 @@ import { Wallet, Lock, Unlock, Pencil, StickyNote, ArrowRightLeft, Printer } fro
 import toast from 'react-hot-toast'
 import { confirmDialog } from '@/lib/confirm'
 import OpenShiftModal from '@/components/OpenShiftModal'
+import { findOrphanSales, type OrphanSales } from '@/lib/shiftOpen'
 import type { Shift, CashMovement } from '@/lib/types'
 
 const money = (n: number) => n.toLocaleString('th-TH', { minimumFractionDigits: 2 })
@@ -115,6 +116,11 @@ export default function ShiftClient({
   const [notes, setNotes] = useState('')
   const [loading, setLoading] = useState(false)
   const [loadingSummary, setLoadingSummary] = useState(true)
+  // เวลาที่ดึงยอดขายของกะมา — ตัวเลขบนหน้านี้ (และใบนับที่คนกรอก) อธิบายกะ "ถึงเวลานี้"
+  // บิลที่เข้ามาหลังจากนี้คือลูกค้าที่มาเพิ่มตอนกำลังนับเงิน ตอนกดปิดกะต้องถามก่อน (ดู closeShift)
+  const [loadedAt, setLoadedAt] = useState('')
+  // สั่งดึงยอดใหม่โดยไม่ reload หน้า — ใบนับที่กรอกค้างอยู่ต้องไม่หาย
+  const [reloadKey, setReloadKey] = useState(0)
   const [breakdown, setBreakdown] = useState<Record<string, number>>({})
   const [methodBills, setMethodBills] = useState<Record<string, number>>({})
   const [salesTotal, setSalesTotal] = useState(0)
@@ -140,10 +146,23 @@ export default function ShiftClient({
   const carryBefore = carryDenomsOf(lastClosed)
   const [adjust, setAdjust] = useState<Record<number, string> | null>(null)
   const [adjustNote, setAdjustNote] = useState('')
+  // บิลที่ขายไปตอนไม่มีกะเปิด (ลูกค้ามาเพิ่มหลังปิดกะเมื่อคืน) — โชว์ในการ์ด "เปิดกะใหม่"
+  // ให้คนที่มาเปิดกะเช้ารู้ก่อนว่าต้องเจออะไร ไม่ต้องกดเข้าโมดอลก่อนถึงจะเห็น
+  const [pendingSales, setPendingSales] = useState<OrphanSales | null>(null)
   // แก้เงินตั้งต้นของกะที่เปิดอยู่ (เจ้าของเท่านั้น)
   const [editOpening, setEditOpening] = useState(false)
   const [openingEdit, setOpeningEdit] = useState('')
   const [openingNote, setOpeningNote] = useState('')
+
+  useEffect(() => {
+    // มีกะเปิดอยู่ = ไม่มีบิลค้างนอกกะให้โชว์ (การ์ดนี้ขึ้นเฉพาะตอนไม่มีกะเปิด)
+    if (openShift) return
+    let cancelled = false
+    findOrphanSales().then((found) => {
+      if (!cancelled) setPendingSales(found)
+    })
+    return () => { cancelled = true }
+  }, [openShift, reloadKey])
 
   const stampNow = () =>
     new Date().toLocaleString('th-TH', {
@@ -193,6 +212,9 @@ export default function ShiftClient({
 
     async function loadSummary(shift: Shift) {
       const supabase = createClient()
+      // จดเวลา "ก่อน" ยิง query — บิลที่เกิดระหว่าง query อาจติดมาในชุดนี้แล้ว ถือเป็นบิลใหม่ไว้ก่อน
+      // ดีกว่าถือว่าเก่าแล้วปิดกะทับเงียบ ๆ (ถามเกินแล้วกดอัปเดตยอดได้ ไม่ถามแล้วยอดผิดแก้ไม่ได้)
+      const startedAt = new Date().toISOString()
       const [{ data: sold }, { data: refunds }, { data: moves }] = await Promise.all([
         // ดึงทุกช่องทางมา แล้วคัดเฉพาะ 'store' ไปคิดเงินในเก๊ะ — ที่เหลือโชว์เป็นบรรทัดข้อมูลในสรุป
         // ยอดขายที่บูธไม่เข้าเก๊ะที่ร้าน — คนที่ไปงานถือเงินทอนแยกไปต่างหาก (ดูสรุปที่ /admin/booth)
@@ -221,13 +243,14 @@ export default function ShiftClient({
           .filter((g) => g.count > 0),
       )
       setCashRefunds((refunds ?? []).reduce((s, t) => s + t.total, 0))
+      setLoadedAt(startedAt)
       setLoadingSummary(false)
     }
 
     loadSummary(openShift)
     return () => { cancelled = true }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [openShift?.id])
+  }, [openShift?.id, reloadKey])
 
   const cashSales = breakdown.cash ?? 0
   const cashIn = movements.filter((m) => m.direction === 'in').reduce((s, m) => s + Number(m.amount), 0)
@@ -470,11 +493,95 @@ export default function ShiftClient({
     router.refresh()
   }
 
+  /**
+   * ลูกค้ามาเพิ่มตอนกำลังนับเงิน — เช็กก่อนบันทึกว่ามีบิลเข้ามาหลังหน้านี้ดึงยอดไหม
+   *
+   * หน้านี้ดึงยอดขายครั้งเดียวตอนเปิดหน้า (ไม่ได้ poll — ตัวเลขต้องนิ่งระหว่างนับ ไม่ใช่ขยับเองกลางนับ)
+   * บิลที่เข้ามาหลังจากนั้นจึงไม่อยู่ใน "เงินที่ควรมีในลิ้นชัก" ที่ใช้คิดขาด/เกิน ปิดทับไปเลยจะได้
+   * `expected_cash`/`cash_difference` ผิด แล้วเจ้าของเห็นยอดขาด/เกินปลอม ๆ ใน Telegram
+   *
+   * คืน:
+   *  - `null` = ไม่มีอะไรเปลี่ยน ปิดได้ตามปกติ
+   *  - `{ stale: true }` = ยอดเปลี่ยนด้วยเหตุที่เลื่อนไปกะหน้าไม่ได้ (บิลคีย์ย้อนหลัง/ยกเลิกบิลเก่า)
+   *    ต้องดึงยอดใหม่แล้วนับใหม่
+   *  - `{ newer }` = เป็นบิลที่เข้ามาหลังนับเงินล้วน ๆ → เสนอ "ปิดกะที่เวลาก่อนบิลนั้น" แล้วยกไปกะหน้า
+   */
+  async function findBillsAfterCount(shift: ShiftRow) {
+    const supabase = createClient()
+    const { data, error } = await supabase
+      .from('transactions')
+      .select('created_at, status, total, payment_method, sales_channel, transaction_payments(method, amount)')
+      .gte('created_at', shift.opened_at)
+      .order('created_at')
+    if (error || !data) return null
+    const store = (data as unknown as (ShiftBill & { created_at: string; sales_channel: SalesChannel })[])
+      .filter((b) => b.sales_channel === 'store')
+    const same = (a: ReturnType<typeof splitShiftBills>) =>
+      Math.abs((a.byMethod.cash ?? 0) - cashSales) < 0.005 &&
+      Math.abs(a.cashFromCancelled - cashFromCancelled) < 0.005 &&
+      Math.abs(a.salesTotal - salesTotal) < 0.005 &&
+      a.bills === billCount
+    if (same(splitShiftBills(store))) return null
+    const newer = loadedAt ? store.filter((b) => b.created_at > loadedAt) : []
+    // ตัดบิลใหม่ออกแล้วยอดกลับมาตรงกับที่นับไว้ = ส่วนที่เปลี่ยนมาจากบิลใหม่ล้วน ๆ
+    if (newer.length === 0 || !same(splitShiftBills(store.filter((b) => b.created_at <= loadedAt)))) {
+      return { stale: true as const }
+    }
+    const cutoff = new Date(new Date(newer[0].created_at).getTime() - 1000)
+    // ตัดก่อนบิลแรกต้องยังอยู่หลังเวลาเปิดกะ ไม่งั้นกะจะกลายเป็นช่วงติดลบ
+    if (cutoff.toISOString() <= shift.opened_at) return { stale: true as const }
+    const split = splitShiftBills(newer)
+    return {
+      newer,
+      cutoff,
+      cash: (split.byMethod.cash ?? 0) + split.cashFromCancelled,
+      bills: newer.length,
+      firstAt: newer[0].created_at,
+    }
+  }
+
   async function closeShift() {
     if (!openShift) return
     if (!hasCount) {
       toast.error('กรุณานับเงินอย่างน้อย 1 ช่อง (ถ้าไม่มีให้ใส่ 0)')
       return
+    }
+    // ยกบิลที่มาหลังนับเงินไปกะหน้า = ปิดกะที่เวลาก่อนบิลนั้น (บิลจะตกนอกกะนี้ แล้วเช้าพรุ่งนี้
+    // หน้าเปิดกะจะเจอว่าเป็น "บิลที่ขายหลังปิดกะ" แล้วยกมารวมให้พร้อมหักเงินออกจากยอดตั้งต้น)
+    let closedAtISO = new Date().toISOString()
+    let carriedNote = ''
+    const after = await findBillsAfterCount(openShift)
+    if (after && 'stale' in after) {
+      setReloadKey((k) => k + 1)
+      toast.error('ยอดขายของกะนี้เปลี่ยนไป (มีบิลคีย์ย้อนหลังหรือยกเลิกบิลเก่า) — ดึงยอดใหม่ให้แล้ว ตรวจเงินในเก๊ะอีกครั้งแล้วกดปิดกะ', { duration: 7000 })
+      return
+    }
+    if (after) {
+      const ok = await confirmDialog({
+        title: 'มีลูกค้ามาเพิ่มหลังนับเงิน',
+        message:
+          `มีบิลเข้ามา ${after.bills} ใบ (เงินสด ฿${money(after.cash)}) หลังหน้านี้ดึงยอดเมื่อ ${fmtTime(loadedAt)}
+
+` +
+          `ถ้ายัง “ไม่ได้” นับเงินก้อนนี้เข้าใบนับ กดยกไปกะหน้า — ระบบจะปิดกะที่เวลา ${fmtTime(after.cutoff.toISOString())} ` +
+          `บิลพวกนี้จะไปรวมกับกะหน้าตอนเปิดกะครั้งถัดไป เงินสดก็เหลือไว้ในเก๊ะตามนั้น
+
+` +
+          `ถ้านับรวมไปแล้ว ให้กดอัปเดตยอด แล้วกดปิดกะอีกครั้ง`,
+        confirmLabel: 'ยกไปกะหน้า',
+        cancelLabel: 'อัปเดตยอด',
+        tone: 'primary',
+      })
+      if (!ok.confirmed) {
+        setReloadKey((k) => k + 1)
+        toast.success('อัปเดตยอดแล้ว — ตรวจเงินในเก๊ะอีกครั้งแล้วกดปิดกะ')
+        return
+      }
+      closedAtISO = after.cutoff.toISOString()
+      carriedNote =
+        `[ยกบิลหลังนับเงินไปกะหน้า ${stampNow()} โดย ${currentUserName || 'พนักงาน'}] ` +
+        `${after.bills} ใบ เงินสด ฿${money(after.cash)} ตั้งแต่ ${fmtTime(after.firstAt)} · ` +
+        `ปิดกะที่เวลา ${fmtTime(closedAtISO)} เงินก้อนนี้ยังอยู่ในเก๊ะ รอรวมกับกะถัดไป`
     }
     // เคลียร์ช่อง "เหลือไว้" จนหมดแล้วกดปิดกะ = ยกเงินทอนออกไปทั้งเก๊ะ เช้ามาทอนไม่ได้สักบาท
     if (counted > 0 && leftover === 0) {
@@ -497,7 +604,7 @@ export default function ShiftClient({
       DENOMS.filter((d) => keepCounts[d.value] > 0).map((d) => [String(d.value), keepCounts[d.value]]),
     )
     const closeFields = {
-        closed_at: new Date().toISOString(),
+        closed_at: closedAtISO,
         closed_by: currentUserId,
         expected_cash: expectedCash,
         closing_cash_counted: counted,
@@ -510,6 +617,7 @@ export default function ShiftClient({
           // audit line ที่เขียนไว้ตอนเปิดกะ/แก้เงินตั้งต้น ต้องไม่หายไปตอนปิดกะ
           openShift.notes?.trim(),
           notes.trim(),
+          carriedNote,
           movements.length > 0
             ? `เงินเข้าเก๊ะ ฿${money(cashIn)} · ออกจากเก๊ะ ฿${money(cashOut)} (${movements.length} รายการ)`
             : '',
@@ -567,6 +675,9 @@ export default function ShiftClient({
       const { error: openError } = await supabase.from('shifts').insert({
         opening_cash: leftover,
         opened_by: currentUserId,
+        // เริ่มกะใหม่ที่ "เวลาที่ปิดกะนี้" ไม่ใช่ตอนนี้ — บิลที่ยกไปกะหน้าอยู่หลังเวลาปิดกะ
+        // ถ้าเปิดกะใหม่ที่เวลาปัจจุบัน บิลพวกนั้นจะตกร่องระหว่างสองกะ ไม่อยู่ในกะไหนเลย
+        opened_at: closedAtISO,
       })
       if (openError) {
         setLoading(false)
@@ -577,9 +688,18 @@ export default function ShiftClient({
         router.refresh()
         return
       }
-      toast.success(`ปิดกะแล้ว และเปิดกะใหม่ด้วยเงินคงเหลือ ฿${money(leftover)}`)
+      toast.success(
+        carriedNote
+          ? `ปิดกะแล้ว และเปิดกะใหม่ด้วยเงินคงเหลือ ฿${money(leftover)} — บิลหลังนับเงินไปอยู่ในกะใหม่แล้ว`
+          : `ปิดกะแล้ว และเปิดกะใหม่ด้วยเงินคงเหลือ ฿${money(leftover)}`,
+      )
     } else {
-      toast.success('ปิดกะแล้ว — เช้ามากดเปิดกะใหม่ได้เลย')
+      toast.success(
+        carriedNote
+          ? 'ปิดกะแล้ว — บิลหลังนับเงินจะไปรวมกับกะถัดไปตอนเปิดกะ'
+          : 'ปิดกะแล้ว — ถ้ามีลูกค้ามาอีก ขายได้เลย บิลจะยกไปรวมกะถัดไป',
+        { duration: 6000 },
+      )
     }
     setLoading(false)
     setCounts({})
@@ -664,8 +784,26 @@ export default function ShiftClient({
               <h2 className="font-semibold text-gray-900">เปิดกะใหม่</h2>
             </div>
             <p className="text-xs text-gray-500 mb-3">
-              ใส่เงินทอนตั้งต้นในเก๊ะ · ถ้าวันนี้ขายไปแล้วตอนยังไม่เปิดกะ ระบบจะถามว่าจะรวมบิลพวกนั้นเข้ากะนี้ไหม
+              ใส่เงินทอนตั้งต้นในเก๊ะ · ถ้ามีบิลที่ขายไปตอนยังไม่เปิดกะ ระบบจะถามว่าจะยกบิลพวกนั้นมารวมกะนี้ไหม
             </p>
+            {!openShift && pendingSales && (
+              <div className="mb-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900 space-y-1">
+                <p className="font-semibold">
+                  {pendingSales.afterClose ? 'มีบิลที่ขายหลังปิดกะ' : 'มีบิลที่ขายตอนยังไม่เปิดกะ'}{' '}
+                  {pendingSales.bills} ใบ
+                </p>
+                <p>
+                  {fmtDate(pendingSales.firstAt)}
+                  {pendingSales.lastAt !== pendingSales.firstAt && <> - {fmtTime(pendingSales.lastAt)}</>} ·
+                  เงินสด ฿{money(pendingSales.cash)}
+                  {pendingSales.refunds > 0 && <> − คืนเงินสด ฿{money(pendingSales.refunds)}</>}
+                </p>
+                <p className="text-amber-800">
+                  เงิน ฿{money(pendingSales.net)} ก้อนนี้ควรอยู่ในเก๊ะ — กดเปิดกะแล้วระบบยกบิลมารวมกะใหม่
+                  พร้อมหักออกจากยอดตั้งต้นให้เอง
+                </p>
+              </div>
+            )}
             <button
               onClick={() => setShowOpenShift(true)}
               className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-4 py-2 rounded-lg"

@@ -10,7 +10,9 @@ import { createClient } from '@supabase/supabase-js'
 import { readFileSync } from 'node:fs'
 import { resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { carryNote, denomDiffs, findCarryOver, findOrphanSales, openShift, orphanNote } from '../src/lib/shiftOpen'
+import {
+  carryNote, denomDiffs, findCarryOver, findOrphanSales, openShift, orphanNote, type OrphanSales,
+} from '../src/lib/shiftOpen'
 import { sumByMethod, type PaidTransaction } from '../src/lib/payments'
 import { thaiDayRange } from '../src/lib/thaiDate'
 
@@ -47,36 +49,51 @@ async function main() {
   const { data: openNow } = await supabase.from('shifts').select('id, opened_at').is('closed_at', null).maybeSingle()
   console.log(openNow ? `⚠️  ร้านมีกะเปิดอยู่ (${openNow.opened_at}) — ข้ามเทสต์ที่ต้องเขียน\n` : 'ไม่มีกะเปิดอยู่\n')
 
-  // --- 1) findOrphanSales ตรงกับที่คำนวณจากบิลดิบของวันนี้
+  // --- 1) findOrphanSales ตรงกับที่คำนวณจากบิลดิบของช่วงที่ไม่มีกะ
+  // ช่วงเริ่มที่ "เวลาปิดกะล่าสุด" ข้ามคืนได้ — บิลที่ลูกค้ามาเพิ่มตอนสี่ทุ่มหลังปิดกะต้องถูกเจอ
+  // ในเช้าวันรุ่งขึ้น (เดิมตัดที่ต้นวันไทย บิลนั้นจึงตกขอบ ไม่มีใครเห็น)
   const orphan = await findOrphanSales(db)
-  const { startISO, endISO } = thaiDayRange()
+  const { startISO } = thaiDayRange()
   const { data: lastClosed } = await supabase
     .from('shifts').select('closed_at').not('closed_at', 'is', null)
     .order('closed_at', { ascending: false }).limit(1).maybeSingle()
-  const from = lastClosed?.closed_at && lastClosed.closed_at > startISO ? lastClosed.closed_at : startISO
+  const from = (lastClosed?.closed_at as string | undefined) ?? startISO
+  // ไม่กรอง status — บิลที่ยกเลิกทีหลังก็รับเงินสดเข้าเก๊ะไปแล้วตอนขาย
   const { data: raw } = await supabase
     .from('transactions')
-    .select('created_at, total, payment_method, transaction_payments(method, amount)')
-    .eq('status', 'completed').eq('sales_channel', 'store')
-    .gte('created_at', from).lt('created_at', endISO).order('created_at')
-  const bills = (raw ?? []) as unknown as (PaidTransaction & { created_at: string })[]
+    .select('created_at, status, total, payment_method, transaction_payments(method, amount)')
+    .eq('sales_channel', 'store')
+    .gte('created_at', from).order('created_at')
+  const bills = (raw ?? []) as unknown as (PaidTransaction & { created_at: string; status: string })[]
+  const live = bills.filter((b) => b.status !== 'cancelled')
   const cash = sumByMethod(bills).cash ?? 0
-  console.log(`ช่วงที่ไม่มีกะ: ${from} → now · บิลหน้าร้าน ${bills.length} ใบ · เงินสด ฿${cash.toFixed(2)}`)
+  const { data: refundRaw } = await supabase
+    .from('transactions').select('total')
+    .eq('status', 'cancelled').eq('refund_method', 'cash').eq('sales_channel', 'store')
+    .gte('cancelled_at', from)
+  const refunds = (refundRaw ?? []).reduce((s, t) => s + Number(t.total), 0)
+  console.log(
+    `ช่วงที่ไม่มีกะ: ${from} → now · บิลหน้าร้าน ${live.length} ใบ · ` +
+    `เงินสดรับ ฿${cash.toFixed(2)} · คืนเงินสด ฿${refunds.toFixed(2)}`,
+  )
 
-  if (cash > 0) {
-    check(orphan !== null, 'มีบิลเงินสดนอกกะ → คืนค่า orphan')
+  if (cash > 0 || refunds > 0) {
+    check(orphan !== null, 'มีเงินสดขยับนอกกะ → คืนค่า orphan')
     check(orphan?.cash === cash, 'ยอดเงินสดตรงกับที่รวมจากบิลดิบ', `฿${orphan?.cash?.toFixed(2)} vs ฿${cash.toFixed(2)}`)
-    check(orphan?.bills === bills.length, 'นับจำนวนบิลถูก', `${orphan?.bills} vs ${bills.length}`)
-    check(orphan?.firstAt === bills[0].created_at, 'firstAt = เวลาบิลแรกของช่วง')
+    check(orphan?.refunds === refunds, 'ยอดคืนเงินสดตรงกับบิลที่ยกเลิกในช่วงนั้น', `฿${orphan?.refunds?.toFixed(2)}`)
+    check(orphan?.net === cash - refunds, 'net = เงินสดที่อยู่ในเก๊ะจริงจากช่วงนี้', `฿${orphan?.net?.toFixed(2)}`)
+    check(orphan?.bills === live.length, 'นับจำนวนบิลถูก (ไม่นับบิลที่ยกเลิก)', `${orphan?.bills} vs ${live.length}`)
+    check(orphan?.afterClose === !!lastClosed?.closed_at, 'รู้ว่าเป็นบิล "หลังปิดกะ" หรือ "ก่อนเปิดกะวันนี้"')
+    if (bills.length > 0) check(orphan?.firstAt === bills[0].created_at, 'firstAt = เวลาบิลแรกของช่วง')
   } else {
-    check(orphan === null, 'ไม่มีบิลเงินสดนอกกะ → คืน null (ไม่รบกวนคนเปิดกะ)')
+    check(orphan === null, 'ไม่มีเงินสดขยับนอกกะ → คืน null (ไม่รบกวนคนเปิดกะ)')
   }
 
   // --- 2) บิลบูธ/ออนไลน์ต้องไม่ถูกนับ (เงินไม่ได้เข้าเก๊ะร้าน)
   const { data: others } = await supabase
     .from('transactions').select('id, sales_channel')
     .eq('status', 'completed').neq('sales_channel', 'store')
-    .gte('created_at', from).lt('created_at', endISO)
+    .gte('created_at', from)
   const otherCash = (others ?? []).length
   check(true, `บิลช่องทางอื่นในช่วงเดียวกัน ${otherCash} ใบ — ไม่ถูกนับโดยตรรกะ (กรอง sales_channel = store)`)
 
@@ -142,9 +159,43 @@ async function main() {
       'opened_at ย้อนไปที่บิลแรกจริง',
       row?.opened_at,
     )
-    check((row?.notes ?? '').startsWith('[รวมบิลก่อนเปิดกะ'), 'notes มี audit line ของการรวมบิล', row?.notes ?? '')
+    check((row?.notes ?? '').startsWith('[รวมบิลที่ยังไม่เข้ากะ'), 'notes มี audit line ของการรวมบิล', row?.notes ?? '')
     check((row?.notes ?? '').includes('เงินสด ฿1.00'), 'audit line บอกยอดเงินสดที่รวมเข้ามา')
-    check(row?.notes === orphanNote(fake, 'สคริปต์ทดสอบ'), 'audit line ตรงกับ orphanNote()')
+    check(
+      row?.notes === orphanNote(fake, 'สคริปต์ทดสอบ', { counted: 500, pulledIn: true }),
+      'audit line ตรงกับ orphanNote()',
+    )
+    // เงินสด ฿1 ของบิลนั้นอยู่ในเก๊ะที่เพิ่งนับได้ ฿500 แล้ว รวมบิลเข้ากะจึงต้องหักออกจากยอดตั้งต้น
+    // ไม่หัก = นับสองรอบ (ตั้งต้น ฿500 + ขายเงินสดในกะ ฿1) ตอนปิดกะจะขึ้นว่าขาด ฿1 ทั้งที่ไม่มีอะไรหาย
+    check(row?.opening_cash === 499, 'หักเงินสดของบิลที่ยกมารวมออกจากยอดตั้งต้นให้เอง (฿500 − ฿1)', `฿${row?.opening_cash}`)
+    check((row?.notes ?? '').includes('= ฿499.00'), 'audit line โชว์วิธีคิดยอดตั้งต้นไว้ด้วย')
+
+    // --- 6ข) ไม่ติ๊กรวม = ยอดตั้งต้นคงเดิมทั้งก้อน แต่ต้องจดไว้ว่าเงินก้อนนี้มาจากไหน
+    await supabase.from('shifts').delete().eq('id', row!.id)
+    madeShifts.length = 0
+    const noPull = await openShift(
+      { openingCash: 500, openedBy: userId, openedByName: 'สคริปต์ทดสอบ', orphan: fake, pullIn: false },
+      db,
+    )
+    check(!noPull.error, 'เปิดกะแบบไม่รวมบิลได้', noPull.error ?? '')
+    ;({ data: row } = await supabase.from('shifts').select('*').is('closed_at', null).maybeSingle())
+    if (row) madeShifts.push(row.id)
+    check(row?.opening_cash === 500, 'ไม่รวมบิล → ไม่หักอะไรออกจากยอดตั้งต้น', `฿${row?.opening_cash}`)
+    check(
+      row?.opened_at != null && new Date(row.opened_at).getTime() > new Date(fake.firstAt).getTime(),
+      'ไม่รวมบิล → ไม่ย้อนเวลาเปิดกะ',
+    )
+    check((row?.notes ?? '').startsWith('[บิลที่ยังไม่เข้ากะ'), 'ยังจด audit ไว้ว่าเงินก้อนนี้อยู่ในยอดตั้งต้น', row?.notes ?? '')
+
+    await supabase.from('shifts').delete().eq('id', row!.id)
+    madeShifts.length = 0
+    const back2 = await openShift(
+      { openingCash: 500, openedBy: userId, openedByName: 'สคริปต์ทดสอบ', orphan: fake },
+      db,
+    )
+    check(!back2.error, 'เปิดกะแบบรวมบิลอีกครั้งเพื่อเทสต์ข้อถัดไป', back2.error ?? '')
+    ;({ data: row } = await supabase.from('shifts').select('*').is('closed_at', null).maybeSingle())
+    if (row) madeShifts.push(row.id)
 
     // --- 7) บิลที่อยู่ในช่วงย้อนหลังถูกนับเข้าสูตร "เงินที่ควรมี" ของกะนี้แล้ว
     const { data: inWindow } = await supabase
@@ -258,6 +309,49 @@ async function main() {
         JSON.stringify(sameRow?.opening_denominations),
       )
     }
+
+    // --- 9ข) เช้ามานับได้ "ยกมา + บิลหลังปิดกะ" ต้องไม่ขึ้นว่าเงินเกิน
+    // เคสจริง: ปิดกะสี่ทุ่มเหลือ ฿700 แล้วลูกค้ามาซื้ออีก ฿200 เงินในเก๊ะเช้านี้ ฿900
+    // ยอดที่ควรมี = ยกมา + ขายหลังปิดกะ ไม่บวกเข้าไปจะขึ้นว่า "เกิน ฿200" ทุกคืนที่มีลูกค้ามาเพิ่ม
+    await supabase.from('shifts').delete().eq('id', sameRow!.id)
+    madeShifts.length = 0
+    const night: OrphanSales = {
+      firstAt: new Date(Date.now() - 3_600_000).toISOString(),
+      lastAt: new Date(Date.now() - 3_000_000).toISOString(),
+      bills: 1, cash: 200, refunds: 0, net: 200,
+      since: carry!.closedAt, afterClose: true, hours: 1,
+    }
+    const night1 = await openShift(
+      { openingCash: 900, openedBy: userId, openedByName: 'สคริปต์ทดสอบ', orphan: night, carry }, db,
+    )
+    check(!night1.error, 'เปิดกะเช้าหลังมีลูกค้ามาเพิ่มตอนกลางคืนได้', night1.error ?? '')
+    let { data: nightRow } = await supabase.from('shifts').select('*').is('closed_at', null).maybeSingle()
+    if (nightRow) madeShifts.push(nightRow.id)
+    check(nightRow?.opening_cash === 700, 'ยอดตั้งต้น = ที่นับได้ ฿900 − บิลหลังปิดกะ ฿200 = ยอดยกมา ฿700', `฿${nightRow?.opening_cash}`)
+    check(
+      !(nightRow?.notes ?? '').includes('[เงินตั้งต้นไม่ตรงยอดยกมา'),
+      'นับได้ ฿900 = ยกมา ฿700 + ขายหลังปิดกะ ฿200 → ไม่ขึ้นว่าเงินเกิน',
+      nightRow?.notes ?? '',
+    )
+
+    // เงินหายจริง ฿50 ระหว่างคืนยังต้องจับได้ ไม่ถูกบิลหลังปิดกะกลบ
+    await supabase.from('shifts').delete().eq('id', nightRow!.id)
+    madeShifts.length = 0
+    await openShift(
+      { openingCash: 850, openedBy: userId, openedByName: 'สคริปต์ทดสอบ', orphan: night, carry }, db,
+    )
+    ;({ data: nightRow } = await supabase.from('shifts').select('*').is('closed_at', null).maybeSingle())
+    if (nightRow) madeShifts.push(nightRow.id)
+    check(
+      (nightRow?.notes ?? '').includes('ขาด ฿50.00') && (nightRow?.notes ?? '').includes('ควรมี ฿900.00'),
+      'นับได้ ฿850 → ยังจับได้ว่าขาด ฿50 จากที่ควรมี ฿900',
+      nightRow?.notes ?? '',
+    )
+    await supabase.from('shifts').delete().eq('id', nightRow!.id)
+    madeShifts.length = 0
+    await openShift({ openingCash: 715, openedBy: userId, openedByName: 'สคริปต์ทดสอบ', carry, carryReason: 'เมื่อคืนนับเหรียญขาด', openingDenoms: hasOpenDenoms ? morning : null }, db)
+    ;({ data: sameRow } = await supabase.from('shifts').select('*').is('closed_at', null).maybeSingle())
+    if (sameRow) madeShifts.push(sameRow.id)
 
     // --- 10) เจ้าของมาจัดเงินทอนหลังปิดกะ → ยอดยกมาต้องคิดจากใบนับหลังจัด ไม่ใช่ตอนปิด
     const { error: carryCol } = await supabase.from('shifts').select('carry_denominations').limit(1)
