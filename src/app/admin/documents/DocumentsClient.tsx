@@ -6,6 +6,7 @@ import Link from 'next/link'
 import { Receipt, ShoppingBag, Printer, Ban, Wallet, PackageMinus } from 'lucide-react'
 import CancelReceiptModal from './CancelReceiptModal'
 import EditPaymentModal from './EditPaymentModal'
+import DocumentDetailModal, { type DetailTarget, type StockDocItem } from './DocumentDetailModal'
 import type { PaymentMethod, SalesChannel, StockMovementType } from '@/lib/types'
 import { MOVEMENT_LABEL } from '@/lib/stockMovements'
 import { CHANNEL_LABEL, CHANNEL_BADGE, channelGroup, isPlatformChannel, platformPaymentLabel } from '@/lib/salesChannel'
@@ -53,6 +54,8 @@ interface StockDocRow {
   itemCount: number
   /** ชื่อสินค้า 2-3 ตัวแรกไว้อ่านในตารางโดยไม่ต้องเปิดใบ */
   preview: string
+  /** ทุกรายการในใบ — ส่งมาพร้อมหน้าเพราะใบนี้ไม่มีตารางเอกสารใน DB ให้ยิงเอาทีหลัง */
+  items: StockDocItem[]
 }
 
 type Tab = 'receipt' | 'purchase' | 'stock'
@@ -90,6 +93,7 @@ export default function DocumentsClient({
   const [query, setQuery] = useState('')
   const [cancelling, setCancelling] = useState<ReceiptRow | null>(null)
   const [editingPayment, setEditingPayment] = useState<ReceiptRow | null>(null)
+  const [detail, setDetail] = useState<DetailTarget | null>(null)
 
   const q = query.trim().toLowerCase()
   const filteredReceipts = q
@@ -119,7 +123,7 @@ export default function DocumentsClient({
   return (
     <div>
       <h1 className="text-2xl font-bold text-gray-900 mb-1">เอกสาร</h1>
-      <p className="text-sm text-gray-500 mb-6">รวมใบเสร็จ ใบสั่งซื้อ และใบตัดสต็อก พร้อมพิมพ์ย้อนหลังได้</p>
+      <p className="text-sm text-gray-500 mb-6">รวมใบเสร็จ ใบสั่งซื้อ และใบตัดสต็อก · กดที่แถวเพื่อดูรายการในใบ หรือกดไอคอนเครื่องพิมพ์เพื่อพิมพ์ย้อนหลัง</p>
 
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-x-auto">
         <div className="flex items-center justify-between border-b border-gray-100 px-2">
@@ -166,7 +170,25 @@ export default function DocumentsClient({
               {filteredStockDocs.map((d) => {
                 const cfg = MOVEMENT_LABEL[d.type]
                 return (
-                  <tr key={d.id} className="hover:bg-gray-50">
+                  <tr
+                    key={d.id}
+                    className="hover:bg-gray-50 cursor-pointer"
+                    onClick={() =>
+                      setDetail({
+                        kind: 'stock',
+                        id: d.id,
+                        title: `${cfg.text} · ${fmtDate(d.createdAt)}`,
+                        stock: {
+                          type: d.type,
+                          note: d.note,
+                          createdAt: d.createdAt,
+                          byName: d.byName,
+                          totalQty: d.totalQty,
+                          items: d.items,
+                        },
+                      })
+                    }
+                  >
                     <td className="px-4 py-3 text-sm text-gray-600 whitespace-nowrap">{fmtDate(d.createdAt)}</td>
                     <td className="px-4 py-3">
                       <span className={`inline-flex text-xs px-2 py-0.5 rounded-full font-medium ${cfg.className}`}>
@@ -183,7 +205,7 @@ export default function DocumentsClient({
                       {cfg.sign}{d.totalQty.toLocaleString('th-TH')}
                     </td>
                     <td className="px-4 py-3">
-                      <div className="flex justify-end">
+                      <div className="flex justify-end" onClick={(e) => e.stopPropagation()}>
                         <Link
                           href={`/print/stock-adjust/${d.id}`}
                           target="_blank"
@@ -222,7 +244,11 @@ export default function DocumentsClient({
             </thead>
             <tbody className="divide-y divide-gray-50">
               {filteredReceipts.map((r) => (
-                <tr key={r.id} className="hover:bg-gray-50">
+                <tr
+                  key={r.id}
+                  className="hover:bg-gray-50 cursor-pointer"
+                  onClick={() => setDetail({ kind: 'receipt', id: r.id, title: `ใบเสร็จ ${r.transaction_number}` })}
+                >
                   <td className="px-4 py-3 text-sm font-mono text-gray-600">{r.transaction_number}</td>
                   <td className="px-4 py-3 text-sm text-gray-600">
                     {fmtDate(r.created_at)}
@@ -276,7 +302,7 @@ export default function DocumentsClient({
                   </td>
                   <td className="px-4 py-3 text-sm font-semibold text-gray-900 text-right">฿{money(r.total)}</td>
                   <td className="px-4 py-3">
-                    <div className="flex justify-end items-center gap-1">
+                    <div className="flex justify-end items-center gap-1" onClick={(e) => e.stopPropagation()}>
                       <Link
                         href={`/print/receipt/${r.id}`}
                         target="_blank"
@@ -329,7 +355,11 @@ export default function DocumentsClient({
             </thead>
             <tbody className="divide-y divide-gray-50">
               {filteredPurchases.map((p) => (
-                <tr key={p.id} className="hover:bg-gray-50">
+                <tr
+                  key={p.id}
+                  className="hover:bg-gray-50 cursor-pointer"
+                  onClick={() => setDetail({ kind: 'purchase', id: p.id, title: `ใบสั่งซื้อ ${p.purchase_number}` })}
+                >
                   <td className="px-4 py-3 text-sm font-mono text-gray-600">{p.purchase_number}</td>
                   <td className="px-4 py-3 text-sm text-gray-600">{fmtDate(p.created_at)}</td>
                   <td className="px-4 py-3 text-sm text-gray-700">{p.suppliers?.name ?? '—'}</td>
@@ -342,7 +372,7 @@ export default function DocumentsClient({
                   </td>
                   <td className="px-4 py-3 text-sm font-semibold text-gray-900 text-right">฿{money(p.total_cost)}</td>
                   <td className="px-4 py-3">
-                    <div className="flex justify-end">
+                    <div className="flex justify-end" onClick={(e) => e.stopPropagation()}>
                       <Link
                         href={`/print/purchase/${p.id}`}
                         target="_blank"
@@ -372,6 +402,8 @@ export default function DocumentsClient({
           ภาพรวมของเข้า-ออกทั้งหมดดูที่ <Link href="/admin/reports/stock" className="text-blue-600 hover:text-blue-700">รายงานความเคลื่อนไหวสต็อค</Link>
         </p>
       )}
+
+      {detail && <DocumentDetailModal target={detail} onClose={() => setDetail(null)} />}
 
       {editingPayment && (
         <EditPaymentModal

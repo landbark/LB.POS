@@ -57,6 +57,13 @@ export default async function DocumentsPage({
       .slice(0, 2)
       .map((r) => r.products?.name ?? '—')
       .join(', '),
+    // ใบตัดสต็อกไม่มีตารางเอกสารใน DB — จับกลุ่มได้แล้วตรงนี้ ส่งรายการไปเลย ไม่ต้องให้ client ยิงซ้ำตอนกดดู
+    items: d.rows.map((r) => ({
+      name: r.products?.name ?? '—',
+      sku: r.products?.sku ?? null,
+      unit: r.products?.unit ?? '',
+      quantity: r.quantity,
+    })),
   }))
 
   return (
