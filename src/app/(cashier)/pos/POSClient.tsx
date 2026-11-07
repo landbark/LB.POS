@@ -17,6 +17,7 @@ import OpenShiftModal from '@/components/OpenShiftModal'
 import { withBoothPrices, getBoothTrip, getBoothTripOnServer, setBoothTrip, subscribeBoothTrip } from '@/lib/booth'
 import { buildHaystacks, haystackOf, matchesTokens, scoreOf, tokenize } from '@/lib/productSearch'
 import { openCustomerDisplay } from '@/lib/posDisplayWindow'
+import { clearSavedCart, loadSavedCart, saveCart } from '@/lib/posCart'
 
 // เครื่องที่ใช้เมาส์ยิงด้วยเครื่องยิงบาร์โค้ดอยู่แล้ว ไม่ต้องมีปุ่มกล้อง
 // อ่านผ่าน useSyncExternalStore เพื่อให้ฝั่ง server ได้ false เสมอ html จะได้ไม่ต่างกับฝั่ง client
@@ -62,6 +63,28 @@ const isScannable = (code: string | null | undefined) => /^\d{8,14}$/.test((code
 
 /** คีย์ของบรรทัดในตะกร้า — สินค้าตัวเดียวอยู่ได้หลายบรรทัดถ้าขายคนละหน่วย */
 const lineKey = (item: Pick<CartItem, 'product' | 'unit'>) => `${item.product.id}:${item.unit?.id ?? 'base'}`
+
+/**
+ * รวมรายการจากคลินิกเข้าตะกร้าที่มีอยู่
+ *
+ * ของซ้ำกันที่ราคาเท่ากันรวมเป็นบรรทัดเดียว — ราคาต่างกันต้องแยก (หมอตั้งราคารายใบได้)
+ * อยู่นอกคอมโพเนนต์เพราะต้องเรียกจากใน setCart(prev => ...) ที่ต้องอ่านตะกร้าค่าล่าสุดเสมอ
+ */
+function mergeIntoCart(current: CartItem[], incoming: CartItem[]): CartItem[] {
+  const next = [...current]
+  for (const add of incoming) {
+    const at = next.findIndex(
+      (c) => c.product.id === add.product.id && c.unit == null && c.unit_price === add.unit_price && c.discount_value === 0,
+    )
+    if (at >= 0) {
+      const qty = next[at].quantity + add.quantity
+      next[at] = { ...next[at], quantity: qty, subtotal: next[at].unit_price * qty }
+    } else {
+      next.push(add)
+    }
+  }
+  return next
+}
 
 // จำนวนสินค้าที่วาดบนกริด — วาดครบสองพันตัวทำให้ทุกตัวอักษรที่พิมพ์หน่วงเป็นสิบ ms
 const GRID_LIMIT = 60
@@ -109,6 +132,41 @@ export default function POSClient({ products: allProducts, booth, shiftOpen, shi
   const [lastScanKey, setLastScanKey] = useState<string | null>(null)
   // ปุ่มกล้องโชว์เฉพาะมือถือ/แท็บเล็ตที่เปิดกล้องได้
   const canScan = useSyncExternalStore(neverChanges, canScanOnThisDevice, noCameraOnServer)
+
+  // ตะกร้าค้างไว้ที่เครื่อง — ออกจากหน้าขายไปคีย์ใบตรวจตัวถัดไปแล้วกลับมา ของต้องยังอยู่
+  // (state ของหน้าหายตั้งแต่ออกจาก /pos ไม่ว่าจะกดลิงก์ รีเฟรช หรือแท็บโดนเบราว์เซอร์ทิ้ง)
+  const cartRestored = useRef(false)
+  /* eslint-disable react-hooks/set-state-in-effect --
+     อ่าน localStorage ตอน render ไม่ได้ ฝั่ง server ไม่มี localStorage แล้ว html จะไม่ตรงกัน
+     (เหตุผลเดียวกับ lib/booth) — กู้ค่าทีเดียวตอน mount แล้วไม่แตะอีกเลย */
+  useEffect(() => {
+    if (cartRestored.current) return
+    cartRestored.current = true
+    const saved = loadSavedCart(cashierId, boothTrip)
+    if (!saved) return
+    setCart(saved.cart)
+    setActiveVisits(saved.activeVisits ?? [])
+    if (saved.customer) {
+      setCustomer(saved.customer)
+      setCustomerPhone(saved.customerPhone ?? '')
+    }
+    // บอกให้รู้ว่าของในตะกร้ามาจากไหน ไม่งั้นเปิดหน้ามาเจอของค้างแล้วงงว่าใครใส่ไว้
+    toast(`กู้ตะกร้าที่ค้างไว้ ${saved.cart.length} รายการ — ไม่ใช่บิลนี้กด "ล้างตะกร้า" ได้เลย`, {
+      icon: '🧺',
+      duration: 6000,
+    })
+  }, [cashierId, boothTrip])
+  /* eslint-enable react-hooks/set-state-in-effect */
+
+  // เขียนทุกครั้งที่ตะกร้าขยับ — ข้ามรอบแรกไว้ ไม่งั้นค่าว่างตอนเปิดหน้าจะไปลบของที่เพิ่งกู้มา
+  const skipFirstSave = useRef(true)
+  useEffect(() => {
+    if (skipFirstSave.current) {
+      skipFirstSave.current = false
+      return
+    }
+    saveCart({ cart, activeVisits, customer, customerPhone, boothTrip, cashierId })
+  }, [cart, activeVisits, customer, customerPhone, boothTrip, cashierId])
 
   const refreshQueue = useCallback(async () => {
     try {
@@ -404,27 +462,13 @@ export default function POSClient({ products: allProducts, booth, shiftOpen, shi
       lot_id: getBestLot(i.product),
     }))
 
-    if (cart.length > 0) {
-      // ของซ้ำกันที่ราคาเท่ากันรวมเป็นบรรทัดเดียว — ราคาต่างกันต้องแยก (หมอตั้งราคารายใบได้)
-      const next = [...cart]
-      for (const add of incoming) {
-        const at = next.findIndex(
-          (c) => c.product.id === add.product.id && c.unit == null && c.unit_price === add.unit_price && c.discount_value === 0,
-        )
-        if (at >= 0) {
-          const qty = next[at].quantity + add.quantity
-          next[at] = { ...next[at], quantity: qty, subtotal: next[at].unit_price * qty }
-        } else {
-          next.push(add)
-        }
-      }
-      commitCart(next)
-    } else {
-      commitCart(incoming)
-    }
+    // ต่อท้ายตะกร้า "ค่าล่าสุด" เสมอ ไม่ใช่ค่าที่ติดมากับตอนกดปุ่ม — ระหว่างรอกล่องยืนยัน
+    // แคชเชียร์ยิงของเพิ่มได้ ถ้าเอาค่าเก่ามาทับ ของที่เพิ่งยิงจะหายไปเงียบๆ
+    setCart((prev) => withPromotions(mergeIntoCart(prev, incoming)))
 
     if (merging) {
-      setActiveVisits([...activeVisits, visit])
+      // กันใบซ้ำด้วย — กดรวมบิลใบเดิมสองครั้งไม่ควรปิดใบซ้ำตอนจ่ายเงิน
+      setActiveVisits((prev) => (prev.some((v) => v.id === visit.id) ? prev : [...prev, visit]))
       toast.success(`รวมใบ ${visit.visit_number} (${visit.pet_name || 'ไม่ระบุสัตว์'}) เข้าบิลแล้ว`)
     } else {
       // ใบแรก — เจ้าของใบคือลูกค้าของบิลนี้ (ใบไม่มีเจ้าของก็ไม่ไปลบคนที่แคชเชียร์เลือกไว้เองแล้ว)
@@ -1289,6 +1333,7 @@ export default function POSClient({ products: allProducts, booth, shiftOpen, shi
           onSuccess={(info) => {
             // ตัดสต็อกออกก็ปิดใบเหมือนกัน — ของออกจากสต็อกไปแล้ว ไม่ต้องค้างในคิวให้เก็บเงินอีก
             if (activeVisitIds.length > 0) setPaidVisitIds((ids) => [...ids, ...activeVisitIds])
+            clearSavedCart()
             setCart([])
             setDiscountRow(null)
             setCustomer(null)

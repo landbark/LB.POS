@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Geist } from "next/font/google";
+import { Geist, Noto_Sans_Thai } from "next/font/google";
 import { Toaster } from "react-hot-toast";
 import TopLoader from "@/components/TopLoader";
 import ConfirmHost from "@/components/ConfirmHost";
@@ -9,6 +9,15 @@ import "./globals.css";
 const geistSans = Geist({
   variable: "--font-geist-sans",
   subsets: ["latin"],
+});
+
+// Geist ไม่มีกลิฟไทย ภาษาไทยเลยตกไปใช้ฟอนต์ระบบ (Arial) ที่วางวรรณยุกต์ซ้อนบนสระบนไม่เป็น
+// — "มีมี่" พิมพ์ออกฉลากแล้วไม้เอกหาย ต้องโหลดฟอนต์ไทยจริงมาคั่นก่อนฟอนต์ระบบ
+const notoThai = Noto_Sans_Thai({
+  variable: "--font-thai",
+  subsets: ["thai"],
+  // ฉลาก/ใบเสร็จพิมพ์ตัวหนาบาง ๆ ไล่ตั้งแต่ปกติถึง bold
+  weight: ["400", "500", "600", "700"],
 });
 
 export const metadata: Metadata = {
@@ -31,7 +40,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="th" className={`${geistSans.variable} h-full antialiased`}>
+    <html lang="th" className={`${geistSans.variable} ${notoThai.variable} h-full antialiased`}>
       <body className="min-h-full flex flex-col bg-gray-50">
         <TopLoader />
         <Toaster position="top-center" />

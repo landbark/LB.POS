@@ -18,13 +18,15 @@
   --color-brand-cream: var(--brand-cream);
   --color-brand-light: var(--brand-light);
   --color-brand-muted: var(--brand-muted);
-  --font-sans: var(--font-geist-sans);
+  --font-sans: var(--font-geist-sans), var(--font-thai);
 }
 
 body {
   background: var(--brand-light);
   color: #3D2B1A;
-  font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
+  /* Geist ก่อน (ละติน/ตัวเลข) แล้วค่อย Noto Sans Thai รับภาษาไทย
+     — ต้องมาก่อน Arial เสมอ ไม่งั้นวรรณยุกต์ที่ซ้อนบนสระบนจะหาย */
+  font-family: var(--font-geist-sans), var(--font-thai), Arial, Helvetica, sans-serif;
 }
 
 /*
