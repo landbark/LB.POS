@@ -313,15 +313,17 @@ export default function ReceiveClient({
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead>
-              <tr className="text-xs font-medium text-gray-500 uppercase">
-                <th className="text-left pb-2 pr-2 min-w-40">สินค้า</th>
-                <th className="text-right pb-2 pr-2 min-w-20 whitespace-nowrap">สั่ง</th>
-                <th className="text-left pb-2 pr-2 min-w-44 whitespace-nowrap">รับจริง</th>
-                <th className="text-left pb-2 pr-2 w-28">ทุน/หน่วย</th>
-                <th className="text-left pb-2 pr-2 w-32">LOT (ระบบ)</th>
-                <th className="text-left pb-2 pr-2 w-32">LOT บริษัท</th>
-                <th className="text-left pb-2 pr-2 w-36">วันหมดอายุ</th>
-                <th className="text-right pb-2 pr-2 w-24">รวม</th>
+              <tr className="text-xs text-gray-500 uppercase">
+                {/* font-medium ต้องอยู่ที่ th เอง — th ของเบราว์เซอร์เป็นตัวหนาอยู่แล้ว
+                    ซึ่งชนะค่าที่สืบทอดจาก tr แล้ววรรณยุกต์ของหัวตัวหนาไปเบียดบรรทัดบน */}
+                <th className="text-left font-medium pb-2 pr-2 min-w-40">สินค้า</th>
+                <th className="text-right font-medium pb-2 pr-2 min-w-20 whitespace-nowrap">สั่ง</th>
+                <th className="text-left font-medium pb-2 pr-2 min-w-44 whitespace-nowrap">รับจริง</th>
+                <th className="text-left font-medium pb-2 pr-2 w-28">ทุน/หน่วย</th>
+                <th className="text-left font-medium pb-2 pr-2 w-32">LOT (ระบบ)</th>
+                <th className="text-left font-medium pb-2 pr-2 w-32">LOT บริษัท</th>
+                <th className="text-left font-medium pb-2 pr-2 w-36">วันหมดอายุ</th>
+                <th className="text-right font-medium pb-2 pr-2 w-24">รวม</th>
                 <th className="pb-2 w-8"></th>
               </tr>
             </thead>

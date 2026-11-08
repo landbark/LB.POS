@@ -13,6 +13,10 @@ import { ProductPicker, MultiPicker, StockBadge, UnitSelect, newItem, inputClass
 // เลขที่ใบรับของอิงเวลาที่กดบันทึก — อยู่นอกคอมโพเนนต์ให้ชัดว่าไม่ใช่ค่าที่คิดตอน render
 const newPurchaseNumber = () => `PO${Date.now()}`
 
+const money = (n: number) => n.toLocaleString('th-TH', { minimumFractionDigits: 2 })
+const fmtDate = (d: string) =>
+  new Date(d).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
+
 interface PurchaseRow {
   id: string
   purchase_number: string
@@ -204,6 +208,96 @@ export default function ReceivingClient({ suppliers, products, purchases }: Prop
     router.refresh()
   }
 
+  /**
+   * แถวสินค้าหนึ่งแถววาดสองชุด — การ์ดบนจอเล็ก ตารางบนจอใหญ่
+   * ช่องกรอกเลยแยกมาไว้ที่เดียว ไม่งั้นแก้ช่องจำนวนทีต้องไล่แก้สองที่
+   */
+  const productCell = (it: ItemRow, i: number) => {
+    const p = products.find((x) => x.id === it.product_id)
+    return (
+      <>
+        <ProductPicker
+          products={sortedProducts}
+          value={it.product_id}
+          onChange={(id) => setItem(i, 'product_id', id)}
+          supplierId={supplierId}
+        />
+        {p && <p className="mt-0.5 pl-1"><StockBadge product={p} /></p>}
+      </>
+    )
+  }
+
+  const qtyCell = (it: ItemRow, i: number) => {
+    const p = products.find((x) => x.id === it.product_id)
+    const factor = factorOfRow(p, it.product_unit_id)
+    const qty = parseInt(it.quantity) || 0
+    return (
+      <>
+        <div className="flex items-center gap-1.5">
+          <input type="number" min="1" value={it.quantity} onChange={(e) => setItem(i, 'quantity', e.target.value)} className={qtyInputClass} placeholder="0" />
+          <UnitSelect product={p} value={it.product_unit_id} onChange={(id) => setItem(i, 'product_unit_id', id)} onUnitAdded={addUnit} />
+        </div>
+        {factor > 1 && qty > 0 && (
+          <p className="mt-0.5 pl-1 text-[11px] text-gray-400">
+            เข้าสต็อค {qty * factor} {p?.unit}
+          </p>
+        )}
+      </>
+    )
+  }
+
+  const costCell = (it: ItemRow, i: number) => (
+    <input type="number" min="0" step="0.01" value={it.unit_cost} onChange={(e) => setItem(i, 'unit_cost', e.target.value)} className={inputClass} placeholder="0.00" />
+  )
+
+  const rowTotalOf = (it: ItemRow) => (parseFloat(it.unit_cost) || 0) * (parseInt(it.quantity) || 0)
+
+  // ป้ายสถานะห้ามตัดบรรทัด — "รอรับสินค้า" ในคอลัมน์แคบจะม้วนเป็นก้อนกลม (บทเรียนจากหน้าเอกสาร)
+  const statusBadge = (status: PurchaseStatus) => (
+    <span className={`inline-flex shrink-0 whitespace-nowrap text-xs px-2 py-0.5 rounded-full font-medium ${
+      status === 'received' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'
+    }`}>
+      {status === 'received' ? 'รับแล้ว' : 'รอรับสินค้า'}
+    </span>
+  )
+
+  const purchaseActions = (p: PurchaseRow) => (
+    <>
+      <Link
+        href={`/print/purchase/${p.id}`}
+        target="_blank"
+        title="พิมพ์ PDF"
+        className="p-2 text-gray-400 hover:text-blue-600 hover:bg-gray-100 rounded-lg"
+      >
+        <Printer size={15} />
+      </Link>
+      {p.status === 'pending' && (
+        <>
+          <Link
+            href={`/admin/receiving/${p.id}/edit`}
+            title="แก้ไขใบสั่งซื้อ"
+            className="p-2 text-gray-400 hover:text-blue-600 hover:bg-gray-100 rounded-lg"
+          >
+            <Pencil size={15} />
+          </Link>
+          <button
+            onClick={() => removePurchase(p.id, p.purchase_number)}
+            title="ลบใบสั่งซื้อ"
+            className="p-2 text-gray-400 hover:text-red-600 hover:bg-gray-100 rounded-lg"
+          >
+            <Trash2 size={15} />
+          </button>
+          <Link
+            href={`/admin/receiving/${p.id}/receive`}
+            className="flex items-center gap-1 whitespace-nowrap text-xs font-medium bg-blue-600 hover:bg-blue-700 text-white px-2.5 py-1.5 rounded-lg transition-colors"
+          >
+            <PackageCheck size={13} /> รับสินค้า
+          </Link>
+        </>
+      )}
+    </>
+  )
+
   return (
     <div>
       <h1 className="text-2xl font-bold text-gray-900 mb-1">นำเข้าสินค้า</h1>
@@ -211,7 +305,7 @@ export default function ReceivingClient({ suppliers, products, purchases }: Prop
         สร้างใบสั่งซื้อส่งซัพพลายเออร์ก่อน แล้วค่อยกด &quot;รับสินค้า&quot; ใส่ล็อต/วันหมดอายุตอนของมาส่งจริง
       </p>
 
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 mb-6">
+      <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 sm:p-5 mb-6">
         <h2 className="font-semibold text-gray-900 mb-3">สร้างใบสั่งซื้อ</h2>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
           <div>
@@ -240,58 +334,69 @@ export default function ReceivingClient({ suppliers, products, purchases }: Prop
           </button>
         </div>
 
+        {/* ต่ำกว่า lg ใช้การ์ด — ห้าคอลัมน์ (ชื่อสินค้า จำนวน หน่วย ทุน รวม) กินอย่างน้อย ~710px
+            หักแถบเมนูซ้าย 224px แล้วตารางลงตัวตั้งแต่จอ ~1000px ขึ้นไป
+            ต่ำกว่านั้นตารางดันทั้งหน้าให้เลื่อนแนวนอน ทั้งที่ของที่ต้องกรอกมีแค่สี่ช่อง */}
+        <div className="space-y-3 lg:hidden">
+          {items.map((it, i) => {
+            const rowTotal = rowTotalOf(it)
+            return (
+              <div key={i} className="rounded-xl border border-gray-200 p-3">
+                <div className="flex items-start gap-2">
+                  <div className="min-w-0 flex-1">{productCell(it, i)}</div>
+                  <button
+                    onClick={() => removeRow(i)}
+                    title="ลบรายการ"
+                    className="shrink-0 p-2 text-gray-300 hover:text-red-500 hover:bg-gray-50 rounded-lg"
+                  >
+                    <Trash2 size={16} />
+                  </button>
+                </div>
+
+                <div className="mt-2.5">
+                  <span className="mb-1 block text-xs font-medium text-gray-500">จำนวน / หน่วย</span>
+                  {qtyCell(it, i)}
+                </div>
+
+                <div className="mt-2.5 flex items-end gap-3">
+                  <div className="min-w-0 flex-1">
+                    <span className="mb-1 block text-xs font-medium text-gray-500">ทุน/หน่วยที่สั่ง</span>
+                    {costCell(it, i)}
+                  </div>
+                  <p className="shrink-0 pb-2 text-sm font-medium text-gray-900">
+                    <span className="text-xs font-normal text-gray-500">รวม </span>
+                    {rowTotal > 0 ? `฿${rowTotal.toFixed(2)}` : '—'}
+                  </p>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+
         {/* รายการสินค้า — ตารางแคบพอ ไม่ต้อง overflow-x-auto (dropdown ของ ProductPicker ลอยที่ body อยู่แล้ว) */}
-        <div>
+        <div className="hidden lg:block">
           <table className="w-full">
             <thead>
-              <tr className="text-xs font-medium text-gray-500 uppercase">
-                <th className="text-left pb-2 pr-2 min-w-56">สินค้า</th>
-                <th className="text-left pb-2 pr-2 min-w-56 whitespace-nowrap">จำนวน / หน่วย</th>
-                <th className="text-left pb-2 pr-2 w-28">ทุน/หน่วยที่สั่ง</th>
-                <th className="text-right pb-2 w-24">รวม</th>
+              <tr className="text-xs text-gray-500 uppercase">
+                {/* font-medium ต้องอยู่ที่ th เอง — เบราว์เซอร์ตั้ง th เป็นตัวหนาไว้ในสไตล์ของตัวเอง
+                    ซึ่งชนะค่าที่สืบทอดมาจาก tr หัวตารางเลยหนา 700 ทั้งที่ตั้งใจให้เป็น 500
+                    พอหัวที่ตัดบรรทัดอย่าง "ทุน/หน่วยที่สั่ง" เป็นตัวหนา หมึกพุ่งขึ้น 1.25 em
+                    เท่ากับความสูงบรรทัดพอดี วรรณยุกต์เลยไปเบียดบรรทัดบนจนดูเหมือนหัวขาด */}
+                <th className="text-left font-medium pb-2 pr-2 min-w-56">สินค้า</th>
+                <th className="text-left font-medium pb-2 pr-2 min-w-56 whitespace-nowrap">จำนวน / หน่วย</th>
+                <th className="text-left font-medium pb-2 pr-2 w-28">ทุน/หน่วยที่สั่ง</th>
+                <th className="text-right font-medium pb-2 w-24">รวม</th>
                 <th className="pb-2 w-8"></th>
               </tr>
             </thead>
             <tbody>
               {items.map((it, i) => {
-                const rowTotal = (parseFloat(it.unit_cost) || 0) * (parseInt(it.quantity) || 0)
+                const rowTotal = rowTotalOf(it)
                 return (
                   <tr key={i}>
-                    <td className="pr-2 py-1.5 align-top">
-                      <ProductPicker
-                        products={sortedProducts}
-                        value={it.product_id}
-                        onChange={(id) => setItem(i, 'product_id', id)}
-                        supplierId={supplierId}
-                      />
-                      {(() => {
-                        const p = products.find((x) => x.id === it.product_id)
-                        return p ? <p className="mt-0.5 pl-1"><StockBadge product={p} /></p> : null
-                      })()}
-                    </td>
-                    <td className="pr-2 py-1.5 align-top">
-                      {(() => {
-                        const p = products.find((x) => x.id === it.product_id)
-                        const factor = factorOfRow(p, it.product_unit_id)
-                        const qty = parseInt(it.quantity) || 0
-                        return (
-                          <>
-                            <div className="flex items-center gap-1.5">
-                              <input type="number" min="1" value={it.quantity} onChange={(e) => setItem(i, 'quantity', e.target.value)} className={qtyInputClass} placeholder="0" />
-                              <UnitSelect product={p} value={it.product_unit_id} onChange={(id) => setItem(i, 'product_unit_id', id)} onUnitAdded={addUnit} />
-                            </div>
-                            {factor > 1 && qty > 0 && (
-                              <p className="mt-0.5 pl-1 text-[11px] text-gray-400">
-                                เข้าสต็อค {qty * factor} {p?.unit}
-                              </p>
-                            )}
-                          </>
-                        )
-                      })()}
-                    </td>
-                    <td className="pr-2 py-1.5 align-top">
-                      <input type="number" min="0" step="0.01" value={it.unit_cost} onChange={(e) => setItem(i, 'unit_cost', e.target.value)} className={inputClass} placeholder="0.00" />
-                    </td>
+                    <td className="pr-2 py-1.5 align-top">{productCell(it, i)}</td>
+                    <td className="pr-2 py-1.5 align-top">{qtyCell(it, i)}</td>
+                    <td className="pr-2 py-1.5 align-top">{costCell(it, i)}</td>
                     <td className="py-1.5 pt-4 align-top text-sm text-right font-medium text-gray-900">
                       {rowTotal > 0 ? `฿${rowTotal.toFixed(2)}` : '—'}
                     </td>
@@ -307,18 +412,19 @@ export default function ReceivingClient({ suppliers, products, purchases }: Prop
           </table>
         </div>
 
-        <button onClick={addRow} className="flex items-center gap-1.5 text-sm text-blue-600 hover:text-blue-700 font-medium mt-2">
+        <button onClick={addRow} className="flex items-center gap-1.5 text-sm text-blue-600 hover:text-blue-700 font-medium mt-3">
           <Plus size={14} /> เพิ่มรายการ
         </button>
 
-        <div className="flex items-center justify-between mt-4 pt-4 border-t border-gray-100">
+        {/* จอเล็กเรียงบนล่าง — เดิมยอดรวมกับปุ่มเบียดกันจนคำว่า "บันทึกใบสั่งซื้อ" ตัดเป็นสองบรรทัด */}
+        <div className="flex flex-col gap-3 mt-4 pt-4 border-t border-gray-100 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-sm text-gray-500">
-            {validItems.length} รายการ · ทุนรวม <span className="font-bold text-gray-900">฿{totalCost.toLocaleString('th-TH', { minimumFractionDigits: 2 })}</span>
+            {validItems.length} รายการ · ทุนรวม <span className="font-bold text-gray-900">฿{money(totalCost)}</span>
           </p>
           <button
             onClick={save}
             disabled={loading || validItems.length === 0}
-            className="flex items-center gap-2 bg-green-600 hover:bg-green-700 disabled:opacity-40 text-white font-semibold px-5 py-2.5 rounded-lg text-sm transition-colors"
+            className="flex items-center justify-center gap-2 whitespace-nowrap bg-green-600 hover:bg-green-700 disabled:opacity-40 text-white font-semibold px-5 py-2.5 rounded-lg text-sm transition-colors"
           >
             <PackagePlus size={16} />
             {loading ? 'กำลังบันทึก...' : 'บันทึกใบสั่งซื้อ'}
@@ -327,88 +433,75 @@ export default function ReceivingClient({ suppliers, products, purchases }: Prop
       </div>
 
       {/* ประวัติใบสั่งซื้อ */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-x-auto">
+      <div className="bg-white rounded-xl shadow-sm border border-gray-100">
         <div className="px-4 py-3 border-b border-gray-100">
           <h2 className="font-semibold text-gray-900">ประวัติใบสั่งซื้อ</h2>
         </div>
-        <table className="w-full">
-          <thead className="bg-gray-50 border-b border-gray-100">
-            <tr>
-              <th className="text-left text-xs font-medium text-gray-500 uppercase px-4 py-3">เลขที่</th>
-              <th className="text-left text-xs font-medium text-gray-500 uppercase px-4 py-3">วันที่</th>
-              <th className="text-left text-xs font-medium text-gray-500 uppercase px-4 py-3">ซัพพลายเออร์</th>
-              <th className="text-right text-xs font-medium text-gray-500 uppercase px-4 py-3">รายการ</th>
-              <th className="text-right text-xs font-medium text-gray-500 uppercase px-4 py-3">ทุนรวม</th>
-              <th className="text-center text-xs font-medium text-gray-500 uppercase px-4 py-3">สถานะ</th>
-              <th className="px-4 py-3"></th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-50">
-            {purchases.map((p) => (
-              <tr key={p.id} className="hover:bg-gray-50">
-                <td className="px-4 py-3 text-sm font-mono text-gray-600">{p.purchase_number}</td>
-                <td className="px-4 py-3 text-sm text-gray-600">
-                  {new Date(p.created_at).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
-                </td>
-                <td className="px-4 py-3 text-sm text-gray-700">{p.suppliers?.name ?? '—'}</td>
-                <td className="px-4 py-3 text-sm text-gray-600 text-right">{p.purchase_items?.length ?? 0}</td>
-                <td className="px-4 py-3 text-sm font-semibold text-gray-900 text-right">
-                  ฿{p.total_cost.toLocaleString('th-TH', { minimumFractionDigits: 2 })}
-                </td>
-                <td className="px-4 py-3 text-center">
-                  <span className={`inline-flex text-xs px-2 py-0.5 rounded-full font-medium ${
-                    p.status === 'received' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'
-                  }`}>
-                    {p.status === 'received' ? 'รับแล้ว' : 'รอรับสินค้า'}
-                  </span>
-                </td>
-                <td className="px-4 py-3">
-                  <div className="flex items-center gap-2 justify-end">
-                    <Link
-                      href={`/print/purchase/${p.id}`}
-                      target="_blank"
-                      title="พิมพ์ PDF"
-                      className="p-1.5 text-gray-400 hover:text-blue-600 rounded"
-                    >
-                      <Printer size={15} />
-                    </Link>
-                    {p.status === 'pending' && (
-                      <Link
-                        href={`/admin/receiving/${p.id}/edit`}
-                        title="แก้ไขใบสั่งซื้อ"
-                        className="p-1.5 text-gray-400 hover:text-blue-600 rounded"
-                      >
-                        <Pencil size={15} />
-                      </Link>
-                    )}
-                    {p.status === 'pending' && (
-                      <button
-                        onClick={() => removePurchase(p.id, p.purchase_number)}
-                        title="ลบใบสั่งซื้อ"
-                        className="p-1.5 text-gray-400 hover:text-red-600 rounded"
-                      >
-                        <Trash2 size={15} />
-                      </button>
-                    )}
-                    {p.status === 'pending' && (
-                      <Link
-                        href={`/admin/receiving/${p.id}/receive`}
-                        className="flex items-center gap-1 text-xs font-medium bg-blue-600 hover:bg-blue-700 text-white px-2.5 py-1.5 rounded-lg transition-colors"
-                      >
-                        <PackageCheck size={13} /> รับสินค้า
-                      </Link>
-                    )}
-                  </div>
-                </td>
-              </tr>
-            ))}
-            {purchases.length === 0 && (
+
+        {/* ต่ำกว่า lg ใช้การ์ด — เจ็ดคอลัมน์บีบจนชื่อซัพพลายเออร์แตกเป็นคำละบรรทัด
+            และวันที่หักเป็นสามบรรทัด (แบบเดียวกับหน้าเอกสาร) */}
+        <div className="divide-y divide-gray-100 lg:hidden">
+          {purchases.map((p) => (
+            <div key={p.id} className="px-4 py-3">
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="font-mono text-sm text-gray-700">{p.purchase_number}</p>
+                  <p className="mt-0.5 text-xs text-gray-500">
+                    {fmtDate(p.created_at)} · {p.purchase_items?.length ?? 0} รายการ
+                  </p>
+                </div>
+                {statusBadge(p.status)}
+              </div>
+              <p className="mt-1.5 text-sm text-gray-700">{p.suppliers?.name ?? '—'}</p>
+              <div className="mt-2 flex items-center justify-between gap-2">
+                <p className="text-sm font-semibold text-gray-900">฿{money(p.total_cost)}</p>
+                <div className="flex items-center gap-0.5">{purchaseActions(p)}</div>
+              </div>
+            </div>
+          ))}
+          {purchases.length === 0 && (
+            <p className="px-4 py-10 text-center text-sm text-gray-400">ยังไม่มีใบสั่งซื้อ</p>
+          )}
+        </div>
+
+        {/* ตารางยังกว้างกว่าพื้นที่ในช่วง lg ต้น ๆ — ให้เลื่อนในการ์ด ไม่ใช่ดันทั้งหน้า */}
+        <div className="hidden overflow-x-auto lg:block">
+          <table className="w-full">
+            <thead className="bg-gray-50 border-b border-gray-100">
               <tr>
-                <td colSpan={7} className="px-4 py-10 text-center text-sm text-gray-400">ยังไม่มีใบสั่งซื้อ</td>
+                <th className="text-left text-xs font-medium text-gray-500 uppercase px-4 py-3">เลขที่</th>
+                <th className="text-left text-xs font-medium text-gray-500 uppercase px-4 py-3">วันที่</th>
+                <th className="text-left text-xs font-medium text-gray-500 uppercase px-4 py-3">ซัพพลายเออร์</th>
+                <th className="text-right text-xs font-medium text-gray-500 uppercase px-4 py-3">รายการ</th>
+                <th className="text-right text-xs font-medium text-gray-500 uppercase px-4 py-3">ทุนรวม</th>
+                <th className="text-center text-xs font-medium text-gray-500 uppercase px-4 py-3">สถานะ</th>
+                <th className="px-4 py-3"></th>
               </tr>
-            )}
-          </tbody>
-        </table>
+            </thead>
+            <tbody className="divide-y divide-gray-50">
+              {purchases.map((p) => (
+                <tr key={p.id} className="hover:bg-gray-50">
+                  <td className="px-4 py-3 text-sm font-mono text-gray-600">{p.purchase_number}</td>
+                  <td className="px-4 py-3 text-sm text-gray-600 whitespace-nowrap">{fmtDate(p.created_at)}</td>
+                  <td className="px-4 py-3 text-sm text-gray-700">{p.suppliers?.name ?? '—'}</td>
+                  <td className="px-4 py-3 text-sm text-gray-600 text-right">{p.purchase_items?.length ?? 0}</td>
+                  <td className="px-4 py-3 text-sm font-semibold text-gray-900 text-right whitespace-nowrap">
+                    ฿{money(p.total_cost)}
+                  </td>
+                  <td className="px-4 py-3 text-center">{statusBadge(p.status)}</td>
+                  <td className="px-4 py-3">
+                    <div className="flex items-center gap-0.5 justify-end">{purchaseActions(p)}</div>
+                  </td>
+                </tr>
+              ))}
+              {purchases.length === 0 && (
+                <tr>
+                  <td colSpan={7} className="px-4 py-10 text-center text-sm text-gray-400">ยังไม่มีใบสั่งซื้อ</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
 
       {showPicker && (

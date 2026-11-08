@@ -142,6 +142,45 @@ export default function EditPurchaseClient({
     router.refresh()
   }
 
+  /** แถวสินค้าวาดสองชุด (การ์ดจอเล็ก / ตารางจอใหญ่) — ช่องกรอกเลยแยกมาไว้ที่เดียว */
+  const productCell = (it: ItemRow, i: number) => {
+    const p = products.find((x) => x.id === it.product_id)
+    return (
+      <>
+        <ProductPicker
+          products={sortedProducts}
+          value={it.product_id}
+          onChange={(id) => setItem(i, 'product_id', id)}
+          supplierId={supplierId}
+        />
+        {p && <p className="mt-0.5 pl-1"><StockBadge product={p} /></p>}
+      </>
+    )
+  }
+
+  const qtyCell = (it: ItemRow, i: number) => {
+    const p = products.find((x) => x.id === it.product_id)
+    const factor = factorOfRow(p, it.product_unit_id)
+    const qty = parseInt(it.quantity) || 0
+    return (
+      <>
+        <div className="flex items-center gap-1.5">
+          <input type="number" min="1" value={it.quantity} onChange={(e) => setItem(i, 'quantity', e.target.value)} className={qtyInputClass} placeholder="0" />
+          <UnitSelect product={p} value={it.product_unit_id} onChange={(id) => setItem(i, 'product_unit_id', id)} onUnitAdded={addUnit} />
+        </div>
+        {factor > 1 && qty > 0 && (
+          <p className="mt-0.5 pl-1 text-[11px] text-gray-400">
+            เข้าสต็อค {qty * factor} {p?.unit}
+          </p>
+        )}
+      </>
+    )
+  }
+
+  const costCell = (it: ItemRow, i: number) => (
+    <input type="number" min="0" step="0.01" value={it.unit_cost} onChange={(e) => setItem(i, 'unit_cost', e.target.value)} className={inputClass} placeholder="0.00" />
+  )
+
   return (
     <div>
       <Link href="/admin/receiving" className="inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700 mb-4">
@@ -153,7 +192,7 @@ export default function EditPurchaseClient({
         <span className="font-mono">{purchase.purchase_number}</span> · ยังไม่ได้รับของ แก้ได้ทั้งใบ
       </p>
 
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
+      <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 sm:p-5">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">ซัพพลายเออร์</label>
@@ -178,47 +217,67 @@ export default function EditPurchaseClient({
           </button>
         </div>
 
+        {/* ต่ำกว่า lg ใช้การ์ด — ห้าคอลัมน์กินอย่างน้อย ~710px พอหักแถบเมนูซ้าย 224px
+            แล้วตารางลงตัวตั้งแต่จอ ~1000px ขึ้นไป ต่ำกว่านั้นมันดันทั้งหน้าให้เลื่อนแนวนอน */}
+        <div className="space-y-3 lg:hidden">
+          {items.map((it, i) => {
+            const rowTotal = (parseFloat(it.unit_cost) || 0) * (parseInt(it.quantity) || 0)
+            return (
+              <div key={i} className="rounded-xl border border-gray-200 p-3">
+                <div className="flex items-start gap-2">
+                  <div className="min-w-0 flex-1">{productCell(it, i)}</div>
+                  <button
+                    onClick={() => removeRow(i)}
+                    title="ลบรายการ"
+                    className="shrink-0 p-2 text-gray-300 hover:text-red-500 hover:bg-gray-50 rounded-lg"
+                  >
+                    <Trash2 size={16} />
+                  </button>
+                </div>
+
+                <div className="mt-2.5">
+                  <span className="mb-1 block text-xs font-medium text-gray-500">จำนวน / หน่วย</span>
+                  {qtyCell(it, i)}
+                </div>
+
+                <div className="mt-2.5 flex items-end gap-3">
+                  <div className="min-w-0 flex-1">
+                    <span className="mb-1 block text-xs font-medium text-gray-500">ทุน/หน่วยที่สั่ง</span>
+                    {costCell(it, i)}
+                  </div>
+                  <p className="shrink-0 pb-2 text-sm font-medium text-gray-900">
+                    <span className="text-xs font-normal text-gray-500">รวม </span>
+                    {rowTotal > 0 ? `฿${rowTotal.toFixed(2)}` : '—'}
+                  </p>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+
         {/* ตารางแคบพอ ไม่ต้อง overflow-x-auto (dropdown ของ ProductPicker ลอยที่ body อยู่แล้ว) */}
-        <div>
+        <div className="hidden lg:block">
           <table className="w-full">
             <thead>
-              <tr className="text-xs font-medium text-gray-500 uppercase">
-                <th className="text-left pb-2 pr-2 min-w-56">สินค้า</th>
-                <th className="text-left pb-2 pr-2 min-w-56 whitespace-nowrap">จำนวน / หน่วย</th>
-                <th className="text-left pb-2 pr-2 w-28">ทุน/หน่วยที่สั่ง</th>
-                <th className="text-right pb-2 w-24">รวม</th>
+              <tr className="text-xs text-gray-500 uppercase">
+                {/* font-medium ต้องอยู่ที่ th เอง — เบราว์เซอร์ตั้ง th เป็นตัวหนาไว้ในสไตล์ของตัวเอง
+                    ซึ่งชนะค่าที่สืบทอดมาจาก tr หัวที่ตัดบรรทัดอย่าง "ทุน/หน่วยที่สั่ง" เลยเป็นตัวหนา
+                    แล้ววรรณยุกต์ไปเบียดบรรทัดบนจนดูเหมือนหัวขาด */}
+                <th className="text-left font-medium pb-2 pr-2 min-w-56">สินค้า</th>
+                <th className="text-left font-medium pb-2 pr-2 min-w-56 whitespace-nowrap">จำนวน / หน่วย</th>
+                <th className="text-left font-medium pb-2 pr-2 w-28">ทุน/หน่วยที่สั่ง</th>
+                <th className="text-right font-medium pb-2 w-24">รวม</th>
                 <th className="pb-2 w-8"></th>
               </tr>
             </thead>
             <tbody>
               {items.map((it, i) => {
                 const rowTotal = (parseFloat(it.unit_cost) || 0) * (parseInt(it.quantity) || 0)
-                const p = products.find((x) => x.id === it.product_id)
                 return (
                   <tr key={i}>
-                    <td className="pr-2 py-1.5 align-top">
-                      <ProductPicker
-                        products={sortedProducts}
-                        value={it.product_id}
-                        onChange={(id) => setItem(i, 'product_id', id)}
-                        supplierId={supplierId}
-                      />
-                      {p && <p className="mt-0.5 pl-1"><StockBadge product={p} /></p>}
-                    </td>
-                    <td className="pr-2 py-1.5 align-top">
-                      <div className="flex items-center gap-1.5">
-                        <input type="number" min="1" value={it.quantity} onChange={(e) => setItem(i, 'quantity', e.target.value)} className={qtyInputClass} placeholder="0" />
-                        <UnitSelect product={p} value={it.product_unit_id} onChange={(id) => setItem(i, 'product_unit_id', id)} onUnitAdded={addUnit} />
-                      </div>
-                      {factorOfRow(p, it.product_unit_id) > 1 && (parseInt(it.quantity) || 0) > 0 && (
-                        <p className="mt-0.5 pl-1 text-[11px] text-gray-400">
-                          เข้าสต็อค {(parseInt(it.quantity) || 0) * factorOfRow(p, it.product_unit_id)} {p?.unit}
-                        </p>
-                      )}
-                    </td>
-                    <td className="pr-2 py-1.5 align-top">
-                      <input type="number" min="0" step="0.01" value={it.unit_cost} onChange={(e) => setItem(i, 'unit_cost', e.target.value)} className={inputClass} placeholder="0.00" />
-                    </td>
+                    <td className="pr-2 py-1.5 align-top">{productCell(it, i)}</td>
+                    <td className="pr-2 py-1.5 align-top">{qtyCell(it, i)}</td>
+                    <td className="pr-2 py-1.5 align-top">{costCell(it, i)}</td>
                     <td className="py-1.5 pt-4 align-top text-sm text-right font-medium text-gray-900">
                       {rowTotal > 0 ? `฿${rowTotal.toFixed(2)}` : '—'}
                     </td>
@@ -234,11 +293,12 @@ export default function EditPurchaseClient({
           </table>
         </div>
 
-        <button onClick={() => setItems([...items, newItem()])} className="flex items-center gap-1.5 text-sm text-blue-600 hover:text-blue-700 font-medium mt-2">
+        <button onClick={() => setItems([...items, newItem()])} className="flex items-center gap-1.5 text-sm text-blue-600 hover:text-blue-700 font-medium mt-3">
           <Plus size={14} /> เพิ่มรายการ
         </button>
 
-        <div className="flex items-center justify-between mt-4 pt-4 border-t border-gray-100">
+        {/* จอเล็กเรียงบนล่าง — เดิมยอดรวมกับปุ่มเบียดกันจนชื่อปุ่มตัดเป็นสองบรรทัด */}
+        <div className="flex flex-col gap-3 mt-4 pt-4 border-t border-gray-100 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-sm text-gray-500">
             {validItems.length} รายการ · ทุนรวม{' '}
             <span className="font-bold text-gray-900">฿{totalCost.toLocaleString('th-TH', { minimumFractionDigits: 2 })}</span>
@@ -246,7 +306,7 @@ export default function EditPurchaseClient({
           <button
             onClick={save}
             disabled={loading || validItems.length === 0}
-            className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-40 text-white font-semibold px-5 py-2.5 rounded-lg text-sm transition-colors"
+            className="flex items-center justify-center gap-2 whitespace-nowrap bg-blue-600 hover:bg-blue-700 disabled:opacity-40 text-white font-semibold px-5 py-2.5 rounded-lg text-sm transition-colors"
           >
             <Save size={16} />
             {loading ? 'กำลังบันทึก...' : 'บันทึกการแก้ไข'}
