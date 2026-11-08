@@ -6,7 +6,7 @@ import { useProgress } from '@/lib/use-progress'
 import { createClient } from '@/lib/supabase/client'
 import { AlertTriangle, ArrowLeft, CalendarPlus, Check, Eye, Plus, Printer, Save, Send, Stethoscope, Trash2, X, Tag } from 'lucide-react'
 import toast from 'react-hot-toast'
-import { SPECIES_LABELS, VISIT_STATUS_LABELS, type Diagnosis, type PetVaccination, type Vaccine, type Visit, type VisitItem } from '@/lib/types'
+import { SPECIES_LABELS, VISIT_STATUS_LABELS, type Diagnosis, type PetVaccination, type Vaccine, type Visit, type VisitAttachment, type VisitItem } from '@/lib/types'
 import { petAge, petWarnings } from '@/lib/pets'
 import { isClinicOnly, isVaccine, isVolumeDosed, billedMl } from '@/lib/clinic'
 import { computeNextDue } from '@/lib/vaccines'
@@ -17,6 +17,7 @@ import {
 import DiagnosisSelect from '@/components/DiagnosisSelect'
 import { visitDiagnosisText, type DiagnosisLink } from '@/lib/diagnoses'
 import VaccineSection from '@/app/admin/pets/[id]/VaccineSection'
+import VisitAttachments from './VisitAttachments'
 import { confirmDialog } from '@/lib/confirm'
 import { canExamine } from '@/lib/roles'
 
@@ -76,6 +77,7 @@ export default function VisitDetail({
   vaccines,
   vaccineGraceDays,
   diagnosisCatalog,
+  attachments,
 }: {
   visit: Visit
   products: DispensableProduct[]
@@ -89,6 +91,8 @@ export default function VisitDetail({
   vaccineGraceDays: number
   /** ชื่อโรคทั้งหมดในระบบ — ให้เลือก/ค้นหาในช่อง Assessment */
   diagnosisCatalog: Diagnosis[]
+  /** รูปแนบของใบนี้ (มี signed URL มาแล้วจากฝั่ง server) */
+  attachments: VisitAttachment[]
 }) {
   const { refresh, push } = useProgress()
   const [saving, setSaving] = useState(false)
@@ -1056,6 +1060,15 @@ export default function VisitDetail({
         </div>
       </div>
       </fieldset>
+
+      {/* รูปแนบ — แนบย้อนหลังได้ และแคชเชียร์แนบได้ด้วย จึงอยู่นอก fieldset ที่ปิดตาม readOnly */}
+      <VisitAttachments
+        visitId={visit.id}
+        initial={attachments}
+        userId={userId}
+        role={role}
+        locked={visit.status === 'cancelled'}
+      />
 
       {/* Service Fee — ค่าบริการ/ค่าหัตถการ (สินค้าที่ตั้ง is_service) */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 mb-4">

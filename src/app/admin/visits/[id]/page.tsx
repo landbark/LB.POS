@@ -1,8 +1,10 @@
 import { notFound } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { fetchAll } from '@/lib/supabase/fetch-all'
 import VisitDetail from './VisitDetail'
 import { graceDaysFrom } from '@/lib/vaccines'
+import type { VisitAttachment } from '@/lib/types'
 
 export default async function VisitPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
@@ -24,7 +26,7 @@ export default async function VisitPage({ params }: { params: Promise<{ id: stri
 
   if (!visit) notFound()
 
-  const [products, { data: history }, { data: vaccinations }, { data: vaccines }, { data: diagnosisCatalog }, { data: profile }, { data: notifySettings }] = await Promise.all([
+  const [products, { data: history }, { data: vaccinations }, { data: vaccines }, { data: diagnosisCatalog }, { data: profile }, { data: notifySettings }, { data: attachmentRows }] = await Promise.all([
     // ไล่ดึงทีละหน้า — supabase ตัดที่ 1000 แถว ยาหลายตัวเรียงตามชื่อแล้วตกขอบหายไปจากช่องสั่งจ่าย
     fetchAll((from, to) =>
       supabase
@@ -49,7 +51,20 @@ export default async function VisitPage({ params }: { params: Promise<{ id: stri
     supabase.from('profiles').select('role').eq('id', user?.id ?? '').single(),
     // เลยกำหนดเกินกี่วันแล้วเลิกขึ้นแถบเตือนวัคซีน — ตั้งไว้ที่หน้าแจ้งเตือน
     supabase.from('notify_settings').select('*').eq('id', 1).maybeSingle(),
+    // รูปแนบ — แยก query ไว้ ไม่ embed ในก้อนบน เพื่อให้หน้านี้ยังเปิดได้ถ้ายังไม่ได้รัน migration
+    supabase.from('visit_attachments').select('*').eq('visit_id', id).order('created_at'),
   ])
+
+  // รูปแนบอยู่ในบัคเก็ตส่วนตัว — ต้องออก URL ชั่วคราวด้วย service role (แบบเดียวกับสลิปโอนเงิน)
+  const rawAttachments = (attachmentRows ?? []) as VisitAttachment[]
+  let attachments: VisitAttachment[] = rawAttachments
+  if (rawAttachments.length > 0) {
+    const { data: signed } = await createAdminClient()
+      .storage.from('visit-attachments')
+      .createSignedUrls(rawAttachments.map((a) => a.path), 60 * 60 * 2)
+    const urlByPath = new Map((signed ?? []).map((s) => [s.path, s.signedUrl]))
+    attachments = rawAttachments.map((a) => ({ ...a, url: urlByPath.get(a.path) ?? null }))
+  }
 
   // น้ำหนักครั้งก่อน — ไว้เทียบว่าขึ้นหรือลง
   const previous = (history ?? []).find((h) => h.weight != null)
@@ -67,6 +82,7 @@ export default async function VisitPage({ params }: { params: Promise<{ id: stri
       vaccines={vaccines ?? []}
       vaccineGraceDays={graceDaysFrom(notifySettings)}
       diagnosisCatalog={diagnosisCatalog ?? []}
+      attachments={attachments}
     />
   )
 }

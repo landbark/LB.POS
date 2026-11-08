@@ -399,6 +399,21 @@ export interface Visit {
   visit_diagnoses?: VisitDiagnosis[]
 }
 
+/** รูปที่แนบในเวชระเบียน (แผล/ผลแล็บ/ฟิล์ม/เอกสาร) — ไฟล์อยู่ในบัคเก็ตส่วนตัว visit-attachments */
+export interface VisitAttachment {
+  id: string
+  visit_id: string
+  path: string
+  caption: string | null
+  width: number | null
+  height: number | null
+  size: number | null
+  uploaded_by: string | null
+  created_at: string
+  /** signed URL ที่ออกให้ฝั่ง server — ไม่ได้เก็บในตาราง */
+  url?: string | null
+}
+
 /** ความถี่การให้ยา — sid/bid/tid/qid = วันละ 1/2/3/4 ครั้ง, q_h = ทุกๆ n ชม., prn = เมื่อมีอาการ */
 export type Frequency = 'sid' | 'bid' | 'tid' | 'qid' | 'q_h' | 'prn'
 /** ac = ก่อนอาหาร, pc = หลังอาหาร, wm = พร้อมอาหาร */
