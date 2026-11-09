@@ -414,6 +414,28 @@ export interface VisitAttachment {
   url?: string | null
 }
 
+/**
+ * เอกสารคลินิกที่ออกให้สัตว์ตัวหนึ่ง (ใบส่งตัว / ใบยินยอม / ใบรับรอง ฯลฯ)
+ * ช่องของแต่ละชนิดอยู่ใน data (JSONB) — นิยามช่องดูที่ src/lib/clinicDocs.ts
+ * แก้/ลบได้ 24 ชม. แรกเท่านั้น (trigger ที่ DB บังคับ)
+ */
+export interface ClinicDocument {
+  id: string
+  doc_number: string
+  doc_type: string
+  pet_id: string
+  visit_id: string | null
+  customer_id: string | null
+  data: Record<string, string>
+  summary: string | null
+  created_by: string | null
+  created_at: string
+  updated_by: string | null
+  updated_at: string
+  pets?: Pet
+  profiles?: { name: string } | null
+}
+
 /** ความถี่การให้ยา — sid/bid/tid/qid = วันละ 1/2/3/4 ครั้ง, q_h = ทุกๆ n ชม., prn = เมื่อมีอาการ */
 export type Frequency = 'sid' | 'bid' | 'tid' | 'qid' | 'q_h' | 'prn'
 /** ac = ก่อนอาหาร, pc = หลังอาหาร, wm = พร้อมอาหาร */

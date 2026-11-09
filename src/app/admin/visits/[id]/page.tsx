@@ -4,7 +4,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { fetchAll } from '@/lib/supabase/fetch-all'
 import VisitDetail from './VisitDetail'
 import { graceDaysFrom } from '@/lib/vaccines'
-import type { VisitAttachment } from '@/lib/types'
+import type { ClinicDocument, VisitAttachment } from '@/lib/types'
 
 export default async function VisitPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
@@ -26,7 +26,7 @@ export default async function VisitPage({ params }: { params: Promise<{ id: stri
 
   if (!visit) notFound()
 
-  const [products, { data: history }, { data: vaccinations }, { data: vaccines }, { data: diagnosisCatalog }, { data: profile }, { data: notifySettings }, { data: attachmentRows }] = await Promise.all([
+  const [products, { data: history }, { data: vaccinations }, { data: vaccines }, { data: diagnosisCatalog }, { data: profile }, { data: notifySettings }, { data: attachmentRows }, { data: docs }] = await Promise.all([
     // ไล่ดึงทีละหน้า — supabase ตัดที่ 1000 แถว ยาหลายตัวเรียงตามชื่อแล้วตกขอบหายไปจากช่องสั่งจ่าย
     fetchAll((from, to) =>
       supabase
@@ -53,6 +53,13 @@ export default async function VisitPage({ params }: { params: Promise<{ id: stri
     supabase.from('notify_settings').select('*').eq('id', 1).maybeSingle(),
     // รูปแนบ — แยก query ไว้ ไม่ embed ในก้อนบน เพื่อให้หน้านี้ยังเปิดได้ถ้ายังไม่ได้รัน migration
     supabase.from('visit_attachments').select('*').eq('visit_id', id).order('created_at'),
+    // เอกสารคลินิกของสัตว์ตัวนี้ (ติดตาม HN ไม่ใช่ติดใบตรวจ) — แยก query เผื่อยังไม่ได้รัน migration
+    supabase
+      .from('clinic_documents')
+      .select('*')
+      .eq('pet_id', visit.pet_id)
+      .order('created_at', { ascending: false })
+      .limit(20),
   ])
 
   // รูปแนบอยู่ในบัคเก็ตส่วนตัว — ต้องออก URL ชั่วคราวด้วย service role (แบบเดียวกับสลิปโอนเงิน)
@@ -83,6 +90,7 @@ export default async function VisitPage({ params }: { params: Promise<{ id: stri
       vaccineGraceDays={graceDaysFrom(notifySettings)}
       diagnosisCatalog={diagnosisCatalog ?? []}
       attachments={attachments}
+      docs={(docs ?? []) as ClinicDocument[]}
     />
   )
 }

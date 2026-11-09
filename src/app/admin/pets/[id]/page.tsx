@@ -1,13 +1,14 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
-import { ArrowLeft, AlertTriangle, Stethoscope, FileText, FileSignature, Send, Tag } from 'lucide-react'
+import { ArrowLeft, AlertTriangle, Stethoscope, Tag } from 'lucide-react'
 import { createClient } from '@/lib/supabase/server'
-import { SPECIES_LABELS, VISIT_STATUS_LABELS, type Pet, type VisitStatus } from '@/lib/types'
+import { SPECIES_LABELS, VISIT_STATUS_LABELS, type ClinicDocument, type Pet, type VisitStatus } from '@/lib/types'
 import { ageAt, petAge } from '@/lib/pets'
 import { visitDiagnosisText } from '@/lib/diagnoses'
 import VaccineSection from './VaccineSection'
 import { graceDaysFrom } from '@/lib/vaccines'
 import TransferOwnerButton from './TransferOwnerButton'
+import ClinicDocsSection from '@/components/ClinicDocsSection'
 
 const fmtDate = (d: string) =>
   new Date(d).toLocaleDateString('th-TH', { timeZone: 'Asia/Bangkok', day: 'numeric', month: 'short', year: '2-digit' })
@@ -21,7 +22,7 @@ export default async function PetDetailPage({ params }: { params: Promise<{ id: 
   if (!pet) notFound()
   const p = pet as Pet
 
-  const [{ data: visits }, { data: vaccinations }, { data: vaccines }, { data: customers }, { data: notifySettings }] = await Promise.all([
+  const [{ data: visits }, { data: vaccinations }, { data: vaccines }, { data: customers }, { data: notifySettings }, { data: profile }, { data: docs }] = await Promise.all([
     supabase
       .from('visits')
       .select('id, visit_number, visit_date, status, diagnosis, treatment, weight, visit_diagnoses(diagnoses(*))')
@@ -37,6 +38,9 @@ export default async function PetDetailPage({ params }: { params: Promise<{ id: 
     supabase.from('customers').select('id, name, phone').order('name'),
     // เลยกำหนดเกินกี่วันแล้วเลิกขึ้นแถบเตือนวัคซีน — ตั้งไว้ที่หน้าแจ้งเตือน
     supabase.from('notify_settings').select('*').eq('id', 1).maybeSingle(),
+    supabase.from('profiles').select('role').eq('id', user?.id ?? '').maybeSingle(),
+    // เอกสารคลินิกที่เคยออกให้สัตว์ตัวนี้ — แยก query เผื่อยังไม่ได้รัน migration
+    supabase.from('clinic_documents').select('*').eq('pet_id', id).order('created_at', { ascending: false }).limit(50),
   ])
 
   const detail = [
@@ -104,22 +108,15 @@ export default async function PetDetailPage({ params }: { params: Promise<{ id: 
         {p.notes && <p className="text-gray-600">หมายเหตุ: {p.notes}</p>}
       </div>
 
-      {/* เอกสารคลินิก — พิมพ์/กรอกเองได้ ดึงข้อมูลสัตว์+เจ้าของมาให้ */}
+      {/* เอกสารคลินิก — กรอกในระบบ เซฟติด HN แล้วพิมพ์/บันทึกเป็น PDF */}
       <div className="bg-white rounded-xl border border-gray-100 p-4 mb-6">
-        <h2 className="text-sm font-semibold text-gray-700 mb-2 flex items-center gap-2">
-          <FileText size={15} className="text-gray-400" /> เอกสาร (พิมพ์ได้)
-        </h2>
-        <div className="flex flex-wrap gap-2">
-          <a href={`/print/treatment-form/${p.id}`} target="_blank" className="flex items-center gap-1.5 border border-gray-300 text-gray-700 text-sm px-3 py-2 rounded-lg hover:bg-gray-50">
-            <FileText size={15} /> ใบสรุปการรักษา
-          </a>
-          <a href={`/print/consent/${p.id}`} target="_blank" className="flex items-center gap-1.5 border border-gray-300 text-gray-700 text-sm px-3 py-2 rounded-lg hover:bg-gray-50">
-            <FileSignature size={15} /> ใบยินยอมวางยา/ผ่าตัด
-          </a>
-          <a href={`/print/referral/${p.id}`} target="_blank" className="flex items-center gap-1.5 border border-gray-300 text-gray-700 text-sm px-3 py-2 rounded-lg hover:bg-gray-50">
-            <Send size={15} /> ใบส่งตัว
-          </a>
-          <a href={`/print/pet-label/${p.id}`} target="_blank" className="flex items-center gap-1.5 border border-gray-300 text-gray-700 text-sm px-3 py-2 rounded-lg hover:bg-gray-50">
+        <ClinicDocsSection
+          petId={p.id}
+          docs={(docs ?? []) as ClinicDocument[]}
+          role={profile?.role ?? 'cashier'}
+        />
+        <div className="mt-3 pt-3 border-t border-gray-100">
+          <a href={`/print/pet-label/${p.id}`} target="_blank" className="inline-flex items-center gap-1.5 border border-gray-300 text-gray-700 text-sm px-3 py-2 rounded-lg hover:bg-gray-50">
             <Tag size={15} /> ฉลากสัตว์ป่วย
           </a>
         </div>

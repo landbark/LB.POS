@@ -6,7 +6,7 @@ import { useProgress } from '@/lib/use-progress'
 import { createClient } from '@/lib/supabase/client'
 import { AlertTriangle, ArrowLeft, CalendarPlus, Check, Eye, Plus, Printer, Save, Send, Stethoscope, Trash2, X, Tag } from 'lucide-react'
 import toast from 'react-hot-toast'
-import { SPECIES_LABELS, VISIT_STATUS_LABELS, type Diagnosis, type PetVaccination, type Vaccine, type Visit, type VisitAttachment, type VisitItem } from '@/lib/types'
+import { SPECIES_LABELS, VISIT_STATUS_LABELS, type ClinicDocument, type Diagnosis, type PetVaccination, type Vaccine, type Visit, type VisitAttachment, type VisitItem } from '@/lib/types'
 import { petAge, petWarnings } from '@/lib/pets'
 import { isClinicOnly, isVaccine, isVolumeDosed, billedMl } from '@/lib/clinic'
 import { computeNextDue } from '@/lib/vaccines'
@@ -18,6 +18,7 @@ import DiagnosisSelect from '@/components/DiagnosisSelect'
 import { visitDiagnosisText, type DiagnosisLink } from '@/lib/diagnoses'
 import VaccineSection from '@/app/admin/pets/[id]/VaccineSection'
 import VisitAttachments from './VisitAttachments'
+import ClinicDocsSection from '@/components/ClinicDocsSection'
 import { confirmDialog } from '@/lib/confirm'
 import { canExamine } from '@/lib/roles'
 
@@ -78,6 +79,7 @@ export default function VisitDetail({
   vaccineGraceDays,
   diagnosisCatalog,
   attachments,
+  docs,
 }: {
   visit: Visit
   products: DispensableProduct[]
@@ -93,6 +95,8 @@ export default function VisitDetail({
   diagnosisCatalog: Diagnosis[]
   /** รูปแนบของใบนี้ (มี signed URL มาแล้วจากฝั่ง server) */
   attachments: VisitAttachment[]
+  /** เอกสารคลินิกที่เคยออกให้สัตว์ตัวนี้ (ใบส่งตัว/ใบยินยอม/ใบรับรอง) — ใหม่→เก่า */
+  docs: ClinicDocument[]
 }) {
   const { refresh, push } = useProgress()
   const [saving, setSaving] = useState(false)
@@ -459,8 +463,14 @@ export default function VisitDetail({
     refresh()
   }
 
-  // ยกเลิกเวชระเบียนที่เปิดผิด (เฉพาะที่ยังไม่เก็บเงิน) — เก็บ record ไว้แต่ mark เป็นยกเลิก
+  // ยกเลิกเวชระเบียนที่เปิดผิด — ได้เฉพาะก่อนส่งเข้าคิวเก็บเงิน (waiting/open)
+  // ส่งเข้าคิวแล้วใบไปโผล่ที่หน้าขายของแคชเชียร์ ยกเลิกทิ้งเงียบ ๆ ไม่ได้ ต้องกด "ดึงกลับมาแก้ไข" ก่อน
+  // (ตรงกับ canCancel ด้านล่าง ที่คุมปุ่ม)
   async function cancelVisit() {
+    if (visit.status !== 'waiting' && visit.status !== 'open') {
+      toast.error('ส่งเข้าคิวเก็บเงินแล้ว ยกเลิกไม่ได้ — กดดึงกลับมาแก้ไขก่อน')
+      return
+    }
     if (!(await confirmDialog({ message: 'ยกเลิกเวชระเบียนใบนี้?\nใช้กรณีเปิดผิดตัว/ผิดคน — จะหลุดจากคิวและไม่นับเป็นการรักษา' })).confirmed) return
     const supabase = createClient()
     const { error } = await supabase.from('visits').update({ status: 'cancelled' }).eq('id', visit.id)
@@ -1114,6 +1124,17 @@ export default function VisitDetail({
         </div>
       )}
 
+      {/* เอกสารคลินิก — ใบส่งตัว/ใบยินยอม/ใบรับรอง: กรอก เซฟติด HN แล้วพิมพ์ */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 mb-4">
+        <ClinicDocsSection
+          petId={visit.pet_id}
+          visitId={visit.id}
+          docs={docs}
+          role={role}
+          highlightVisitId={visit.id}
+        />
+      </div>
+
       {/* ส่งไปเก็บเงิน */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 mb-4">
         {visit.status === 'waiting' && (
@@ -1200,8 +1221,8 @@ export default function VisitDetail({
         </div>
       )}
 
-      {/* ยกเลิกใบที่เปิดผิด — เฉพาะที่ยังไม่เก็บเงิน + มีสิทธิ์แก้ */}
-      {canEdit && visit.status !== 'paid' && visit.status !== 'cancelled' && (
+      {/* ยกเลิกใบที่เปิดผิด — เฉพาะใบที่ยังไม่ส่งเข้าคิวเก็บเงิน + มีสิทธิ์แก้ */}
+      {canEdit && (visit.status === 'waiting' || visit.status === 'open') && (
         <div className="text-center mt-6">
           <button onClick={cancelVisit} className="text-sm text-gray-400 hover:text-red-600">
             ยกเลิกเวชระเบียนใบนี้ (เปิดผิด)
