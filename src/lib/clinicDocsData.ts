@@ -59,7 +59,7 @@ export async function loadDocContext(
 
   const customer = visit?.customers ?? pet.customers ?? null
 
-  const [{ data: history }, { data: vaccinations }, { data: address }] = await Promise.all([
+  const [{ data: history }, { data: vaccinations }, { data: ownerRow }, { data: address }] = await Promise.all([
     supabase
       .from('visits')
       .select('visit_date, diagnosis, treatment, visit_diagnoses(diagnoses(*))')
@@ -69,6 +69,11 @@ export async function loadDocContext(
       .order('visit_date', { ascending: false })
       .limit(5),
     supabase.from('pet_vaccinations').select('*').eq('pet_id', resolvedPetId).order('dose_date', { ascending: false }),
+    // ที่อยู่แบบข้อความของลูกค้า — แยก query เผื่อยังไม่ได้รัน migration ที่เพิ่มคอลัมน์นี้
+    customer
+      ? supabase.from('customers').select('address').eq('id', customer.id).maybeSingle()
+      : Promise.resolve({ data: null }),
+    // ไม่มีที่อยู่ข้อความค่อยถอยไปใช้ที่อยู่จัดส่งของร้านออนไลน์
     customer
       ? supabase
           .from('customer_addresses')
@@ -102,9 +107,10 @@ export async function loadDocContext(
       ? {
           name: customer.name,
           phone: customer.phone ?? null,
-          address: addr
-            ? [addr.address_line, addr.subdistrict, addr.district, addr.province, addr.postal_code].filter(Boolean).join(' ')
-            : null,
+          address: (ownerRow as { address?: string | null } | null)?.address?.trim()
+            || (addr
+              ? [addr.address_line, addr.subdistrict, addr.district, addr.province, addr.postal_code].filter(Boolean).join(' ')
+              : null),
         }
       : null,
     visit,

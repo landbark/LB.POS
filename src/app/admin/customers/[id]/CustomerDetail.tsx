@@ -4,7 +4,7 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { AlertTriangle, ArrowLeft, Check, PawPrint, Plus, Receipt, Stethoscope, X } from 'lucide-react'
+import { AlertTriangle, ArrowLeft, Check, MapPin, Pencil, PawPrint, Plus, Receipt, Stethoscope, X } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { SPECIES_LABELS, VISIT_STATUS_LABELS, type Breed, type Customer, type Pet, type PetSpecies, type VisitStatus } from '@/lib/types'
 import { ageAt, petAge } from '@/lib/pets'
@@ -62,6 +62,30 @@ export default function CustomerDetail({
   const [adding, setAdding] = useState(false)
   const [form, setForm] = useState(emptyPet)
   const [saving, setSaving] = useState(false)
+  // แก้ชื่อ/เบอร์/ที่อยู่ของเจ้าของได้จากหน้านี้เลย ไม่ต้องย้อนกลับไปหน้ารายชื่อลูกค้า
+  const [editing, setEditing] = useState(false)
+  const [owner, setOwner] = useState({ name: customer.name, phone: customer.phone, address: customer.address ?? '' })
+
+  async function saveCustomer() {
+    if (!owner.name.trim() || !owner.phone.trim()) {
+      toast.error('กรุณาใส่ชื่อและเบอร์โทร')
+      return
+    }
+    setSaving(true)
+    const supabase = createClient()
+    const { error } = await supabase
+      .from('customers')
+      .update({ name: owner.name.trim(), phone: owner.phone.trim(), address: owner.address.trim() || null })
+      .eq('id', customer.id)
+    setSaving(false)
+    if (error) {
+      toast.error(error.code === '23505' ? 'มีลูกค้าเบอร์นี้อยู่แล้ว' : 'บันทึกไม่สำเร็จ')
+      return
+    }
+    toast.success('บันทึกข้อมูลลูกค้าแล้ว')
+    setEditing(false)
+    router.refresh()
+  }
 
   function set<K extends keyof typeof form>(key: K, value: (typeof form)[K]) {
     setForm((prev) => ({ ...prev, [key]: value }))
@@ -101,18 +125,66 @@ export default function CustomerDetail({
 
   return (
     <div className="max-w-4xl">
-      <div className="flex items-center gap-3 mb-4">
+      <div className="flex items-start gap-3 mb-4">
         <Link href="/admin/customers" className="p-1.5 text-gray-400 hover:text-gray-700 rounded">
           <ArrowLeft size={18} />
         </Link>
-        <div>
+        <div className="min-w-0 flex-1">
           <h1 className="text-2xl font-bold text-gray-900">{customer.name}</h1>
           <p className="text-sm text-gray-500 font-mono">
             {customer.hn && <span className="text-gray-700 font-semibold mr-2">HN {customer.hn}</span>}
             {customer.phone}
           </p>
+          {customer.address && (
+            <p className="text-sm text-gray-500 flex items-start gap-1.5 mt-1">
+              <MapPin size={14} className="text-gray-400 shrink-0 mt-0.5" />
+              <span className="whitespace-pre-line">{customer.address}</span>
+            </p>
+          )}
         </div>
+        {!editing && (
+          <button
+            onClick={() => { setOwner({ name: customer.name, phone: customer.phone, address: customer.address ?? '' }); setEditing(true) }}
+            className="shrink-0 flex items-center gap-1.5 border border-gray-300 text-gray-600 text-sm px-3 py-1.5 rounded-lg hover:bg-gray-50"
+          >
+            <Pencil size={14} /> แก้ไขข้อมูล
+          </button>
+        )}
       </div>
+
+      {/* แก้ชื่อ / เบอร์ / ที่อยู่ */}
+      {editing && (
+        <div className="bg-gray-50 rounded-xl p-4 mb-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className={labelClass}>ชื่อลูกค้า *</label>
+              <input type="text" autoFocus value={owner.name} onChange={(e) => setOwner({ ...owner, name: e.target.value })} className={inputClass} />
+            </div>
+            <div>
+              <label className={labelClass}>เบอร์โทร *</label>
+              <input type="tel" value={owner.phone} onChange={(e) => setOwner({ ...owner, phone: e.target.value })} className={inputClass} />
+            </div>
+            <div className="sm:col-span-2">
+              <label className={labelClass}>ที่อยู่</label>
+              <textarea
+                rows={2}
+                value={owner.address}
+                onChange={(e) => setOwner({ ...owner, address: e.target.value })}
+                className={inputClass}
+                placeholder="จดคร่าว ๆ ได้ เช่น ม.3 ต.บ้านใหม่ อ.เมือง — ใช้เติมลงใบส่งตัว/ใบยินยอมให้อัตโนมัติ"
+              />
+            </div>
+          </div>
+          <div className="flex gap-2 mt-3">
+            <button onClick={saveCustomer} disabled={saving} className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-sm font-medium px-4 py-2 rounded-lg">
+              <Check size={14} /> {saving ? 'บันทึก...' : 'บันทึก'}
+            </button>
+            <button onClick={() => setEditing(false)} className="flex items-center gap-1.5 border border-gray-300 text-gray-600 text-sm px-4 py-2 rounded-lg">
+              <X size={14} /> ยกเลิก
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* แต้ม / เครดิต / ยอดซื้อ */}
       <div className="grid grid-cols-3 gap-3 mb-6">

@@ -10,7 +10,7 @@ import toast from 'react-hot-toast'
 import type { Customer } from '@/lib/types'
 import { confirmDialog } from '@/lib/confirm'
 
-const emptyForm = { name: '', phone: '' }
+const emptyForm = { name: '', phone: '', address: '' }
 
 export default function CustomersClient({
   customers,
@@ -41,7 +41,7 @@ export default function CustomersClient({
   function startEdit(c: Customer) {
     setEditingId(c.id)
     setShowAdd(false)
-    setForm({ name: c.name, phone: c.phone })
+    setForm({ name: c.name, phone: c.phone, address: c.address ?? '' })
   }
 
   function cancel() {
@@ -57,7 +57,7 @@ export default function CustomersClient({
     }
     setLoading(true)
     const supabase = createClient()
-    const payload = { name: form.name.trim(), phone: form.phone.trim() }
+    const payload = { name: form.name.trim(), phone: form.phone.trim(), address: form.address.trim() || null }
 
     const { error } = editingId
       ? await supabase.from('customers').update(payload).eq('id', editingId)
@@ -97,6 +97,10 @@ export default function CustomersClient({
         <div>
           <label className="block text-xs font-medium text-gray-600 mb-1">เบอร์โทร *</label>
           <input type="tel" value={form.phone} onChange={(e) => set('phone', e.target.value)} className={inputClass} placeholder="08x-xxx-xxxx" />
+        </div>
+        <div className="sm:col-span-2">
+          <label className="block text-xs font-medium text-gray-600 mb-1">ที่อยู่</label>
+          <textarea rows={2} value={form.address} onChange={(e) => set('address', e.target.value)} className={inputClass} placeholder="จดคร่าว ๆ ได้ เช่น ม.3 ต.บ้านใหม่ อ.เมือง" />
         </div>
       </div>
       <div className="flex gap-2 mt-3">

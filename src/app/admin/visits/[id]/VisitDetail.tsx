@@ -8,7 +8,7 @@ import { AlertTriangle, ArrowLeft, CalendarPlus, Check, Eye, Plus, Printer, Save
 import toast from 'react-hot-toast'
 import { SPECIES_LABELS, VISIT_STATUS_LABELS, type ClinicDocument, type Diagnosis, type PetVaccination, type Vaccine, type Visit, type VisitAttachment, type VisitItem } from '@/lib/types'
 import { petAge, petWarnings } from '@/lib/pets'
-import { isClinicOnly, isVaccine, isVolumeDosed, billedMl } from '@/lib/clinic'
+import { canCancelVisit, isClinicOnly, isVaccine, isVolumeDosed, billedMl } from '@/lib/clinic'
 import { computeNextDue } from '@/lib/vaccines'
 import {
   FREQUENCY_OPTIONS, FOOD_OPTIONS, suggestedQuantity, sigText, labelName, labelIndication,
@@ -139,6 +139,7 @@ export default function VisitDetail({
   const examinedByOther = visit.status === 'open' && !!visit.vet_id && visit.vet_id !== userId
   const canEdit = canExamine(role) && visit.status !== 'cancelled' && !examinedByOther
   const readOnly = !canEdit
+  const canCancel = canCancelVisit(visit, { userId, canExamine: canExamine(role) })
 
   // ส่งไปเก็บเงินแล้วห้ามแก้รายการยา (ตะกร้าฝั่งแคชเชียร์อ่านจากตรงนี้) + ต้องมีสิทธิ์แก้
   const itemsLocked = readOnly || (visit.status !== 'open' && visit.status !== 'waiting')
@@ -463,15 +464,14 @@ export default function VisitDetail({
     refresh()
   }
 
-  // ยกเลิกเวชระเบียนที่เปิดผิด — ได้เฉพาะก่อนส่งเข้าคิวเก็บเงิน (waiting/open)
-  // ส่งเข้าคิวแล้วใบไปโผล่ที่หน้าขายของแคชเชียร์ ยกเลิกทิ้งเงียบ ๆ ไม่ได้ ต้องกด "ดึงกลับมาแก้ไข" ก่อน
-  // (ตรงกับ canCancel ด้านล่าง ที่คุมปุ่ม)
+  // ยกเลิกเวชระเบียนที่เปิดผิด — เก็บ record ไว้แต่ mark เป็นยกเลิก (ใครยกเลิกได้บ้างดู canCancelVisit)
   async function cancelVisit() {
-    if (visit.status !== 'waiting' && visit.status !== 'open') {
-      toast.error('ส่งเข้าคิวเก็บเงินแล้ว ยกเลิกไม่ได้ — กดดึงกลับมาแก้ไขก่อน')
-      return
-    }
-    if (!(await confirmDialog({ message: 'ยกเลิกเวชระเบียนใบนี้?\nใช้กรณีเปิดผิดตัว/ผิดคน — จะหลุดจากคิวและไม่นับเป็นการรักษา' })).confirmed) return
+    const warning = visit.status === 'pending_payment'
+      ? '\nใบนี้ส่งไปเก็บเงินแล้ว — ยกเลิกแล้วจะหายจากคิวหน้าขายทันที'
+      : ''
+    if (!(await confirmDialog({
+      message: `ยกเลิกเวชระเบียนใบนี้?\nใช้กรณีเปิดผิดตัว/ผิดคน — จะหลุดจากคิวและไม่นับเป็นการรักษา${warning}`,
+    })).confirmed) return
     const supabase = createClient()
     const { error } = await supabase.from('visits').update({ status: 'cancelled' }).eq('id', visit.id)
     if (error) {
@@ -1221,8 +1221,8 @@ export default function VisitDetail({
         </div>
       )}
 
-      {/* ยกเลิกใบที่เปิดผิด — เฉพาะใบที่ยังไม่ส่งเข้าคิวเก็บเงิน + มีสิทธิ์แก้ */}
-      {canEdit && (visit.status === 'waiting' || visit.status === 'open') && (
+      {/* ยกเลิกใบที่เปิดผิด — ใบที่ยังรอตรวจแคชเชียร์ก็ยกเลิกเองได้ (เป็นคนส่งเข้าคิวมา) */}
+      {canCancel && (
         <div className="text-center mt-6">
           <button onClick={cancelVisit} className="text-sm text-gray-400 hover:text-red-600">
             ยกเลิกเวชระเบียนใบนี้ (เปิดผิด)

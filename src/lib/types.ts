@@ -282,6 +282,8 @@ export interface Customer {
   /** เลข HN เจ้าของ "YY####" (ปี พ.ศ. 2 หลัก + ลำดับในปีนั้น) — DB ออกให้ตอน insert */
   hn: string | null
   phone: string
+  /** ที่อยู่แบบข้อความธรรมดา จดคร่าว ๆ ได้ — คนละอันกับที่อยู่จัดส่งใน customer_addresses */
+  address: string | null
   points: number
   total_spent: number
   credit_balance: number

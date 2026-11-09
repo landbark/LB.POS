@@ -41,3 +41,22 @@ export function isVaccine(product: VaccineProduct): boolean {
   }
   return product.categories?.is_vaccine ?? false
 }
+
+/**
+ * ยกเลิกเวชระเบียนใบนี้ได้ไหม — ใบที่เปิดผิดตัว/ผิดคน หรือเจ้าของเปลี่ยนใจกลับบ้านไปก่อน
+ *
+ * - รอตรวจ (waiting): ใครก็ยกเลิกได้ รวมแคชเชียร์ที่เป็นคนส่งเข้าคิวเอง — ยังไม่มีใครตรวจ ไม่มีอะไรเสีย
+ * - กำลังตรวจ / รอเก็บเงิน: เฉพาะหมอกับแอดมิน และต้องไม่ใช่ใบที่หมอคนอื่นกำลังตรวจอยู่
+ *   (รอเก็บเงินยกเลิกได้ แต่ใบจะหลุดจากคิวหน้าขายทันที — ข้อความยืนยันบอกไว้แล้ว)
+ * - เก็บเงินแล้ว / ยกเลิกไปแล้ว: ไม่ได้ ต้องยกเลิกใบเสร็จแทน
+ */
+export function canCancelVisit(
+  visit: { status: string; vet_id?: string | null },
+  { userId, canExamine }: { userId: string; canExamine: boolean },
+): boolean {
+  if (visit.status === 'paid' || visit.status === 'cancelled') return false
+  if (visit.status === 'waiting') return true
+  if (!canExamine) return false
+  const examinedByOther = visit.status === 'open' && !!visit.vet_id && visit.vet_id !== userId
+  return !examinedByOther
+}

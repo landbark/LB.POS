@@ -4,7 +4,7 @@ import { useState } from 'react'
 import Link from '@/components/ProgressLink'
 import { useProgress } from '@/lib/use-progress'
 import { createClient } from '@/lib/supabase/client'
-import { ArrowLeft, Clock, Plus, Search, Stethoscope, X } from 'lucide-react'
+import { ArrowLeft, Clock, Plus, Search, Stethoscope, Trash2, X } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { SPECIES_LABELS, VISIT_STATUS_LABELS, type Breed, type Pet, type PetSpecies, type Visit, type VisitStatus } from '@/lib/types'
 import { ageAt, petAge } from '@/lib/pets'
@@ -13,6 +13,7 @@ import { useLookup } from '@/lib/use-lookup'
 import { thaiToday, thaiDateIn } from '@/lib/thaiDate'
 import BreedSelect from '@/components/BreedSelect'
 import { canExamine as canExamineRole } from '@/lib/roles'
+import { confirmDialog } from '@/lib/confirm'
 
 type OwnerOption = { id: string; name: string; phone: string; hn?: string | null }
 type LastWeight = { weight: number; date: string }
@@ -217,6 +218,24 @@ export default function VisitsClient({
     push(`/admin/visits/${visit.id}`)
   }
 
+  // ยกเลิกคิวรอตรวจ — ส่งเข้าคิวผิดตัว/เจ้าของกลับบ้านไปก่อน
+  // แคชเชียร์กดเองได้ (เป็นคนส่งเข้าคิวมา) ใบยังไม่มีใครตรวจ ไม่มีอะไรต้องย้อน
+  async function cancelWaiting(visit: Visit) {
+    if (!(await confirmDialog({
+      message: `เอา "${visit.pets?.name ?? 'สัตว์ตัวนี้'}" ออกจากคิวรอตรวจ?\nเวชระเบียนใบนี้จะถูกยกเลิก (ยังดูย้อนหลังได้ แต่ไม่นับเป็นการรักษา)`,
+    })).confirmed) return
+    setBusy(true)
+    const supabase = createClient()
+    const { error } = await supabase.from('visits').update({ status: 'cancelled' }).eq('id', visit.id)
+    setBusy(false)
+    if (error) {
+      toast.error('ยกเลิกไม่สำเร็จ')
+      return
+    }
+    toast.success('เอาออกจากคิวแล้ว')
+    refresh()
+  }
+
   // คิวรอตรวจ: มาก่อนตรวจก่อน (เรียงตามเวลาลงทะเบียนจากเก่าไปใหม่)
   const waiting = visits
     .filter((v) => v.status === 'waiting')
@@ -317,17 +336,28 @@ export default function VisitsClient({
                     </p>
                   </div>
                 </div>
-                {canExamine ? (
+                <div className="flex items-center gap-2">
+                  {canExamine ? (
+                    <button
+                      onClick={() => startExam(v)}
+                      disabled={busy}
+                      className="flex-1 flex items-center justify-center gap-1.5 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white text-sm font-medium py-2 rounded-lg transition-colors"
+                    >
+                      <Stethoscope size={15} /> เริ่มตรวจ
+                    </button>
+                  ) : (
+                    <p className="flex-1 text-center text-xs text-gray-400 py-1.5">รอสัตวแพทย์เรียกตรวจ</p>
+                  )}
+                  {/* ส่งเข้าคิวผิด/เจ้าของกลับไปก่อน — เอาออกจากคิวได้ทุก role ตรงนี้เลย */}
                   <button
-                    onClick={() => startExam(v)}
+                    onClick={() => cancelWaiting(v)}
                     disabled={busy}
-                    className="w-full flex items-center justify-center gap-1.5 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white text-sm font-medium py-2 rounded-lg transition-colors"
+                    title="เอาออกจากคิว (ยกเลิกเวชระเบียน)"
+                    className="shrink-0 p-2 text-gray-300 hover:text-red-600 hover:bg-red-50 rounded-lg disabled:opacity-50"
                   >
-                    <Stethoscope size={15} /> เริ่มตรวจ
+                    <Trash2 size={15} />
                   </button>
-                ) : (
-                  <p className="text-center text-xs text-gray-400 py-1.5">รอสัตวแพทย์เรียกตรวจ</p>
-                )}
+                </div>
               </div>
             ))}
           </div>
