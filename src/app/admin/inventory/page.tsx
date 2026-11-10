@@ -5,6 +5,8 @@ import Link from '@/components/ProgressLink'
 import SearchBox from '@/components/SearchBox'
 import ScanToProductButton from './ScanToProductButton'
 import EditLotButton from './EditLotButton'
+import AddLotButton from './AddLotButton'
+import CategoryFilter, { CAT_CLINIC, CAT_NONE, CAT_SHOP, type CategoryOption } from './CategoryFilter'
 import { toOne } from '@/lib/supabase/embed'
 
 /** ล็อตสินค้าสะสมขึ้นทุกครั้งที่รับของ — แสดงทีละหน้า แล้วให้ค้นที่ server */
@@ -13,23 +15,43 @@ const PAGE_SIZE = 200
 export default async function InventoryPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string }>
+  searchParams: Promise<{ q?: string; cat?: string }>
 }) {
-  const { q } = await searchParams
+  const { q, cat } = await searchParams
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const [{ data: { user } }, { data: categoryRows }] = await Promise.all([
+    supabase.auth.getUser(),
+    supabase.from('categories').select('id, name, clinic_only').order('name'),
+  ])
+  const categories = (categoryRows ?? []) as CategoryOption[]
   const term = (q ?? '').trim()
   const today = thaiToday()
   const in30Days = thaiDateIn(30)
 
+  // ?cat= รับได้ทั้ง id ของหมวด และกลุ่มกว้างๆ (clinic/shop) ที่แปลงเป็นชุด id ให้ก่อน
+  // id ที่ไม่มีในตารางหมวด (URL เก่า/หมวดถูกลบ) ถือว่าไม่ได้กรอง ดีกว่าโชว์ตารางว่าง
+  const catParam = cat ?? ''
+  const groupIds =
+    catParam === CAT_CLINIC
+      ? categories.filter((c) => c.clinic_only).map((c) => c.id)
+      : catParam === CAT_SHOP
+        ? categories.filter((c) => !c.clinic_only).map((c) => c.id)
+        : null
+  const exactId = categories.some((c) => c.id === catParam) ? catParam : null
+  const catValue = groupIds || catParam === CAT_NONE || exactId ? catParam : ''
+
   const columns = '*, products!inner(name, sku, unit, min_stock, active)'
-  const baseQuery = () => supabase
-    .from('product_lots')
-    .select(columns)
-    .gt('quantity', 0)
-    .eq('products.active', true)
-    .order('expiry_date', { ascending: true, nullsFirst: false })
-    .limit(PAGE_SIZE)
+  const baseQuery = () => {
+    let qb = supabase
+      .from('product_lots')
+      .select(columns)
+      .gt('quantity', 0)
+      .eq('products.active', true)
+    if (groupIds) qb = qb.in('products.category_id', groupIds)
+    else if (catParam === CAT_NONE) qb = qb.is('products.category_id', null)
+    else if (exactId) qb = qb.eq('products.category_id', exactId)
+    return qb.order('expiry_date', { ascending: true, nullsFirst: false }).limit(PAGE_SIZE)
+  }
 
   let lots: Awaited<ReturnType<typeof baseQuery>>['data'] = []
 
@@ -50,12 +72,21 @@ export default async function InventoryPage({
     lots = (await baseQuery()).data ?? []
   }
 
-  // ตัวเลขในแถบเตือนต้องนับจากของทั้งหมด ไม่ใช่แค่หน้าที่แสดง
+  // ตัวเลขในแถบเตือนต้องนับจากของทั้งหมด ไม่ใช่แค่หน้าที่แสดง (แต่นับในขอบเขตของหมวดที่กรองอยู่)
+  const countQuery = () => {
+    let qb = supabase
+      .from('product_lots')
+      .select('id, products!inner(active, category_id)', { count: 'exact', head: true })
+      .gt('quantity', 0)
+      .eq('products.active', true)
+    if (groupIds) qb = qb.in('products.category_id', groupIds)
+    else if (catParam === CAT_NONE) qb = qb.is('products.category_id', null)
+    else if (exactId) qb = qb.eq('products.category_id', exactId)
+    return qb
+  }
   const [{ count: expiredTotal }, { count: expiringTotal }] = await Promise.all([
-    supabase.from('product_lots').select('id, products!inner(active)', { count: 'exact', head: true })
-      .gt('quantity', 0).eq('products.active', true).lt('expiry_date', today),
-    supabase.from('product_lots').select('id, products!inner(active)', { count: 'exact', head: true })
-      .gt('quantity', 0).eq('products.active', true).gte('expiry_date', today).lte('expiry_date', in30Days),
+    countQuery().lt('expiry_date', today),
+    countQuery().gte('expiry_date', today).lte('expiry_date', in30Days),
   ])
 
   const activeLots = lots ?? []
@@ -115,12 +146,16 @@ export default async function InventoryPage({
             href="/admin/inventory/history"
             className="flex items-center gap-1.5 border border-gray-300 hover:bg-gray-50 text-gray-700 text-sm font-medium px-3 py-2 rounded-lg"
           >
-            <History size={15} /> ประวัติสต็อค
+            <History size={15} /> <span className="hidden sm:inline">ประวัติสต็อค</span>
           </Link>
+          <AddLotButton userId={user?.id ?? ''} />
         </div>
       </div>
 
-      <SearchBox placeholder="ค้นหาสินค้า / SKU / บาร์โค้ด / เลขล็อต..." className="mb-4 max-w-sm" />
+      <div className="flex flex-wrap items-center gap-2 mb-4">
+        <SearchBox placeholder="ค้นหาสินค้า / SKU / บาร์โค้ด / เลขล็อต..." className="w-full sm:w-72" />
+        <CategoryFilter categories={categories} value={catValue} />
+      </div>
 
       {((expiredTotal ?? 0) > 0 || (expiringTotal ?? 0) > 0) && (
         <div className="bg-orange-50 border border-orange-200 rounded-xl p-4 mb-6 flex gap-3">
@@ -146,7 +181,7 @@ export default async function InventoryPage({
               <th className="text-left text-xs font-medium text-gray-500 uppercase px-4 py-3">Lot</th>
               <th className="text-left text-xs font-medium text-gray-500 uppercase px-4 py-3">วันหมดอายุ</th>
               <th className="text-right text-xs font-medium text-gray-500 uppercase px-4 py-3">คงเหลือ</th>
-              <th className="px-2 py-3 w-10"><span className="sr-only">ปรับจำนวน</span></th>
+              <th className="px-2 py-3 w-10"><span className="sr-only">แก้ล็อต</span></th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-50">
@@ -156,7 +191,7 @@ export default async function InventoryPage({
             {activeLots.length === 0 && (
               <tr>
                 <td colSpan={6} className="px-4 py-10 text-center text-sm text-gray-400">
-                  {term ? 'ไม่พบสินค้าที่ค้นหา' : 'ยังไม่มีสต็อค'}
+                  {term || catValue ? 'ไม่พบสินค้าที่ค้นหา' : 'ยังไม่มีสต็อค'}
                 </td>
               </tr>
             )}
@@ -166,7 +201,7 @@ export default async function InventoryPage({
 
       {activeLots.length === PAGE_SIZE && (
         <p className="text-xs text-gray-500 mt-3">
-          แสดง {PAGE_SIZE} ล็อตแรก — พิมพ์ค้นหาเพื่อจำกัดผลลัพธ์
+          แสดง {PAGE_SIZE} ล็อตแรก — พิมพ์ค้นหาหรือเลือกหมวดเพื่อจำกัดผลลัพธ์
         </p>
       )}
     </div>
