@@ -140,7 +140,10 @@ BEGIN
 END;
 $$;
 
+-- ตัวช่วยนี้ยิง UPDATE ตามชื่อตารางที่ส่งมา — ห้ามให้ใครเรียกตรง ๆ
+-- (Supabase มี default privileges ให้ anon/authenticated อยู่แล้ว ต้อง REVOKE ทีละ role)
 REVOKE ALL ON FUNCTION public.merge_move_refs(text[], text, uuid, uuid) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.merge_move_refs(text[], text, uuid, uuid) FROM anon, authenticated;
 
 -- ── 4. รวมเจ้าของสัตว์ (ลูกค้า) ──────────────────────────────────────────────
 -- p_overrides = ค่าที่พนักงานเลือกเองในหน้าเปรียบเทียบ (เช่นเอาชื่อ/เบอร์ของใบที่จะลบ)
@@ -272,6 +275,7 @@ END;
 $$;
 
 REVOKE ALL ON FUNCTION public.merge_customers(uuid, uuid[], jsonb) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.merge_customers(uuid, uuid[], jsonb) FROM anon;
 GRANT EXECUTE ON FUNCTION public.merge_customers(uuid, uuid[], jsonb) TO authenticated;
 
 -- ── 5. รวมสัตว์เลี้ยง ────────────────────────────────────────────────────────
@@ -391,4 +395,5 @@ END;
 $$;
 
 REVOKE ALL ON FUNCTION public.merge_pets(uuid, uuid[], jsonb) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.merge_pets(uuid, uuid[], jsonb) FROM anon;
 GRANT EXECUTE ON FUNCTION public.merge_pets(uuid, uuid[], jsonb) TO authenticated;
