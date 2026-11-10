@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
-import { ArrowLeft, AlertTriangle, Stethoscope, Tag } from 'lucide-react'
+import { ArrowLeft, AlertTriangle, Merge, Stethoscope, Tag } from 'lucide-react'
 import { createClient } from '@/lib/supabase/server'
 import { SPECIES_LABELS, VISIT_STATUS_LABELS, type ClinicDocument, type Pet, type VisitStatus } from '@/lib/types'
 import { ageAt, petAge } from '@/lib/pets'
@@ -81,6 +81,16 @@ export default async function PetDetailPage({ params }: { params: Promise<{ id: 
                 currentOwnerId={p.customer_id}
                 customers={customers ?? []}
               />
+              {/* ลงทะเบียนซ้ำเป็นสองใบ — รวมประวัติให้เหลือตัวเดียว (เจ้าของร้านเท่านั้น) */}
+              {profile?.role === 'admin' && (
+                <Link
+                  href={`/admin/merge?kind=pet&ids=${p.id}`}
+                  className="inline-flex items-center gap-1 text-xs text-gray-500 hover:text-blue-600 border border-gray-200 hover:border-blue-300 rounded-lg px-2 py-1"
+                  title="สัตว์ตัวนี้ถูกลงทะเบียนซ้ำ? รวมประวัติให้เหลือตัวเดียว"
+                >
+                  <Merge size={12} /> รวมตัวซ้ำ
+                </Link>
+              )}
             </div>
           </div>
         </div>

@@ -16,6 +16,7 @@ export default function CustomersClient({
   customers,
   petNames,
   searching,
+  note,
   atLimit,
   pageSize,
 }: {
@@ -24,6 +25,8 @@ export default function CustomersClient({
   petNames: Record<string, string[]>
   /** กำลังมีคำค้นอยู่ — ใช้แยกข้อความตอนไม่พบผลลัพธ์ */
   searching: boolean
+  /** คำที่ค้นเป็นของเก่าที่ถูกรวมไปแล้ว — บอกพนักงานว่าทำไมผลลัพธ์เป็นอีกชื่อ */
+  note?: string | null
   /** ผลลัพธ์เต็มหน้า อาจมีมากกว่านี้ */
   atLimit: boolean
   pageSize: number
@@ -131,6 +134,12 @@ export default function CustomersClient({
       {showAdd && formCard}
 
       <SearchBox placeholder="ค้นหา HN / ชื่อ / เบอร์โทร..." className="mb-4 max-w-xs" />
+
+      {note && (
+        <p className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-3">
+          {note}
+        </p>
+      )}
 
       {atLimit && (
         <p className="text-xs text-gray-500 mb-3">

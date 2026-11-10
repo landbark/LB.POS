@@ -1,10 +1,13 @@
 import { notFound } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
+import { getAdmin } from '@/lib/require-staff'
 import CustomerDetail from './CustomerDetail'
 
 export default async function CustomerPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   const supabase = await createClient()
+
+  const isAdmin = !!(await getAdmin())
 
   const { data: customer } = await supabase.from('customers').select('*').eq('id', id).single()
   if (!customer) notFound()
@@ -33,6 +36,7 @@ export default async function CustomerPage({ params }: { params: Promise<{ id: s
       breeds={breeds ?? []}
       transactions={transactions ?? []}
       visits={(visits as never[]) ?? []}
+      isAdmin={isAdmin}
     />
   )
 }

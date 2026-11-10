@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { getStaff } from '@/lib/require-staff'
+import { mergedFallback } from '@/lib/merge'
 
 /**
  * ค้นหาลูกค้า/สัตว์เลี้ยงสำหรับช่องเลือกในหน้าหลังร้าน
@@ -36,6 +37,15 @@ export async function GET(request: NextRequest) {
       .limit(LIMIT)
 
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+    // ไม่เจอเลย — อาจเป็นเบอร์/ชื่อ/HN เก่าที่ถูกรวมไปแล้ว ให้ชี้ไปที่ใบที่เก็บไว้
+    if ((data ?? []).length === 0) {
+      const { rows } = await mergedFallback(supabase, 'customer', raw, (ids) =>
+        supabase.from('customers').select('id, name, phone, hn').in('id', ids)
+      )
+      return NextResponse.json({ results: rows })
+    }
+
     return NextResponse.json({ results: data ?? [] })
   }
 
@@ -58,6 +68,14 @@ export async function GET(request: NextRequest) {
     const results = [...(byPet.data ?? []), ...(byOwner.data ?? [])]
       .filter((p) => !seen.has(p.id) && seen.add(p.id))
       .slice(0, LIMIT)
+
+    // HN เก่าของสัตว์ที่ถูกรวมไปแล้วยังอยู่ในเวชระเบียนกระดาษ — ค้นด้วยเลขนั้นต้องเจอตัวจริง
+    if (results.length === 0) {
+      const { rows } = await mergedFallback(supabase, 'pet', raw, (ids) =>
+        supabase.from('pets').select(columns).in('id', ids)
+      )
+      return NextResponse.json({ results: rows })
+    }
 
     return NextResponse.json({ results })
   }

@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { mergedFallback } from '@/lib/merge'
 import PetsClient from './PetsClient'
 import type { Pet } from '@/lib/types'
 
@@ -39,6 +40,16 @@ export default async function PetsPage({
     pets = (data ?? []) as unknown as Pet[]
   }
 
+  // ค้นด้วย HN เก่าของสัตว์ที่ถูกรวมไปแล้ว — พาไปที่ตัวที่เก็บประวัติไว้
+  let note: string | null = null
+  if (term && pets.length === 0) {
+    const merged = await mergedFallback(supabase, 'pet', term, (ids) =>
+      supabase.from('pets').select(columns).in('id', ids)
+    )
+    pets = merged.rows as unknown as Pet[]
+    note = merged.note
+  }
+
   // สายพันธุ์เป็นรายการอ้างอิงคงที่ (ไม่กี่สิบแถว) โหลดทั้งก้อนได้
   const { data: breeds } = await supabase.from('breeds').select('*').order('name')
 
@@ -47,6 +58,7 @@ export default async function PetsPage({
       pets={pets}
       breeds={breeds ?? []}
       searching={term.length > 0}
+      note={note}
       atLimit={pets.length === PAGE_SIZE}
       pageSize={PAGE_SIZE}
     />

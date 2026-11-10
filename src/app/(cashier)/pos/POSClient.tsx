@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 import { Search, X, Plus, Minus, ShoppingCart, User, MonitorPlay, Stethoscope, ScanBarcode, Store, AlertTriangle } from 'lucide-react'
 import toast from 'react-hot-toast'
 import type { Product, ProductUnit, CartItem, Promotion, PointsConfig, Customer, ClinicQueueVisit, RoundingMode } from '@/lib/types'
+import { keptIdForMergedPhone } from '@/lib/merge'
 import { applyPromotions, promotionInChannel } from '@/lib/promotions'
 import { baseQty, factorOf, findByBarcode, posUnitChoices, unitNameOf, unitPriceOf } from '@/lib/productUnits'
 import { POS_DISPLAY_CHANNEL, type PosDisplayMessage } from '@/lib/posDisplay'
@@ -545,11 +546,25 @@ export default function POSClient({ products: allProducts, booth, shiftOpen, shi
       setCustomer(data)
       setShowAddCustomer(false)
       toast.success(pointsConfig ? `พบลูกค้า: ${data.name} (${data.points} แต้ม)` : `พบลูกค้า: ${data.name}`)
-    } else {
-      toast.error('ไม่พบลูกค้า — เพิ่มใหม่ได้เลย')
-      setShowAddCustomer(true)
-      setNewCustomerName('')
+      return
     }
+
+    // เบอร์นี้อาจเป็นใบซ้ำที่ถูกรวมไปกับลูกค้าอีกใบแล้ว — ต้องเจอตัวจริง
+    // ไม่ใช่ปล่อยให้เพิ่มใหม่ซ้ำอีกรอบ (ดู src/lib/merge.ts)
+    const keptId = await keptIdForMergedPhone(supabase, customerPhone)
+    if (keptId) {
+      const { data: kept } = await supabase.from('customers').select('*').eq('id', keptId).maybeSingle()
+      if (kept) {
+        setCustomer(kept)
+        setShowAddCustomer(false)
+        toast.success(`พบลูกค้า: ${kept.name} — เบอร์นี้ถูกรวมมาที่เบอร์ ${kept.phone}`)
+        return
+      }
+    }
+
+    toast.error('ไม่พบลูกค้า — เพิ่มใหม่ได้เลย')
+    setShowAddCustomer(true)
+    setNewCustomerName('')
   }
 
   async function addCustomer() {

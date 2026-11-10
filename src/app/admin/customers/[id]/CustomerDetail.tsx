@@ -4,7 +4,7 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { AlertTriangle, ArrowLeft, Check, MapPin, Pencil, PawPrint, Plus, Receipt, Stethoscope, X } from 'lucide-react'
+import { AlertTriangle, ArrowLeft, Check, MapPin, Merge, Pencil, PawPrint, Plus, Receipt, Stethoscope, X } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { SPECIES_LABELS, VISIT_STATUS_LABELS, type Breed, type Customer, type Pet, type PetSpecies, type VisitStatus } from '@/lib/types'
 import { ageAt, petAge } from '@/lib/pets'
@@ -51,12 +51,15 @@ export default function CustomerDetail({
   breeds,
   transactions,
   visits,
+  isAdmin,
 }: {
   customer: Customer
   pets: Pet[]
   breeds: Breed[]
   transactions: TxRow[]
   visits: VisitRow[]
+  /** ปุ่ม "รวมใบซ้ำ" ให้เฉพาะเจ้าของร้าน (ฟังก์ชันใน DB ก็เช็คอีกชั้น) */
+  isAdmin: boolean
 }) {
   const router = useRouter()
   const [adding, setAdding] = useState(false)
@@ -143,12 +146,23 @@ export default function CustomerDetail({
           )}
         </div>
         {!editing && (
-          <button
-            onClick={() => { setOwner({ name: customer.name, phone: customer.phone, address: customer.address ?? '' }); setEditing(true) }}
-            className="shrink-0 flex items-center gap-1.5 border border-gray-300 text-gray-600 text-sm px-3 py-1.5 rounded-lg hover:bg-gray-50"
-          >
-            <Pencil size={14} /> แก้ไขข้อมูล
-          </button>
+          <div className="shrink-0 flex items-center gap-2">
+            {isAdmin && (
+              <Link
+                href={`/admin/merge?kind=customer&ids=${customer.id}`}
+                className="flex items-center gap-1.5 border border-gray-300 text-gray-600 text-sm px-3 py-1.5 rounded-lg hover:bg-gray-50"
+                title="ลูกค้าคนนี้ถูกลงทะเบียนซ้ำหลายใบ? รวมให้เหลือใบเดียว"
+              >
+                <Merge size={14} /> รวมใบซ้ำ
+              </Link>
+            )}
+            <button
+              onClick={() => { setOwner({ name: customer.name, phone: customer.phone, address: customer.address ?? '' }); setEditing(true) }}
+              className="flex items-center gap-1.5 border border-gray-300 text-gray-600 text-sm px-3 py-1.5 rounded-lg hover:bg-gray-50"
+            >
+              <Pencil size={14} /> แก้ไขข้อมูล
+            </button>
+          </div>
         )}
       </div>
 

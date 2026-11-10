@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { mergedFallback } from '@/lib/merge'
 import CustomersClient from './CustomersClient'
 import MemberLinkRequests, { type LinkRequest } from './MemberLinkRequests'
 
@@ -25,7 +26,17 @@ export default async function CustomersPage({
     .order('created_at', { ascending: false })
     .limit(PAGE_SIZE)
 
-  const rows = customers ?? []
+  let rows = customers ?? []
+
+  // ค้นด้วย HN/เบอร์/ชื่อเก่าที่ถูกรวมไปแล้ว — พาไปที่ใบที่เก็บไว้ ไม่ใช่ขึ้นว่าไม่พบ
+  let note: string | null = null
+  if (term && rows.length === 0) {
+    const merged = await mergedFallback(supabase, 'customer', term, (ids) =>
+      supabase.from('customers').select('*').in('id', ids)
+    )
+    rows = merged.rows
+    note = merged.note
+  }
 
   // ชื่อสัตว์เลี้ยงเฉพาะลูกค้าที่แสดงอยู่ ไม่ใช่ทั้งตาราง
   const { data: pets } = rows.length
@@ -57,6 +68,7 @@ export default async function CustomersPage({
         customers={rows}
         petNames={petNames}
         searching={term.length > 0}
+        note={note}
         atLimit={rows.length === PAGE_SIZE}
         pageSize={PAGE_SIZE}
       />

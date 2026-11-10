@@ -40,12 +40,15 @@ export default function PetsClient({
   pets,
   breeds,
   searching,
+  note,
   atLimit,
   pageSize,
 }: {
   pets: Pet[]
   breeds: Breed[]
   searching: boolean
+  /** คำที่ค้นเป็น HN เก่าที่ถูกรวมไปแล้ว — บอกว่าทำไมผลลัพธ์เป็นอีกตัว */
+  note?: string | null
   atLimit: boolean
   pageSize: number
 }) {
@@ -305,6 +308,12 @@ export default function PetsClient({
       {showAdd && formCard}
 
       <SearchBox placeholder="ค้นหา HN / ชื่อสัตว์ / เจ้าของ / เบอร์..." className="mb-4 max-w-xs" />
+
+      {note && (
+        <p className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-3">
+          {note}
+        </p>
+      )}
 
       {atLimit && (
         <p className="text-xs text-gray-500 mb-3">
