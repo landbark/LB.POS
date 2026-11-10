@@ -4,7 +4,7 @@ import { AlertTriangle, History } from 'lucide-react'
 import Link from '@/components/ProgressLink'
 import SearchBox from '@/components/SearchBox'
 import ScanToProductButton from './ScanToProductButton'
-import AdjustLotButton from './AdjustLotButton'
+import EditLotButton from './EditLotButton'
 import { toOne } from '@/lib/supabase/embed'
 
 /** ล็อตสินค้าสะสมขึ้นทุกครั้งที่รับของ — แสดงทีละหน้า แล้วให้ค้นที่ server */
@@ -90,7 +90,7 @@ export default async function InventoryPage({
           {lot.quantity} {p?.unit}
         </td>
         <td className="px-2 py-3 text-right">
-          <AdjustLotButton
+          <EditLotButton
             lotId={lot.id}
             productId={lot.product_id}
             productName={p?.name ?? '—'}
