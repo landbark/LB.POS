@@ -69,9 +69,9 @@ export async function loadDocContext(
       .order('visit_date', { ascending: false })
       .limit(5),
     supabase.from('pet_vaccinations').select('*').eq('pet_id', resolvedPetId).order('dose_date', { ascending: false }),
-    // ที่อยู่แบบข้อความของลูกค้า — แยก query เผื่อยังไม่ได้รัน migration ที่เพิ่มคอลัมน์นี้
+    // ที่อยู่ + นามสกุลของลูกค้า — แยก query เผื่อยังไม่ได้รัน migration ที่เพิ่มคอลัมน์นี้
     customer
-      ? supabase.from('customers').select('address').eq('id', customer.id).maybeSingle()
+      ? supabase.from('customers').select('address, last_name').eq('id', customer.id).maybeSingle()
       : Promise.resolve({ data: null }),
     // ไม่มีที่อยู่ข้อความค่อยถอยไปใช้ที่อยู่จัดส่งของร้านออนไลน์
     customer
@@ -101,13 +101,17 @@ export async function loadDocContext(
 
   const addr = address as { address_line: string; subdistrict: string | null; district: string | null; province: string; postal_code: string | null } | null
 
+  const owner = ownerRow as { address?: string | null; last_name?: string | null } | null
+  // เอกสารราชการ/ใบรับรองใช้ชื่อเต็ม — ที่อื่น (ใบเสร็จ/ฉลากยา) ยังใช้ชื่อเดี่ยวเหมือนเดิม
+  const ownerLastName = owner?.last_name?.trim()
+
   const ctx: DocContext = {
     pet,
     owner: customer
       ? {
-          name: customer.name,
+          name: [customer.name, ownerLastName].filter(Boolean).join(' '),
           phone: customer.phone ?? null,
-          address: (ownerRow as { address?: string | null } | null)?.address?.trim()
+          address: owner?.address?.trim()
             || (addr
               ? [addr.address_line, addr.subdistrict, addr.district, addr.province, addr.postal_code].filter(Boolean).join(' ')
               : null),

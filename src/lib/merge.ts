@@ -4,7 +4,7 @@ import type { Customer, Pet } from '@/lib/types'
 export type MergeKind = 'customer' | 'pet'
 
 /** คอลัมน์ที่หน้าเปรียบเทียบเลือกทับได้ — ต้องตรงกับ whitelist ในฟังก์ชัน SQL */
-export const CUSTOMER_PICK_FIELDS = ['name', 'phone', 'hn', 'address'] as const
+export const CUSTOMER_PICK_FIELDS = ['name', 'last_name', 'phone', 'hn', 'address'] as const
 export const PET_PICK_FIELDS = [
   'name', 'species', 'breed', 'sex', 'birth_date', 'color', 'microchip',
   'sterilized', 'sterilized_date', 'allergies', 'chronic_conditions', 'notes',

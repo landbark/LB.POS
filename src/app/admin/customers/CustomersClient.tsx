@@ -10,7 +10,7 @@ import toast from 'react-hot-toast'
 import type { Customer } from '@/lib/types'
 import { confirmDialog } from '@/lib/confirm'
 
-const emptyForm = { name: '', phone: '', address: '' }
+const emptyForm = { name: '', last_name: '', phone: '', address: '' }
 
 export default function CustomersClient({
   customers,
@@ -44,7 +44,7 @@ export default function CustomersClient({
   function startEdit(c: Customer) {
     setEditingId(c.id)
     setShowAdd(false)
-    setForm({ name: c.name, phone: c.phone, address: c.address ?? '' })
+    setForm({ name: c.name, last_name: c.last_name ?? '', phone: c.phone, address: c.address ?? '' })
   }
 
   function cancel() {
@@ -60,7 +60,12 @@ export default function CustomersClient({
     }
     setLoading(true)
     const supabase = createClient()
-    const payload = { name: form.name.trim(), phone: form.phone.trim(), address: form.address.trim() || null }
+    const payload = {
+      name: form.name.trim(),
+      last_name: form.last_name.trim() || null,
+      phone: form.phone.trim(),
+      address: form.address.trim() || null,
+    }
 
     const { error } = editingId
       ? await supabase.from('customers').update(payload).eq('id', editingId)
@@ -77,7 +82,7 @@ export default function CustomersClient({
   }
 
   async function remove(c: Customer) {
-    if (!(await confirmDialog({ message: `ลบ "${c.name}" ? ประวัติการซื้อเดิมจะยังอยู่ แค่ไม่ผูกกับลูกค้าคนนี้แล้ว` })).confirmed) return
+    if (!(await confirmDialog({ message: `ลบ "${c.full_name}" ? ประวัติการซื้อเดิมจะยังอยู่ แค่ไม่ผูกกับลูกค้าคนนี้แล้ว` })).confirmed) return
     const supabase = createClient()
     const { error } = await supabase.from('customers').delete().eq('id', c.id)
     if (error) {
@@ -96,6 +101,13 @@ export default function CustomersClient({
         <div>
           <label className="block text-xs font-medium text-gray-600 mb-1">ชื่อลูกค้า *</label>
           <input type="text" value={form.name} onChange={(e) => set('name', e.target.value)} className={inputClass} placeholder="เช่น คุณสมชาย" autoFocus />
+        </div>
+        <div>
+          {/* ไม่บังคับ — ลูกค้าส่วนใหญ่ไม่ให้นามสกุล มีไว้เติมเอกสารคลินิกที่ต้องใช้ชื่อเต็ม */}
+          <label className="block text-xs font-medium text-gray-600 mb-1">
+            นามสกุล <span className="font-normal text-gray-400">(ถ้ามี)</span>
+          </label>
+          <input type="text" value={form.last_name} onChange={(e) => set('last_name', e.target.value)} className={inputClass} placeholder="เช่น ใจดี" />
         </div>
         <div>
           <label className="block text-xs font-medium text-gray-600 mb-1">เบอร์โทร *</label>
@@ -173,7 +185,7 @@ export default function CustomersClient({
                   <td className="px-4 py-3 text-sm font-mono text-gray-500 whitespace-nowrap">{c.hn ?? '—'}</td>
                   <td className="px-4 py-3 text-sm font-medium">
                     <Link href={`/admin/customers/${c.id}`} className="text-gray-900 hover:text-blue-600" onClick={(e) => e.stopPropagation()}>
-                      {c.name}
+                      {c.full_name}
                     </Link>
                   </td>
                   <td className="px-4 py-3 text-sm text-gray-600 font-mono">{c.phone}</td>

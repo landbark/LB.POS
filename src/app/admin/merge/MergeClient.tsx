@@ -65,6 +65,7 @@ const text = (v: unknown) => (typeof v === 'string' && v.trim() ? v : '—')
 
 const CUSTOMER_FIELDS: FieldSpec[] = [
   { key: 'name', label: 'ชื่อ', show: (r) => text(r.name) },
+  { key: 'last_name', label: 'นามสกุล', show: (r) => text(r.last_name) },
   { key: 'phone', label: 'เบอร์โทร', show: (r) => text(r.phone) },
   { key: 'hn', label: 'HN', show: (r) => text(r.hn) },
   { key: 'address', label: 'ที่อยู่', show: (r) => text(r.address) },

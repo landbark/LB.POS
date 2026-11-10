@@ -67,7 +67,7 @@ export default function CustomerDetail({
   const [saving, setSaving] = useState(false)
   // แก้ชื่อ/เบอร์/ที่อยู่ของเจ้าของได้จากหน้านี้เลย ไม่ต้องย้อนกลับไปหน้ารายชื่อลูกค้า
   const [editing, setEditing] = useState(false)
-  const [owner, setOwner] = useState({ name: customer.name, phone: customer.phone, address: customer.address ?? '' })
+  const [owner, setOwner] = useState({ name: customer.name, last_name: customer.last_name ?? '', phone: customer.phone, address: customer.address ?? '' })
 
   async function saveCustomer() {
     if (!owner.name.trim() || !owner.phone.trim()) {
@@ -78,7 +78,12 @@ export default function CustomerDetail({
     const supabase = createClient()
     const { error } = await supabase
       .from('customers')
-      .update({ name: owner.name.trim(), phone: owner.phone.trim(), address: owner.address.trim() || null })
+      .update({
+        name: owner.name.trim(),
+        last_name: owner.last_name.trim() || null,
+        phone: owner.phone.trim(),
+        address: owner.address.trim() || null,
+      })
       .eq('id', customer.id)
     setSaving(false)
     if (error) {
@@ -133,7 +138,7 @@ export default function CustomerDetail({
           <ArrowLeft size={18} />
         </Link>
         <div className="min-w-0 flex-1">
-          <h1 className="text-2xl font-bold text-gray-900">{customer.name}</h1>
+          <h1 className="text-2xl font-bold text-gray-900">{customer.full_name}</h1>
           <p className="text-sm text-gray-500 font-mono">
             {customer.hn && <span className="text-gray-700 font-semibold mr-2">HN {customer.hn}</span>}
             {customer.phone}
@@ -157,7 +162,7 @@ export default function CustomerDetail({
               </Link>
             )}
             <button
-              onClick={() => { setOwner({ name: customer.name, phone: customer.phone, address: customer.address ?? '' }); setEditing(true) }}
+              onClick={() => { setOwner({ name: customer.name, last_name: customer.last_name ?? '', phone: customer.phone, address: customer.address ?? '' }); setEditing(true) }}
               className="flex items-center gap-1.5 border border-gray-300 text-gray-600 text-sm px-3 py-1.5 rounded-lg hover:bg-gray-50"
             >
               <Pencil size={14} /> แก้ไขข้อมูล
@@ -173,6 +178,11 @@ export default function CustomerDetail({
             <div>
               <label className={labelClass}>ชื่อลูกค้า *</label>
               <input type="text" autoFocus value={owner.name} onChange={(e) => setOwner({ ...owner, name: e.target.value })} className={inputClass} />
+            </div>
+            <div>
+              {/* ไม่บังคับ — เอกสารคลินิกที่ต้องใช้ชื่อ-นามสกุลเต็มจะเติมจากช่องนี้ให้ */}
+              <label className={labelClass}>นามสกุล <span className="font-normal text-gray-400">(ถ้ามี)</span></label>
+              <input type="text" value={owner.last_name} onChange={(e) => setOwner({ ...owner, last_name: e.target.value })} className={inputClass} placeholder="เช่น ใจดี" />
             </div>
             <div>
               <label className={labelClass}>เบอร์โทร *</label>

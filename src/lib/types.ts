@@ -278,7 +278,12 @@ export interface StockCountItem {
 
 export interface Customer {
   id: string
+  /** ชื่อ (บังคับ) — ใบเสร็จ/ฉลากยา/แจ้งเตือนใช้ช่องนี้ หน้าร้านเรียกกันด้วยชื่อ */
   name: string
+  /** นามสกุล (ไม่บังคับ) — ลูกค้าส่วนใหญ่ไม่ให้ เก็บไว้เติมเอกสารคลินิกที่ต้องใช้ชื่อเต็ม */
+  last_name: string | null
+  /** name + last_name — DB generated ไว้ค้นหา/แสดง ("สมชาย ใจดี" ต้องค้นเจอ) */
+  full_name: string
   /** เลข HN เจ้าของ "YY####" (ปี พ.ศ. 2 หลัก + ลำดับในปีนั้น) — DB ออกให้ตอน insert */
   hn: string | null
   phone: string

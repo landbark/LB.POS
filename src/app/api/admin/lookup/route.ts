@@ -31,8 +31,8 @@ export async function GET(request: NextRequest) {
   if (type === 'customers') {
     const { data, error } = await supabase
       .from('customers')
-      .select('id, name, phone, hn')
-      .or(`name.ilike.${q},phone.ilike.${q},hn.ilike.${q}`)
+      .select('id, name, full_name, phone, hn')
+      .or(`full_name.ilike.${q},phone.ilike.${q},hn.ilike.${q}`)
       .order('name')
       .limit(LIMIT)
 
@@ -41,7 +41,7 @@ export async function GET(request: NextRequest) {
     // ไม่เจอเลย — อาจเป็นเบอร์/ชื่อ/HN เก่าที่ถูกรวมไปแล้ว ให้ชี้ไปที่ใบที่เก็บไว้
     if ((data ?? []).length === 0) {
       const { rows } = await mergedFallback(supabase, 'customer', raw, (ids) =>
-        supabase.from('customers').select('id, name, phone, hn').in('id', ids)
+        supabase.from('customers').select('id, name, full_name, phone, hn').in('id', ids)
       )
       return NextResponse.json({ results: rows })
     }
@@ -52,12 +52,12 @@ export async function GET(request: NextRequest) {
   if (type === 'pets') {
     // ค้นชื่อสัตว์กับค้นทางเจ้าของต้องแยกกัน — .or() ของ PostgREST
     // ข้ามไปเงื่อนไขบนตารางที่ join มาไม่ได้
-    const columns = '*, customers(id, name, phone, hn)'
+    const columns = '*, customers(id, name, full_name, phone, hn)'
     const [byPet, byOwner] = await Promise.all([
       supabase.from('pets').select(columns)
         .eq('active', true).or(`name.ilike.${q},hn.ilike.${q}`).order('name').limit(LIMIT),
-      supabase.from('pets').select(`*, customers!inner(id, name, phone, hn)`)
-        .eq('active', true).or(`name.ilike.${q},phone.ilike.${q},hn.ilike.${q}`, { referencedTable: 'customers' })
+      supabase.from('pets').select(`*, customers!inner(id, name, full_name, phone, hn)`)
+        .eq('active', true).or(`full_name.ilike.${q},phone.ilike.${q},hn.ilike.${q}`, { referencedTable: 'customers' })
         .order('name').limit(LIMIT),
     ])
 

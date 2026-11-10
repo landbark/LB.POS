@@ -26,7 +26,7 @@ export default async function PetsPage({
         .or(`hn.ilike.${like},name.ilike.${like},breed.ilike.${like},microchip.ilike.${like}`)
         .order('created_at', { ascending: false }).limit(PAGE_SIZE),
       supabase.from('pets').select('*, customers!inner(id, name, phone, hn)').eq('active', true)
-        .or(`name.ilike.${like},phone.ilike.${like},hn.ilike.${like}`, { referencedTable: 'customers' })
+        .or(`full_name.ilike.${like},phone.ilike.${like},hn.ilike.${like}`, { referencedTable: 'customers' })
         .order('created_at', { ascending: false }).limit(PAGE_SIZE),
     ])
 

@@ -19,7 +19,8 @@ export default async function CustomersPage({
   if (term) {
     // escape % และ _ กันคำค้นของผู้ใช้กลายเป็น wildcard
     const like = `%${term.replace(/[%_\\]/g, (c) => `\\${c}`)}%`
-    query = query.or(`name.ilike.${like},phone.ilike.${like},hn.ilike.${like}`)
+    // full_name = ชื่อ+นามสกุล (DB generated) — พิมพ์ "สมชาย ใจดี" ที่มีเว้นวรรคต้องเจอด้วย
+    query = query.or(`full_name.ilike.${like},phone.ilike.${like},hn.ilike.${like}`)
   }
 
   const { data: customers } = await query

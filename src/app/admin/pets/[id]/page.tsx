@@ -18,7 +18,7 @@ export default async function PetDetailPage({ params }: { params: Promise<{ id: 
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
 
-  const { data: pet } = await supabase.from('pets').select('*, customers(id, name, phone)').eq('id', id).single()
+  const { data: pet } = await supabase.from('pets').select('*, customers(id, name, full_name, phone)').eq('id', id).single()
   if (!pet) notFound()
   const p = pet as Pet
 
@@ -35,7 +35,7 @@ export default async function PetDetailPage({ params }: { params: Promise<{ id: 
       .eq('pet_id', id)
       .order('dose_date', { ascending: false }),
     supabase.from('vaccines').select('*').order('name'),
-    supabase.from('customers').select('id, name, phone').order('name'),
+    supabase.from('customers').select('id, name, full_name, phone').order('name'),
     // เลยกำหนดเกินกี่วันแล้วเลิกขึ้นแถบเตือนวัคซีน — ตั้งไว้ที่หน้าแจ้งเตือน
     supabase.from('notify_settings').select('*').eq('id', 1).maybeSingle(),
     supabase.from('profiles').select('role').eq('id', user?.id ?? '').maybeSingle(),
@@ -72,7 +72,7 @@ export default async function PetDetailPage({ params }: { params: Promise<{ id: 
             <div className="flex items-center gap-2">
               {p.customers ? (
                 <Link href={`/admin/customers/${p.customers.id}`} className="text-blue-600 hover:underline">
-                  {p.customers.name} <span className="text-gray-400 font-mono">{p.customers.phone}</span>
+                  {p.customers.full_name ?? p.customers.name} <span className="text-gray-400 font-mono">{p.customers.phone}</span>
                 </Link>
               ) : <span className="text-gray-400">—</span>}
               <TransferOwnerButton

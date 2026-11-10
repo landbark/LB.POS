@@ -13,7 +13,7 @@ interface PetOption {
   name: string
   species: string
   customer_id: string
-  customers?: { id: string; name: string; phone: string } | null
+  customers?: { id: string; name: string; full_name?: string; phone: string } | null
 }
 
 /**
@@ -76,7 +76,7 @@ export default function MoveVisitButton({
         `ไปที่: ${picked.hn ? picked.hn + ' ' : ''}${picked.name} (${picked.customers?.name ?? 'ไม่ระบุเจ้าของ'})\n\n` +
         `ย้ายไปด้วย: ${willMove.join(' · ')}\n` +
         'นัดหมายไม่ย้าย — เป็นคิวของสัตว์ตัวเดิมที่ตั้งไว้ต่างหาก' +
-        (ownerChanges && moveOwner ? `\n\nชื่อเจ้าของในใบนี้จะเปลี่ยนเป็น ${picked.customers?.name ?? '—'}` : ''),
+        (ownerChanges && moveOwner ? `\n\nชื่อเจ้าของในใบนี้จะเปลี่ยนเป็น ${picked.customers?.full_name ?? picked.customers?.name ?? '—'}` : ''),
       confirmLabel: 'ย้ายเลย',
       tone: 'danger',
     })
@@ -187,7 +187,7 @@ export default function MoveVisitButton({
                 className="mt-0.5"
               />
               <span>
-                เปลี่ยนชื่อเจ้าของในใบนี้เป็น <strong>{picked.customers?.name ?? '—'}</strong> ด้วย
+                เปลี่ยนชื่อเจ้าของในใบนี้เป็น <strong>{picked.customers?.full_name ?? picked.customers?.name ?? '—'}</strong> ด้วย
                 <span className="block text-gray-400">
                   ไม่ติ๊ก = คงชื่อคนที่พามาวันนั้นไว้ตามเดิม
                   {billed && ' · ใบเสร็จที่ออกไปแล้วยังเป็นชื่อเจ้าของเดิมไม่ว่าจะติ๊กหรือไม่'}

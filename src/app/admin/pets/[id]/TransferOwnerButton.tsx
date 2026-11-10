@@ -7,7 +7,7 @@ import { ArrowRightLeft, X, Check, UserPlus } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { confirmDialog } from '@/lib/confirm'
 
-type OwnerOption = { id: string; name: string; phone: string }
+type OwnerOption = { id: string; name: string; full_name?: string; phone: string }
 
 const inputClass = 'w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500'
 
@@ -40,7 +40,7 @@ export default function TransferOwnerButton({
 
   const q = query.trim().toLowerCase()
   const matches = q
-    ? customers.filter((c) => c.id !== currentOwnerId && (c.name.toLowerCase().includes(q) || c.phone.includes(q))).slice(0, 8)
+    ? customers.filter((c) => c.id !== currentOwnerId && ((c.full_name ?? c.name).toLowerCase().includes(q) || c.phone.includes(q))).slice(0, 8)
     : []
 
   async function transferTo(newOwnerId: string, ownerLabel: string) {
@@ -66,8 +66,8 @@ export default function TransferOwnerButton({
   }
 
   async function pickExisting(c: OwnerOption) {
-    if (!(await confirmDialog({ message: `ย้าย "${petName}" ไปเป็นของ ${c.name} (${c.phone})?\nประวัติการรักษาเดิมยังอยู่ครบกับผู้พามาตอนนั้น` })).confirmed) return
-    await transferTo(c.id, c.name)
+    if (!(await confirmDialog({ message: `ย้าย "${petName}" ไปเป็นของ ${c.full_name ?? c.name} (${c.phone})?\nประวัติการรักษาเดิมยังอยู่ครบกับผู้พามาตอนนั้น` })).confirmed) return
+    await transferTo(c.id, c.full_name ?? c.name)
   }
 
   async function createAndTransfer() {
@@ -145,7 +145,7 @@ export default function TransferOwnerButton({
                   onClick={() => pickExisting(c)}
                   className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50 disabled:opacity-50"
                 >
-                  {c.name} <span className="text-gray-400 font-mono">{c.phone}</span>
+                  {c.full_name ?? c.name} <span className="text-gray-400 font-mono">{c.phone}</span>
                 </button>
               ))}
             </div>

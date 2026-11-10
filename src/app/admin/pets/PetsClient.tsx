@@ -13,7 +13,7 @@ import { ageAt, petAge } from '@/lib/pets'
 import BreedSelect from '@/components/BreedSelect'
 import { confirmDialog } from '@/lib/confirm'
 
-type OwnerOption = { id: string; name: string; phone: string; hn?: string | null }
+type OwnerOption = { id: string; name: string; full_name?: string; phone: string; hn?: string | null }
 
 const emptyForm = {
   customer_id: '',
@@ -170,7 +170,7 @@ export default function PetsClient({
             <div className="flex items-center gap-2">
               <div className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white">
                 {selectedOwner.hn && <span className="text-gray-400 font-mono mr-2">{selectedOwner.hn}</span>}
-                {selectedOwner.name} <span className="text-gray-400 font-mono">{selectedOwner.phone}</span>
+                {selectedOwner.full_name ?? selectedOwner.name} <span className="text-gray-400 font-mono">{selectedOwner.phone}</span>
               </div>
               <button onClick={() => { set('customer_id', ''); setSelectedOwner(null); setOwnerQuery('') }} className="p-2 text-gray-400 hover:text-red-600">
                 <X size={15} />
@@ -194,7 +194,7 @@ export default function PetsClient({
                       className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50"
                     >
                       {c.hn && <span className="text-gray-400 font-mono mr-2">{c.hn}</span>}
-                      {c.name} <span className="text-gray-400 font-mono">{c.phone}</span>
+                      {c.full_name ?? c.name} <span className="text-gray-400 font-mono">{c.phone}</span>
                     </button>
                   ))}
                 </div>

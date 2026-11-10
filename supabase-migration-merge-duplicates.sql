@@ -147,7 +147,7 @@ REVOKE ALL ON FUNCTION public.merge_move_refs(text[], text, uuid, uuid) FROM ano
 
 -- ── 4. รวมเจ้าของสัตว์ (ลูกค้า) ──────────────────────────────────────────────
 -- p_overrides = ค่าที่พนักงานเลือกเองในหน้าเปรียบเทียบ (เช่นเอาชื่อ/เบอร์ของใบที่จะลบ)
---   คีย์ที่ยอมรับ: name, phone, address, hn
+--   คีย์ที่ยอมรับ: name, last_name, phone, address, hn
 --
 -- แต้ม / เครดิต / ยอดซื้อสะสม = บวกรวมทุกใบ (เป็นของคนเดียวกันอยู่แล้ว)
 -- HN = เลขที่เก่าสุดในกลุ่ม (ฐานเก่าสุดคือเลขที่ลูกค้าถืออยู่จริง) แก้ทับได้ด้วย overrides
@@ -164,7 +164,7 @@ DECLARE
     'pets', 'visits', 'appointments', 'clinic_documents', 'transactions',
     'orders', 'customer_addresses', 'member_link_requests', 'customer_telegram_tokens'
   ];
-  allowed text[] := ARRAY['name', 'phone', 'address', 'hn'];
+  allowed text[] := ARRAY['name', 'last_name', 'phone', 'address', 'hn'];
   keep customers;
   dup customers;
   ids uuid[];
@@ -217,6 +217,10 @@ BEGIN
     IF json_keep->>'address' IS NULL AND dup.address IS NOT NULL THEN
       json_keep := json_keep || jsonb_build_object('address', dup.address);
     END IF;
+    -- นามสกุลเก็บทีหลัง ใบเก่าอาจมีที่ใบใหม่ยังว่าง (หรือกลับกัน) — ไม่ให้หายตอนรวม
+    IF COALESCE(btrim(json_keep->>'last_name'), '') = '' AND COALESCE(btrim(dup.last_name), '') <> '' THEN
+      json_keep := json_keep || jsonb_build_object('last_name', dup.last_name);
+    END IF;
     IF json_keep->>'line_user_id' IS NULL AND dup.line_user_id IS NOT NULL THEN
       json_keep := json_keep || jsonb_build_object('line_user_id', dup.line_user_id);
     END IF;
@@ -249,6 +253,7 @@ BEGIN
 
   UPDATE customers AS t SET
     name = r.name,
+    last_name = r.last_name,
     phone = r.phone,
     hn = r.hn,
     address = r.address,
