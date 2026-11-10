@@ -26,7 +26,8 @@ export interface DupGroup {
 
 export interface MergeLogRow {
   id: string
-  kind: MergeKind
+  /** 'visit' = ย้ายใบตรวจที่ลงผิดตัว (ไม่ได้ลบอะไร) ทำจากหน้าเวชระเบียน */
+  kind: MergeKind | 'visit'
   kept_id: string
   kept_hn: string | null
   kept_name: string | null
@@ -516,31 +517,44 @@ export default function MergeClient({
       {/* ประวัติการรวม */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
         <div className="px-4 py-3 border-b border-gray-100">
-          <h2 className="text-sm font-semibold text-gray-900">ประวัติการรวม</h2>
+          <h2 className="text-sm font-semibold text-gray-900">ประวัติการรวมและการย้าย</h2>
           <p className="text-xs text-gray-400 mt-0.5">
-            ค้นหาด้วย HN หรือเบอร์เดิมที่หน้าลูกค้า/สัตว์เลี้ยง ก็เจอใบที่เก็บไว้
+            ค้นหาด้วย HN หรือเบอร์เดิมที่หน้าลูกค้า/สัตว์เลี้ยง ก็เจอใบที่เก็บไว้ · รวมใบตรวจที่ย้ายเพราะลงผิดตัวด้วย
           </p>
         </div>
         <div className="divide-y divide-gray-50">
-          {log.length === 0 && <p className="px-4 py-8 text-center text-sm text-gray-400">ยังไม่เคยรวมข้อมูล</p>}
+          {log.length === 0 && <p className="px-4 py-8 text-center text-sm text-gray-400">ยังไม่เคยรวมหรือย้ายข้อมูล</p>}
           {log.map((row) => (
             <div key={row.id} className="px-4 py-2.5 text-sm flex flex-wrap items-center gap-x-2 gap-y-1">
               <span className="text-xs text-gray-400 w-24 shrink-0">
                 {new Date(row.created_at).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' })}
               </span>
               <span className="text-xs bg-gray-100 text-gray-600 rounded px-1.5 py-0.5">
-                {row.kind === 'pet' ? 'สัตว์' : 'ลูกค้า'}
+                {row.kind === 'pet' ? 'สัตว์' : row.kind === 'visit' ? 'ย้ายใบตรวจ' : 'ลูกค้า'}
               </span>
-              <span className="line-through text-gray-400">
-                {[row.merged_hn, row.merged_name, row.merged_phone].filter(Boolean).join(' · ')}
-              </span>
-              <span className="text-gray-400">→</span>
-              <Link
-                href={row.kind === 'pet' ? `/admin/pets/${row.kept_id}` : `/admin/customers/${row.kept_id}`}
-                className="font-medium text-gray-900 hover:text-blue-600"
-              >
-                {[row.kept_hn, row.kept_name].filter(Boolean).join(' · ') || 'ดูรายการที่เก็บไว้'}
-              </Link>
+              {row.kind === 'visit' ? (
+                <>
+                  <Link href={`/admin/visits/${row.kept_id}`} className="font-mono font-medium text-gray-900 hover:text-blue-600">
+                    {row.kept_name ?? 'ใบตรวจ'}
+                  </Link>
+                  <span className="text-gray-400">
+                    ย้ายจาก {[row.merged_hn, row.merged_name].filter(Boolean).join(' ')} → {row.kept_hn ?? '—'}
+                  </span>
+                </>
+              ) : (
+                <>
+                  <span className="line-through text-gray-400">
+                    {[row.merged_hn, row.merged_name, row.merged_phone].filter(Boolean).join(' · ')}
+                  </span>
+                  <span className="text-gray-400">→</span>
+                  <Link
+                    href={row.kind === 'pet' ? `/admin/pets/${row.kept_id}` : `/admin/customers/${row.kept_id}`}
+                    className="font-medium text-gray-900 hover:text-blue-600"
+                  >
+                    {[row.kept_hn, row.kept_name].filter(Boolean).join(' · ') || 'ดูรายการที่เก็บไว้'}
+                  </Link>
+                </>
+              )}
               {Object.keys(row.moved ?? {}).length > 0 && (
                 <span className="text-xs text-gray-400">
                   (ย้าย {Object.entries(row.moved).map(([t, n]) => `${COUNT_LABELS[t] ?? t} ${n}`).join(' · ')})

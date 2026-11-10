@@ -18,6 +18,7 @@ import DiagnosisSelect from '@/components/DiagnosisSelect'
 import { visitDiagnosisText, type DiagnosisLink } from '@/lib/diagnoses'
 import VaccineSection from '@/app/admin/pets/[id]/VaccineSection'
 import VisitAttachments from './VisitAttachments'
+import MoveVisitButton from './MoveVisitButton'
 import ClinicDocsSection from '@/components/ClinicDocsSection'
 import { confirmDialog } from '@/lib/confirm'
 import { canExamine } from '@/lib/roles'
@@ -952,6 +953,21 @@ export default function VisitDetail({
           <div className="mt-3 flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
             <AlertTriangle size={16} className="text-amber-600 shrink-0 mt-0.5" />
             <p className="text-sm text-amber-800">{warnings.join(' · ')}</p>
+          </div>
+        )}
+
+        {/* ลงผลตรวจผิดตัว — ย้ายทั้งใบไปอยู่กับสัตว์ตัวที่ถูก (หมอ/แอดมิน) */}
+        {canEdit && (
+          <div className="mt-3">
+            <MoveVisitButton
+              visitId={visit.id}
+              visitNumber={visit.visit_number}
+              currentPetLabel={`${pet?.hn ? 'HN ' + pet.hn + ' ' : ''}${pet?.name ?? '—'}`}
+              currentOwnerId={visit.customer_id}
+              vaccineCount={vaccinations.filter((v) => v.visit_id === visit.id).length}
+              docCount={docs.filter((d) => d.visit_id === visit.id).length}
+              billed={!!visit.transaction_id}
+            />
           </div>
         )}
       </div>
