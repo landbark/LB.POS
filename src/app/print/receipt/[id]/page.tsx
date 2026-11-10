@@ -40,7 +40,7 @@ export default async function ReceiptPrintPage({
     <ReceiptView
       tx={tx as never}
       store={store}
-      backHref={isCustomer ? '/member' : '/pos'}
+      backHref={isCustomer ? '/account' : '/pos'}
       isCustomer={isCustomer}
       isEmbed={isEmbed}
     />
