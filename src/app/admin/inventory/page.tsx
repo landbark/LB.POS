@@ -6,7 +6,9 @@ import SearchBox from '@/components/SearchBox'
 import ScanToProductButton from './ScanToProductButton'
 import EditLotButton from './EditLotButton'
 import AddLotButton from './AddLotButton'
-import CategoryFilter, { CAT_CLINIC, CAT_NONE, CAT_SHOP, type CategoryOption } from './CategoryFilter'
+import CategoryFilter from './CategoryFilter'
+// ค่าคงที่มาจากไฟล์ธรรมดา ไม่ใช่จาก CategoryFilter.tsx ที่เป็น 'use client' — ดูเหตุผลใน categoryFilter.ts
+import { CAT_CLINIC, CAT_NONE, CAT_SHOP, type CategoryOption } from './stockFilter'
 import { toOne } from '@/lib/supabase/embed'
 
 /** ล็อตสินค้าสะสมขึ้นทุกครั้งที่รับของ — แสดงทีละหน้า แล้วให้ค้นที่ server */

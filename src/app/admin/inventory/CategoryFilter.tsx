@@ -2,6 +2,7 @@
 
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { useTransition } from 'react'
+import { CAT_CLINIC, CAT_NONE, CAT_SHOP, type CategoryOption } from './stockFilter'
 
 /**
  * กรองสต็อคตามหมวด — เขียนลง ?cat= ใน URL แล้วให้ฝั่ง server กรองให้ เหมือน SearchBox
@@ -11,16 +12,6 @@ import { useTransition } from 'react'
  * (อาหารสัตว์/pet shop) — ดูจากธง clinic_only
  */
 
-export interface CategoryOption {
-  id: string
-  name: string
-  clinic_only: boolean
-}
-
-/** ค่าพิเศษของ ?cat= ที่ไม่ใช่ id ของหมวด */
-export const CAT_CLINIC = 'clinic'
-export const CAT_SHOP = 'shop'
-export const CAT_NONE = 'none'
 
 export default function CategoryFilter({
   categories,
