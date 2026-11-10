@@ -4,6 +4,7 @@ import { AlertTriangle, History } from 'lucide-react'
 import Link from '@/components/ProgressLink'
 import SearchBox from '@/components/SearchBox'
 import ScanToProductButton from './ScanToProductButton'
+import AdjustLotButton from './AdjustLotButton'
 import { toOne } from '@/lib/supabase/embed'
 
 /** ล็อตสินค้าสะสมขึ้นทุกครั้งที่รับของ — แสดงทีละหน้า แล้วให้ค้นที่ server */
@@ -16,6 +17,7 @@ export default async function InventoryPage({
 }) {
   const { q } = await searchParams
   const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
   const term = (q ?? '').trim()
   const today = thaiToday()
   const in30Days = thaiDateIn(30)
@@ -84,8 +86,20 @@ export default async function InventoryPage({
             <span className="text-gray-400">ไม่ระบุ</span>
           )}
         </td>
-        <td className="px-4 py-3 text-sm font-semibold text-gray-900 text-right">
+        <td className="px-4 py-3 text-sm font-semibold text-gray-900 text-right whitespace-nowrap">
           {lot.quantity} {p?.unit}
+        </td>
+        <td className="px-2 py-3 text-right">
+          <AdjustLotButton
+            lotId={lot.id}
+            productId={lot.product_id}
+            productName={p?.name ?? '—'}
+            lotNumber={lot.lot_number}
+            expiryDate={lot.expiry_date}
+            quantity={lot.quantity}
+            unit={p?.unit ?? ''}
+            userId={user?.id ?? ''}
+          />
         </td>
       </tr>
     )
@@ -132,6 +146,7 @@ export default async function InventoryPage({
               <th className="text-left text-xs font-medium text-gray-500 uppercase px-4 py-3">Lot</th>
               <th className="text-left text-xs font-medium text-gray-500 uppercase px-4 py-3">วันหมดอายุ</th>
               <th className="text-right text-xs font-medium text-gray-500 uppercase px-4 py-3">คงเหลือ</th>
+              <th className="px-2 py-3 w-10"><span className="sr-only">ปรับจำนวน</span></th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-50">
@@ -140,7 +155,7 @@ export default async function InventoryPage({
             {normal.map((lot) => <LotRow key={lot.id} lot={lot} />)}
             {activeLots.length === 0 && (
               <tr>
-                <td colSpan={5} className="px-4 py-10 text-center text-sm text-gray-400">
+                <td colSpan={6} className="px-4 py-10 text-center text-sm text-gray-400">
                   {term ? 'ไม่พบสินค้าที่ค้นหา' : 'ยังไม่มีสต็อค'}
                 </td>
               </tr>
