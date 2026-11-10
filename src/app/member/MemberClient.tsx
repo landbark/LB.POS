@@ -28,6 +28,7 @@ interface TxRow {
   total: number
   points_earned: number
   points_used: number
+  points_used_reward?: number | null
   created_at: string
   transaction_items: TxItem[]
 }
@@ -232,6 +233,9 @@ export default function MemberClient() {
                               )}
                               {tx.points_used > 0 && (
                                 <span className="text-xs text-orange-500">ใช้ {tx.points_used} แต้ม</span>
+                              )}
+                              {(tx.points_used_reward ?? 0) > 0 && (
+                                <span className="text-xs text-purple-600">แลกของ {tx.points_used_reward} แต้ม</span>
                               )}
                             </div>
                           </div>

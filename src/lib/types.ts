@@ -572,6 +572,27 @@ export interface PointsConfig {
   updated_at: string
 }
 
+/**
+ * ของแลกแต้ม — สินค้าในระบบที่เปิดให้แลกด้วยแต้ม (ไม่ใช่คลังแยก)
+ * สต็อก/ล็อต/วันหมดอายุใช้ของสินค้าตัวนั้นตามปกติ ตอนปิดบิลตัด FEFO เหมือนขาย
+ */
+export interface Reward {
+  id: string
+  product_id: string
+  /** แต้มที่ตัดต่อ 1 หน่วย */
+  points_cost: number
+  /** แลกได้สูงสุดกี่ชิ้นต่อบิล */
+  max_per_bill: number
+  note: string | null
+  active: boolean
+  sort_order: number
+}
+
+/** ของแลกพร้อมข้อมูลสินค้าที่ต้องใช้ตอนหยิบลงตะกร้า */
+export interface RewardWithProduct extends Reward {
+  product: Product
+}
+
 export type PromotionType = 'percent_discount' | 'amount_discount' | 'buy_x_get_y'
 export type ApplyTo = 'all' | 'categories' | 'products'
 /** โปรนี้ใช้ขายที่ไหน — all = ทุกที่, store = หน้าร้านเท่านั้น, booth = งานออกบูธเท่านั้น */
@@ -637,6 +658,8 @@ export interface Transaction {
   change_given: number | null
   points_earned: number
   points_used: number
+  /** แต้มที่จ่ายไปกับของแลกในบิลนี้ — แยกจาก points_used ที่เป็นส่วนลดเงิน */
+  points_used_reward?: number
   credit_used: number
   notes: string | null
   status: TransactionStatus
@@ -910,6 +933,11 @@ export interface CartItem {
   /** โปรที่ถูกเลือกให้บรรทัดนี้ (อันที่ลดเยอะสุด) — ไว้ขึ้นชื่อให้แคชเชียร์เห็น ไม่ได้บันทึกลงบิล */
   promo_name?: string | null
   promo_discount?: number
+  /**
+   * บรรทัดนี้เป็นของแลกแต้ม = แต้มที่ตัด "ต่อ 1 หน่วย" (0/undefined = ขายปกติ)
+   * แต้มของบรรทัด = reward_points × quantity · ราคาเต็มกับส่วนลดเต็มจำนวนเหมือนของแถม
+   */
+  reward_points?: number
   lot_id: string | null
 }
 

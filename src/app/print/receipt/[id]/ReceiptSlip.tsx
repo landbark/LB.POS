@@ -124,11 +124,12 @@ export default function ReceiptSlip({ tx, store }: { tx: ReceiptTx; store: Store
             <div className="flex justify-between"><span>เงินทอน</span><span>{money(tx.change_given ?? 0)}</span></div>
           </>
         )}
-        {(tx.points_earned > 0 || tx.points_used > 0) && (
+        {(tx.points_earned > 0 || tx.points_used > 0 || (tx.points_used_reward ?? 0) > 0) && (
           <div className="flex justify-between pt-1" style={{ fontSize: '0.9em' }}>
             <span>แต้มสะสม</span>
             <span>
               {tx.points_used > 0 && `ใช้ ${tx.points_used} `}
+              {(tx.points_used_reward ?? 0) > 0 && `แลกของ ${tx.points_used_reward} `}
               {tx.points_earned > 0 && `ได้รับ ${tx.points_earned}`}
             </span>
           </div>

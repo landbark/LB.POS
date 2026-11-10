@@ -22,6 +22,8 @@ interface Props {
   total: number
   customer: Customer | null
   pointsConfig: PointsConfig | null
+  /** แต้มที่ถูกจับจองไว้กับของแลกในตะกร้าใบนี้ (บรรทัดของแลกมี subtotal 0 อยู่แล้ว) */
+  rewardPoints: number
   cashierId: string
   promptpayId: string | null
   roundingMode: RoundingMode
@@ -53,7 +55,7 @@ const SPLIT_METHODS = Object.keys(PAYMENT_LABELS) as SplitMethod[]
 const STORE_CHANNELS = SALES_CHANNELS.filter((c) => c.value !== 'booth' && c.value !== 'online')
 
 export default function PaymentModal({
-  cart, subtotal, totalDiscount, total, customer, pointsConfig, cashierId, promptpayId, roundingMode, visitIds, boothTripId, shiftOpen, shiftOpenedAt, onClose, onSuccess,
+  cart, subtotal, totalDiscount, total, customer, pointsConfig, rewardPoints, cashierId, promptpayId, roundingMode, visitIds, boothTripId, shiftOpen, shiftOpenedAt, onClose, onSuccess,
 }: Props) {
   // writeoff = ตัดของออกจากสต็อกเฉยๆ ไม่ใช่การขาย (ของเสีย/ของแถม/ใช้ในร้าน) — ไม่สร้างใบเสร็จ
   const [mode, setMode] = useState<'sale' | 'writeoff'>('sale')
@@ -101,8 +103,10 @@ export default function PaymentModal({
   )
   const afterManualDiscount = Math.max(0, total - manualDiscountAmount)
 
+  // แต้มที่ยังเอาไปลดเงินได้ = แต้มทั้งหมด − แต้มที่จ่ายไปกับของแลกในบิลนี้แล้ว
+  const pointsAvailable = customer ? Math.max(0, customer.points - rewardPoints) : 0
   const maxRedeemablePoints = customer && pointsConfig
-    ? Math.min(customer.points, Math.floor(afterManualDiscount / pointsConfig.redeem_value) * pointsConfig.redeem_points)
+    ? Math.min(pointsAvailable, Math.floor(afterManualDiscount / pointsConfig.redeem_value) * pointsConfig.redeem_points)
     : 0
   const pointsDiscount = pointsConfig && usePoints > 0
     ? (usePoints / pointsConfig.redeem_points) * pointsConfig.redeem_value
@@ -199,7 +203,7 @@ export default function PaymentModal({
 
   // ปิดระบบแต้ม (pointsConfig = null) → ไม่ต้องขึ้นการ์ดแต้มบนจอลูกค้า
   const displayCustomer = customer && pointsConfig
-    ? { name: customer.name, pointsBefore: customer.points, pointsEarned: earnedPoints, pointsAfter: customer.points + earnedPoints - usePoints }
+    ? { name: customer.name, pointsBefore: customer.points, pointsEarned: earnedPoints, pointsAfter: customer.points + earnedPoints - usePoints - rewardPoints }
     : null
 
   // ส่งสถานะให้จอลูกค้า (จอสอง) ทุกครั้งที่ยอด/วิธีจ่าย/แต้มเปลี่ยน จนกว่าจะบันทึกสำเร็จ
@@ -222,6 +226,11 @@ export default function PaymentModal({
   async function handleConfirm() {
     // ตัดสต็อกออกเฉยๆ — ไม่สร้างใบเสร็จ ไม่แตะแต้ม/เครดิต (แต่ปิดเวชระเบียนที่ดึงมา)
     if (writeoff) {
+      // โหมดนี้ไม่มีบิลให้ตัดแต้ม ของแลกจะหลุดออกจากสต็อกฟรีๆ — ให้เอาออกจากตะกร้าก่อน
+      if (rewardPoints > 0) {
+        toast.error('มีของแลกแต้มอยู่ในตะกร้า — เอาออกก่อนถึงจะตัดสต็อกออกได้')
+        return
+      }
       const reason = writeoffReason.trim()
       if (!reason) {
         toast.error('ใส่เหตุผลที่ตัดออกด้วย')
@@ -257,6 +266,18 @@ export default function PaymentModal({
     if (backdateError) {
       toast.error(backdateError)
       return
+    }
+
+    // แต้มของลูกค้าอาจถูกใช้ไปที่เครื่องอื่นระหว่างที่บิลนี้ค้างอยู่ — เช็กอีกรอบก่อนบันทึก
+    if (rewardPoints > 0) {
+      if (!customer) {
+        toast.error('บิลนี้มีของแลกแต้ม แต่ไม่มีลูกค้า — ใส่เบอร์ลูกค้าหรือเอาของแลกออก')
+        return
+      }
+      if (rewardPoints + usePoints > customer.points) {
+        toast.error(`แต้มไม่พอ — ลูกค้ามี ${customer.points} แต้ม แต่บิลนี้ใช้ ${rewardPoints + usePoints} แต้ม`)
+        return
+      }
     }
 
     if (splitMode && !platform) {
@@ -328,6 +349,7 @@ export default function PaymentModal({
           change_given: cashIn && cashIn > 0 ? (changeOut ?? 0) : null,
           points_earned: earnedPoints,
           points_used: usePoints,
+          points_used_reward: rewardPoints,
           credit_used: useCredit,
           notes: manualDiscountAmount > 0
             ? `ส่วนลดเพิ่มเติม: ${manualDiscountMode === 'percent' ? `${manualDiscountValue}%` : `฿${manualDiscountValue.toFixed(2)}`} (฿${manualDiscountAmount.toFixed(2)})`
@@ -384,6 +406,9 @@ export default function PaymentModal({
       subtotal: item.subtotal,
       // เก็บสถานะ VAT ณ วันที่ขาย (ยังไม่ได้คิดเงิน VAT — ไว้ใช้ตอนจดทะเบียนแล้ว)
       vat_applicable: isVatApplicable(item.product),
+      // ของแลกแต้ม: ส่วนลดเต็มราคา ถ้าไม่ติดธงไว้ ย้อนดูทีหลังจะเหมือนลดราคาให้ลูกค้า 100%
+      is_reward: Boolean(item.reward_points),
+      reward_points: (item.reward_points ?? 0) * item.quantity,
       ...(soldAtISO ? { created_at: soldAtISO } : {}),
     }))
 
@@ -411,7 +436,7 @@ export default function PaymentModal({
       await supabase
         .from('customers')
         .update({
-          points: customer.points + earnedPoints - usePoints,
+          points: customer.points + earnedPoints - usePoints - rewardPoints,
           total_spent: customer.total_spent + finalTotal,
           credit_balance: customer.credit_balance - useCredit,
         })
@@ -872,7 +897,10 @@ export default function PaymentModal({
               <div className="flex justify-between items-center">
                 <div>
                   <p className="text-sm font-medium text-gray-900">ใช้แต้ม</p>
-                  <p className="text-xs text-gray-500">คงเหลือ {customer.points} แต้ม</p>
+                  <p className="text-xs text-gray-500">
+                    คงเหลือ {customer.points} แต้ม
+                    {rewardPoints > 0 && ` · กันไว้แลกของ ${rewardPoints} เหลือใช้ ${pointsAvailable}`}
+                  </p>
                 </div>
                 <div className="flex items-center gap-1.5">
                   <button
@@ -968,6 +996,13 @@ export default function PaymentModal({
                 <span>-฿{pointsDiscount.toFixed(2)}</span>
               </div>
             )}
+            {/* ของแลกไม่ลดยอดเงิน (บรรทัดเป็น 0 บาทตั้งแต่ในตะกร้า) แต่ตัดแต้ม — บอกไว้ให้เห็นชัด */}
+            {rewardPoints > 0 && (
+              <div className="flex justify-between text-sm text-purple-600">
+                <span>🎁 ของแลกแต้ม</span>
+                <span>-{rewardPoints} แต้ม</span>
+              </div>
+            )}
             {useCredit > 0 && (
               <div className="flex justify-between text-sm text-emerald-600">
                 <span>ใช้เครดิต</span>
@@ -993,6 +1028,11 @@ export default function PaymentModal({
             {earnedPoints > 0 && (
               <div className="text-xs text-purple-600 pt-1">
                 ได้รับ {earnedPoints} แต้ม
+              </div>
+            )}
+            {customer && (rewardPoints > 0 || usePoints > 0) && (
+              <div className="text-xs text-gray-500">
+                แต้มคงเหลือหลังบิลนี้ {customer.points + earnedPoints - usePoints - rewardPoints} แต้ม
               </div>
             )}
           </div>

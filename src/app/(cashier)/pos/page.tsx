@@ -10,7 +10,7 @@ export default async function POSPage() {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
 
-  const [products, { data: promotions }, { data: pointsConfig }, { data: storeSettings }, { data: pendingVisits }, { data: boothTrip }, { data: openShift }, { data: profile }] = await Promise.all([
+  const [products, { data: promotions }, { data: pointsConfig }, { data: rewards }, { data: storeSettings }, { data: pendingVisits }, { data: boothTrip }, { data: openShift }, { data: profile }] = await Promise.all([
     // ไล่ดึงทีละหน้า — supabase ตัดที่ 1000 แถว ส่วนร้านมีสินค้าเกินนั้นแล้ว
     fetchAll((from, to) =>
       supabase
@@ -30,6 +30,12 @@ export default async function POSPage() {
       .lte('start_date', thaiToday())
       .or(`end_date.is.null,end_date.gte.${thaiToday()}`),
     supabase.from('points_config').select('*').limit(1).single(),
+    // ของแลกแต้มที่เปิดใช้อยู่ — หน้าขายหาสินค้าตัวจริงจาก products ที่โหลดมาแล้ว
+    supabase
+      .from('rewards')
+      .select('product_id, points_cost, max_per_bill, note')
+      .eq('active', true)
+      .order('sort_order'),
     supabase.from('store_settings').select('promptpay_id, rounding_mode').limit(1).single(),
     // คิวเก็บเงินจากคลินิก — หมอกด "ส่งไปเก็บเงิน" ที่หน้าตรวจรักษาแล้วมาโผล่ตรงนี้
     supabase
@@ -84,6 +90,7 @@ export default async function POSPage() {
       shiftOpenedAt={openShift?.opened_at ?? null}
       promotions={(promotions ?? []).map((p) => toPromotion(p as never))}
       pointsConfig={activePointsConfig}
+      rewards={activePointsConfig ? (rewards ?? []) : []}
       cashierId={user?.id ?? ''}
       cashierName={profile?.name ?? ''}
       promptpayId={storeSettings?.promptpay_id ?? null}

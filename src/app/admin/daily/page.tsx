@@ -30,7 +30,7 @@ export default async function DailySummaryPage({
       .lt('cancelled_at', endISO),
     supabase
       .from('transaction_items')
-      .select('base_quantity, subtotal, product_id, products(name, unit), transactions!inner(status, created_at)')
+      .select('base_quantity, subtotal, discount, is_reward, reward_points, product_id, products(name, unit), transactions!inner(status, created_at)')
       .eq('transactions.status', 'completed')
       .gte('transactions.created_at', startISO)
       .lt('transactions.created_at', endISO),
@@ -87,6 +87,13 @@ export default async function DailySummaryPage({
   }
   const bestSellers = Object.values(productMap).sort((a, b) => b.qty - a.qty || b.revenue - a.revenue)
 
+  // ของแลกแต้มบันทึกเป็นส่วนลดเต็มราคา (บรรทัด 0 บาท) — ตัวเลข "ส่วนลดรวม" จึงมีของแจกปนอยู่
+  // แยกออกมาบอกไว้ ไม่งั้นเจ้าของเห็นส่วนลดพุ่งแล้วไปหาว่าใครกดลดราคา
+  const rewardRows = ((items ?? []) as unknown as { discount: number; is_reward: boolean | null; reward_points: number | null }[])
+    .filter((it) => it.is_reward)
+  const rewardValue = rewardRows.reduce((s, it) => s + (it.discount ?? 0), 0)
+  const rewardPoints = rewardRows.reduce((s, it) => s + (it.reward_points ?? 0), 0)
+
   return (
     <DailySummaryClient
       date={date}
@@ -94,6 +101,8 @@ export default async function DailySummaryPage({
       netTotal={netTotal}
       txCount={ownTx.length}
       discountTotal={discountTotal}
+      rewardValue={rewardValue}
+      rewardPoints={rewardPoints}
       cancelledCount={ownCancelled.length}
       cancelledTotal={ownCancelled.reduce((s, t) => s + t.total, 0)}
       platformTotal={platformTx.reduce((s, t) => s + t.total, 0)}

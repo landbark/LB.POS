@@ -103,6 +103,11 @@ export default function ReceiptDocument({ tx, store }: { tx: ReceiptTx; store: S
               <td className="py-2 pr-2">
                 {it.products?.name ?? 'สินค้า'}
                 {it.products?.sku && <span className="text-gray-400 font-mono"> ({it.products.sku})</span>}
+                {it.is_reward && (
+                  <span className="block text-[11px] text-gray-500">
+                    แลกด้วยแต้ม{it.reward_points ? ` ${it.reward_points} แต้ม` : ''}
+                  </span>
+                )}
               </td>
               <td className="py-2 pr-2 text-right">
                 {it.quantity} {it.unit_name ?? it.products?.unit ?? ''}
@@ -172,10 +177,11 @@ export default function ReceiptDocument({ tx, store }: { tx: ReceiptTx; store: S
           </div>
         )}
 
-        {(tx.points_earned > 0 || tx.points_used > 0) && (
+        {(tx.points_earned > 0 || tx.points_used > 0 || (tx.points_used_reward ?? 0) > 0) && (
           <p className="mt-2 text-gray-500">
             แต้มสะสม
             {tx.points_used > 0 && ` · ใช้ไป ${tx.points_used} แต้ม`}
+            {(tx.points_used_reward ?? 0) > 0 && ` · แลกของ ${tx.points_used_reward} แต้ม`}
             {tx.points_earned > 0 && ` · ได้รับ ${tx.points_earned} แต้ม`}
           </p>
         )}

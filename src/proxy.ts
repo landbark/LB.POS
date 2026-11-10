@@ -113,7 +113,7 @@ export async function proxy(request: NextRequest) {
     const vetPlusAllowed = role === 'vet_plus' && isVetPlusPath(pathname)
 
     // เฉพาะ admin: รายงาน / ตั้งค่า / โปรโมชั่น (RLS ก็บังคับ admin เท่านั้นอยู่แล้ว) — หน้าอื่นใต้ /admin cashier เข้าได้
-    const adminOnlyPaths = ['/admin/reports', '/admin/settings', '/admin/promotions', '/admin/announcements', '/admin/website', '/admin/merge']
+    const adminOnlyPaths = ['/admin/reports', '/admin/settings', '/admin/promotions', '/admin/rewards', '/admin/announcements', '/admin/website', '/admin/merge']
     if (adminOnlyPaths.some((p) => pathname.startsWith(p)) && role !== 'admin' && !vetPlusAllowed) {
       return NextResponse.redirect(new URL(homePath(role), request.url))
     }

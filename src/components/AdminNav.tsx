@@ -34,6 +34,7 @@ import {
   BookOpen,
   ClipboardList,
   Merge,
+  Gift,
 } from 'lucide-react'
 import { isVet } from '@/lib/roles'
 
@@ -61,6 +62,7 @@ const navItems = [
   { href: '/admin/announcements', label: 'ประกาศข่าว', icon: Megaphone, adminOnly: true },
   { href: '/admin/website', label: 'เว็บร้าน / ค่าส่ง', icon: Globe, adminOnly: true },
   { href: '/admin/promotions', label: 'โปรโมชั่น', icon: Tag, adminOnly: true },
+  { href: '/admin/rewards', label: 'ของแลกแต้ม', icon: Gift, adminOnly: true },
   { href: '/admin/booth', label: 'งานออกบูธ', icon: Store, adminOnly: false, vetHidden: true },
   { href: '/admin/documents', label: 'เอกสาร', icon: FileText, adminOnly: false, vetHidden: true, vetPlus: true },
   { href: '/admin/shift', label: 'ปิดกะ/เงินสด', icon: Wallet, adminOnly: false, vetHidden: true },

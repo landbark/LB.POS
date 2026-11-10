@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { LogIn, LogOut, Package, Sparkles, Wallet } from 'lucide-react'
+import { Gift, LogIn, LogOut, Package, Sparkles, Wallet } from 'lucide-react'
 import { getSessionCustomer } from '@/lib/customer-session'
 import { createAdminClient } from '@/lib/supabase/admin'
 import type { CustomerAddress } from '@/lib/types'
@@ -47,7 +47,7 @@ export default async function AccountPage({
   }
 
   const admin = createAdminClient()
-  const [{ data: addresses }, { data: telegram }] = await Promise.all([
+  const [{ data: addresses }, { data: telegram }, { data: rewards }, { data: pointsConfig }] = await Promise.all([
     admin
       .from('customer_addresses')
       .select('*')
@@ -56,9 +56,35 @@ export default async function AccountPage({
       .order('created_at', { ascending: false }),
     // select('*') กันพังช่วงก่อนรัน migration (คอลัมน์ telegram_* อาจยังไม่มี)
     admin.from('customers').select('*').eq('id', customer.id).maybeSingle(),
+    // ของแลกแต้ม — หน้านี้โชว์ให้ดูว่าแต้มที่มีแลกอะไรได้ ยังไม่ให้กดแลกออนไลน์
+    // (กดแลกบนเว็บต้องมีระบบจองสต็อก/คูปอง และของที่จองไว้อาจหมดอายุคาร้าน)
+    admin
+      .from('rewards')
+      .select('id, points_cost, note, products(name, price, active, product_lots(quantity))')
+      .eq('active', true)
+      .order('points_cost'),
+    admin.from('points_config').select('enabled').limit(1).maybeSingle(),
   ])
 
   const tg = telegram as Record<string, unknown> | null
+
+  // ของแลกที่โชว์ให้ลูกค้าเห็น — สินค้าต้องยังเปิดขายและมีของเหลือ
+  // (ของหมดแล้วยังโชว์ จะกลายเป็นลูกค้าเก็บแต้มมารอแลกของที่ไม่มี)
+  type RewardRow = {
+    id: string
+    points_cost: number
+    note: string | null
+    products: { name: string; price: number; active: boolean; product_lots: { quantity: number }[] } | null
+  }
+  const rewardList = ((rewards ?? []) as unknown as RewardRow[])
+    .filter((r) => r.products?.active && (r.products.product_lots ?? []).reduce((n, l) => n + l.quantity, 0) > 0)
+    .map((r) => ({
+      id: r.id,
+      points_cost: r.points_cost,
+      note: r.note,
+      name: r.products!.name,
+      price: r.products!.price,
+    }))
 
   return (
     <div className="max-w-2xl mx-auto space-y-4">
@@ -101,6 +127,43 @@ export default async function AccountPage({
           </button>
         </form>
       </div>
+
+      {pointsConfig?.enabled !== false && rewardList.length > 0 && (
+        <div className="rounded-xl bg-white border border-brand-muted/30 p-5">
+          <h2 className="flex items-center gap-2 text-base font-bold text-brand-dark">
+            <Gift size={18} className="text-brand-brown" /> แต้มของคุณแลกอะไรได้
+          </h2>
+          <p className="mt-1 text-xs text-gray-500">
+            แลกได้ที่หน้าร้าน — แจ้งพนักงานว่าขอแลกของชิ้นไหน ของมีจำนวนจำกัด หมดแล้วหมดเลย
+          </p>
+          <div className="mt-4 divide-y divide-brand-muted/20">
+            {rewardList.map((r) => {
+              const enough = customer.points >= r.points_cost
+              return (
+                <div key={r.id} className="flex items-start justify-between gap-3 py-3">
+                  <div className="min-w-0">
+                    <p className={`text-sm font-medium ${enough ? 'text-brand-dark' : 'text-gray-400'}`}>
+                      {r.name}
+                    </p>
+                    <p className="text-xs text-gray-400 mt-0.5">
+                      มูลค่า ฿{compact(r.price)}
+                      {r.note ? ` · ${r.note}` : ''}
+                    </p>
+                  </div>
+                  <div className="shrink-0 text-right">
+                    <p className={`text-sm font-bold ${enough ? 'text-brand-brown' : 'text-gray-400'}`}>
+                      {r.points_cost} แต้ม
+                    </p>
+                    <p className="text-[11px] text-gray-400">
+                      {enough ? 'แลกได้เลย' : `ขออีก ${r.points_cost - customer.points} แต้ม`}
+                    </p>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
 
       <TelegramConnect
         linked={Boolean(tg?.telegram_chat_id)}

@@ -3,9 +3,9 @@
 import { useState, useEffect, useMemo, useRef, useCallback, useDeferredValue, useSyncExternalStore } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { Search, X, Plus, Minus, ShoppingCart, User, MonitorPlay, Stethoscope, ScanBarcode, Store, AlertTriangle } from 'lucide-react'
+import { Search, X, Plus, Minus, ShoppingCart, User, MonitorPlay, Stethoscope, ScanBarcode, Store, AlertTriangle, Gift } from 'lucide-react'
 import toast from 'react-hot-toast'
-import type { Product, ProductUnit, CartItem, Promotion, PointsConfig, Customer, ClinicQueueVisit, RoundingMode } from '@/lib/types'
+import type { Product, ProductUnit, CartItem, Promotion, PointsConfig, Customer, ClinicQueueVisit, RoundingMode, Reward } from '@/lib/types'
 import { keptIdForMergedPhone } from '@/lib/merge'
 import { applyPromotions, promotionInChannel } from '@/lib/promotions'
 import { baseQty, factorOf, findByBarcode, posUnitChoices, unitNameOf, unitPriceOf } from '@/lib/productUnits'
@@ -39,6 +39,9 @@ export interface BoothContext {
   takenByProduct: Record<string, number>
 }
 
+/** ของแลกที่หน้าขายต้องรู้ — เท่าที่ page.tsx ดึงมา */
+export type PosReward = Pick<Reward, 'product_id' | 'points_cost' | 'max_per_bill' | 'note'>
+
 interface Props {
   products: Product[]
   booth: BoothContext | null
@@ -50,6 +53,8 @@ interface Props {
   cashierName: string
   promotions: Promotion[]
   pointsConfig: PointsConfig | null
+  /** ของแลกแต้มที่เปิดใช้อยู่ — สินค้าตัวจริงหาจาก products ด้วย product_id */
+  rewards: PosReward[]
   cashierId: string
   promptpayId: string | null
   roundingMode: RoundingMode
@@ -62,8 +67,12 @@ const SCAN_MIN_LEN = 4
 
 const isScannable = (code: string | null | undefined) => /^\d{8,14}$/.test((code ?? '').trim())
 
-/** คีย์ของบรรทัดในตะกร้า — สินค้าตัวเดียวอยู่ได้หลายบรรทัดถ้าขายคนละหน่วย */
-const lineKey = (item: Pick<CartItem, 'product' | 'unit'>) => `${item.product.id}:${item.unit?.id ?? 'base'}`
+/**
+ * คีย์ของบรรทัดในตะกร้า — สินค้าตัวเดียวอยู่ได้หลายบรรทัดถ้าขายคนละหน่วย
+ * ของแลกแต้มต้องแยกคีย์ด้วย ลูกค้าซื้อขนมตัวเดียวกันแล้วแลกอีกชิ้นได้ในบิลเดียว
+ */
+const lineKey = (item: Pick<CartItem, 'product' | 'unit' | 'reward_points'>) =>
+  `${item.product.id}:${item.unit?.id ?? 'base'}${item.reward_points ? ':reward' : ''}`
 
 /**
  * รวมรายการจากคลินิกเข้าตะกร้าที่มีอยู่
@@ -75,7 +84,12 @@ function mergeIntoCart(current: CartItem[], incoming: CartItem[]): CartItem[] {
   const next = [...current]
   for (const add of incoming) {
     const at = next.findIndex(
-      (c) => c.product.id === add.product.id && c.unit == null && c.unit_price === add.unit_price && c.discount_value === 0,
+      (c) =>
+        !c.reward_points &&
+        c.product.id === add.product.id &&
+        c.unit == null &&
+        c.unit_price === add.unit_price &&
+        c.discount_value === 0,
     )
     if (at >= 0) {
       const qty = next[at].quantity + add.quantity
@@ -90,7 +104,7 @@ function mergeIntoCart(current: CartItem[], incoming: CartItem[]): CartItem[] {
 // จำนวนสินค้าที่วาดบนกริด — วาดครบสองพันตัวทำให้ทุกตัวอักษรที่พิมพ์หน่วงเป็นสิบ ms
 const GRID_LIMIT = 60
 
-export default function POSClient({ products: allProducts, booth, shiftOpen, shiftOpenedAt, promotions, pointsConfig, cashierId, cashierName, promptpayId, roundingMode, clinicQueue }: Props) {
+export default function POSClient({ products: allProducts, booth, shiftOpen, shiftOpenedAt, promotions, pointsConfig, rewards, cashierId, cashierName, promptpayId, roundingMode, clinicQueue }: Props) {
   const router = useRouter()
   // เวชระเบียนที่กำลังเก็บเงินอยู่ — จ่ายเสร็จแล้วจะถูก mark เป็น paid พร้อมผูกเลขที่บิล
   // เจ้าของคนเดียวพาสัตว์มาหลายตัว (หรือตัวเดิมหลายใบ) รวมเก็บเงินทีเดียวได้ เลยเก็บเป็นรายการ
@@ -117,6 +131,7 @@ export default function POSClient({ products: allProducts, booth, shiftOpen, shi
   const [showAddCustomer, setShowAddCustomer] = useState(false)
   const [newCustomerName, setNewCustomerName] = useState('')
   const [showPayment, setShowPayment] = useState(false)
+  const [showRewards, setShowRewards] = useState(false)
   const [categoryFilter, setCategoryFilter] = useState('')
   // โหมดบูธ — จำไว้ที่เครื่อง ไม่ใช่ที่บัญชี: เครื่องที่ไปงานเปิดไว้ ส่วนเครื่องที่ร้านยังขายราคาปกติ
   // อ่านจาก localStorage ตรงๆ ผ่าน store (ดู lib/booth) ไม่ต้องมี state ให้ sync กันสองทาง
@@ -337,18 +352,28 @@ export default function POSClient({ products: allProducts, booth, shiftOpen, shi
    * เข้าหลายโปรพร้อมกัน = เอาอันที่ลดเยอะสุด (ดูเหตุผลใน lib/promotions)
    */
   function withPromotions(items: CartItem[]): CartItem[] {
+    // ของแลกแต้มไม่เข้าโปรและไม่นับเข้าเงื่อนไข "ซื้อครบ" ของโปรด้วย — ของที่แลกฟรีไปแล้ว
+    // จะวนกลับมาเป็นยอดซื้อที่ทำให้ได้ของแถมเพิ่มอีกชั้นไม่ได้
+    const eligible = items.map((item, i) => ({ item, i })).filter(({ item }) => !item.reward_points)
     const picks = applyPromotions(
       activePromotions,
-      items.map((item) => ({
+      eligible.map(({ item }) => ({
         product: { id: item.product.id, category_id: item.product.category_id, price: item.product.price },
         baseQuantity: item.quantity * factorOf(item.unit),
         gross: item.unit_price * item.quantity,
       })),
     )
+    // picks เรียงตาม eligible ไม่ใช่ตาม items — ต้องแมปกลับด้วย index เดิมของบรรทัด
+    const pickOf = new Map(eligible.map(({ i }, n) => [i, picks[n]]))
 
     return items.map((item, i) => {
       const gross = item.unit_price * item.quantity
-      const promo = picks[i]
+      // ของแลกแต้ม: ราคาเต็ม + ส่วนลดเต็มจำนวน = บรรทัด 0 บาท (วิธีเดียวกับของแถมใน "ซื้อ X แถม Y")
+      // ใบเสร็จจึงโชว์มูลค่าของที่ลูกค้าได้ไป แต่ยอดขายในรายงานไม่พอง
+      if (item.reward_points) {
+        return { ...item, manual_discount: 0, discount: gross, subtotal: 0, promo_name: null, promo_discount: 0 }
+      }
+      const promo = pickOf.get(i)
       // ลดเองทับโปรได้ แต่รวมกันแล้วห้ามเกินราคาของบรรทัด
       const discount = Math.min(gross, (promo?.discount ?? 0) + item.manual_discount)
       return {
@@ -389,7 +414,9 @@ export default function POSClient({ products: allProducts, booth, shiftOpen, shi
 
   function addToCart(product: Product, unit: ProductUnit | null = null) {
     // บรรทัดเดิมต้องเป็นหน่วยเดียวกันด้วย — ขายกล่องกับขายซองคนละราคา รวมบรรทัดกันไม่ได้
-    const existing = cart.findIndex((c) => c.product.id === product.id && (c.unit?.id ?? null) === (unit?.id ?? null))
+    const existing = cart.findIndex(
+      (c) => !c.reward_points && c.product.id === product.id && (c.unit?.id ?? null) === (unit?.id ?? null),
+    )
     if (existing >= 0) {
       const newCart = [...cart]
       const item = newCart[existing]
@@ -421,6 +448,83 @@ export default function POSClient({ products: allProducts, booth, shiftOpen, shi
     }
     // กดการ์ดสินค้าแล้ว focus จะไปติดอยู่ที่ปุ่ม — ดึงกลับช่องค้นหาให้ยิงตัวต่อไปได้เลย
     focusSearch()
+  }
+
+  /**
+   * ของแลกแต้มที่หยิบได้จริงตอนนี้ — สินค้าต้องยังอยู่ในลิสต์ของหน้าขาย
+   * (สินค้าถูกปิด/เป็นของคลินิก จะไม่อยู่ใน products ตั้งแต่ต้น — ของแลกตัวนั้นก็หายไปด้วย)
+   */
+  const rewardOptions = useMemo(
+    () =>
+      rewards
+        .map((r) => ({ reward: r, product: products.find((p) => p.id === r.product_id) }))
+        .filter((o): o is { reward: PosReward; product: Product } => Boolean(o.product)),
+    [rewards, products],
+  )
+
+  /** แต้มที่ถูกจับจองไว้กับของแลกในตะกร้าใบนี้แล้ว */
+  const rewardPointsUsed = cart.reduce((s, i) => s + (i.reward_points ?? 0) * i.quantity, 0)
+  const pointsLeftForRewards = customer ? customer.points - rewardPointsUsed : 0
+
+  /** หยิบของแลกลงตะกร้า — บรรทัดแยกจากของที่ซื้อจริง และแต้มถูกตัดตอนปิดบิล */
+  function addReward(reward: PosReward, product: Product) {
+    if (!customer) {
+      toast.error('ใส่เบอร์ลูกค้าก่อน — ของแลกต้องตัดแต้มจากสมาชิก')
+      return
+    }
+    const index = cart.findIndex((c) => c.reward_points && c.product.id === product.id && !c.unit)
+    const current = index >= 0 ? cart[index].quantity : 0
+
+    if (current + 1 > reward.max_per_bill) {
+      toast.error(`ของชิ้นนี้แลกได้สูงสุด ${reward.max_per_bill} ชิ้นต่อบิล`)
+      return
+    }
+    if (reward.points_cost > pointsLeftForRewards) {
+      toast.error(`แต้มไม่พอ — เหลือใช้ได้ ${pointsLeftForRewards} แต้ม`)
+      return
+    }
+    // สต็อกหมดยังให้แลกได้เหมือนการขาย (ของมีจริงบนชั้นแต่ยอดในระบบไม่ตรง) แค่เตือนไว้
+    warnOverStock(product, null, current + 1)
+
+    if (index >= 0) {
+      const newCart = [...cart]
+      newCart[index] = { ...newCart[index], quantity: current + 1 }
+      commitCart(newCart)
+    } else {
+      const price = unitPriceOf(product, null)
+      commitCart([
+        ...cart,
+        {
+          product,
+          unit: null,
+          quantity: 1,
+          unit_price: price,
+          discount_mode: 'amount',
+          discount_value: 0,
+          manual_discount: 0,
+          discount: price,
+          subtotal: 0,
+          reward_points: reward.points_cost,
+          lot_id: getBestLot(product),
+        },
+      ])
+    }
+    toast.success(`แลก ${product.name} — ${reward.points_cost} แต้ม`)
+  }
+
+  /**
+   * เอาลูกค้าออกจากบิล — ของแลกในตะกร้าต้องออกไปด้วย
+   * ไม่งั้นบิลจะแจกของฟรีโดยไม่มีใครถูกตัดแต้ม
+   */
+  function clearCustomer() {
+    const rewardLines = cart.filter((c) => c.reward_points).length
+    if (rewardLines > 0) {
+      commitCart(cart.filter((c) => !c.reward_points))
+      toast('เอาของแลกแต้มออกจากตะกร้าแล้ว — ไม่มีลูกค้าให้ตัดแต้ม', { icon: '⚠️' })
+    }
+    setCustomer(null)
+    setCustomerPhone('')
+    setShowAddCustomer(false)
   }
 
   // ดึงรายการที่หมอสั่งจ่ายเข้าตะกร้า — ราคาใช้ตามที่บันทึกไว้ในเวชระเบียน ไม่ใช่ราคาสินค้าปัจจุบัน
@@ -1004,7 +1108,74 @@ export default function POSClient({ products: allProducts, booth, shiftOpen, shi
             <X size={18} />
           </button>
         </div>
-        {/* คิวเก็บเงินจากคลินิก */}
+        {/* เลือกของแลกแต้ม */}
+      {showRewards && customer && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={() => setShowRewards(false)}>
+          <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl flex flex-col max-h-[85dvh]" onClick={(e) => e.stopPropagation()}>
+            <div className="shrink-0 flex items-center justify-between px-5 py-4 border-b border-gray-100">
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+                  <Gift size={18} className="text-purple-500" /> แลกของด้วยแต้ม
+                </h2>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  {customer.name} · ใช้ได้ {pointsLeftForRewards} แต้ม
+                </p>
+              </div>
+              <button onClick={() => setShowRewards(false)} className="p-1.5 text-gray-400 hover:text-gray-600">
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="flex-1 min-h-0 overflow-y-auto divide-y divide-gray-50">
+              {rewardOptions.map(({ reward, product }) => {
+                const stock = getProductStock(product)
+                const inCart = cart.find((c) => c.reward_points && c.product.id === product.id && !c.unit)?.quantity ?? 0
+                const notEnough = reward.points_cost > pointsLeftForRewards
+                const maxed = inCart >= reward.max_per_bill
+                return (
+                  <button
+                    key={reward.product_id}
+                    onClick={() => addReward(reward, product)}
+                    disabled={notEnough || maxed}
+                    className="w-full text-left px-5 py-3 hover:bg-purple-50 disabled:opacity-40 disabled:hover:bg-transparent disabled:cursor-not-allowed"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-gray-900">{product.name}</p>
+                        <p className="text-xs text-gray-400 mt-0.5">
+                          มูลค่าป้าย ฿{product.price.toFixed(2)} ·{' '}
+                          {stock === Infinity ? 'ไม่จำกัด' : stock <= 0 ? 'สต็อกหมด' : `คงเหลือ ${stock} ${product.unit}`}
+                        </p>
+                        {reward.note && <p className="text-xs text-amber-600 mt-0.5">{reward.note}</p>}
+                        {inCart > 0 && (
+                          <p className="text-xs text-purple-600 mt-0.5">อยู่ในบิลนี้แล้ว {inCart} ชิ้น</p>
+                        )}
+                      </div>
+                      <div className="text-right shrink-0">
+                        <p className="text-sm font-bold text-purple-700">{reward.points_cost}</p>
+                        <p className="text-[11px] text-gray-400">แต้ม/ชิ้น</p>
+                        {notEnough && <p className="text-[11px] text-red-500 mt-0.5">แต้มไม่พอ</p>}
+                        {!notEnough && maxed && <p className="text-[11px] text-gray-400 mt-0.5">ครบลิมิตบิลนี้</p>}
+                      </div>
+                    </div>
+                  </button>
+                )
+              })}
+            </div>
+
+            <div className="shrink-0 px-5 py-3 border-t border-gray-100">
+              <button
+                onClick={() => setShowRewards(false)}
+                className="w-full bg-gray-900 hover:bg-gray-800 text-white text-sm font-medium py-2.5 rounded-xl"
+              >
+                เสร็จ
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* คิวเก็บเงินจากคลินิก */}
         {queue.length > 0 && activeVisits.length === 0 && !boothMode && (
           <div className="px-3 pt-3">
             <button
@@ -1117,13 +1288,31 @@ export default function POSClient({ products: allProducts, booth, shiftOpen, shi
                 {pointsConfig && <p className="text-xs text-blue-600">{customer.points} แต้ม</p>}
               </div>
               <button
-                onClick={() => { setCustomer(null); setCustomerPhone(''); setShowAddCustomer(false) }}
+                onClick={clearCustomer}
                 className="text-gray-400 hover:text-gray-600"
               >
                 <X size={14} />
               </button>
             </div>
           )}
+          {/* ของแลกแต้ม — ตัดแต้มจากสมาชิก ของออกจากสต็อกเหมือนขาย (ล็อตใกล้หมดอายุก่อน) */}
+          {pointsConfig && rewardOptions.length > 0 && !boothMode && (
+            <button
+              onClick={() => {
+                if (!customer) {
+                  toast.error('ใส่เบอร์ลูกค้าก่อน — ของแลกต้องตัดแต้มจากสมาชิก')
+                  return
+                }
+                setShowRewards(true)
+              }}
+              className="mt-2 w-full flex items-center justify-center gap-2 border border-purple-200 bg-purple-50 hover:bg-purple-100 text-purple-800 text-xs font-medium py-2 rounded-lg transition-colors"
+            >
+              <Gift size={14} />
+              แลกของด้วยแต้ม ({rewardOptions.length} รายการ)
+              {customer && <span className="text-purple-500">· ใช้ได้ {pointsLeftForRewards} แต้ม</span>}
+            </button>
+          )}
+
           {!customer && showAddCustomer && (
             <div className="mt-2 bg-orange-50 rounded-lg p-2.5 space-y-2">
               <p className="text-xs text-orange-700">ไม่พบลูกค้าเบอร์ {customerPhone} — เพิ่มลูกค้าใหม่?</p>
@@ -1167,6 +1356,11 @@ export default function POSClient({ products: allProducts, booth, shiftOpen, shi
                           ยก{item.unit.unit_name} ({item.unit.factor} {item.product.unit})
                         </span>
                       )}
+                      {item.reward_points ? (
+                        <span className="ml-1.5 text-xs font-semibold text-purple-600 whitespace-nowrap">
+                          🎁 แลกแต้ม
+                        </span>
+                      ) : null}
                     </p>
                     <button
                       onClick={() => changeQty(i, -item.quantity)}
@@ -1176,6 +1370,15 @@ export default function POSClient({ products: allProducts, booth, shiftOpen, shi
                     </button>
                   </div>
                   <div className="flex items-center justify-between mt-1.5">
+                    {item.reward_points ? (
+                      <div className="flex items-center gap-1.5 text-sm">
+                        <span className="font-semibold text-gray-900">{item.quantity}</span>
+                        <span className="text-xs text-gray-400">{unitNameOf(item.product, item.unit)}</span>
+                        <span className="text-xs font-medium text-purple-600">
+                          · ใช้ {item.reward_points * item.quantity} แต้ม
+                        </span>
+                      </div>
+                    ) : (
                     <div className="flex items-center gap-1">
                       <button
                         onClick={() => changeQty(i, -1)}
@@ -1201,6 +1404,7 @@ export default function POSClient({ products: allProducts, booth, shiftOpen, shi
                         {item.unit ? ` = ${baseQty(item)} ${item.product.unit}` : ''}
                       </span>
                     </div>
+                    )}
                     <div className="text-right">
                       {item.discount > 0 && (
                         <p className="text-xs text-green-600">-฿{item.discount.toFixed(2)}</p>
@@ -1211,7 +1415,7 @@ export default function POSClient({ products: allProducts, booth, shiftOpen, shi
                     </div>
                   </div>
 
-                  {item.product.is_service && (
+                  {item.product.is_service && !item.reward_points && (
                     <div className="flex items-center gap-1.5 mt-1.5">
                       <span className="text-xs text-gray-500 shrink-0">ราคา</span>
                       <input
@@ -1227,7 +1431,7 @@ export default function POSClient({ products: allProducts, booth, shiftOpen, shi
                     </div>
                   )}
 
-                  {discountRow === lineKey(item) ? (
+                  {item.reward_points ? null : discountRow === lineKey(item) ? (
                     <div className="mt-2 flex items-center gap-1.5">
                       <div className="flex bg-gray-100 rounded-lg p-0.5 shrink-0">
                         {(['amount', 'percent'] as const).map((m) => (
@@ -1308,6 +1512,12 @@ export default function POSClient({ products: allProducts, booth, shiftOpen, shi
               <span>-฿{totalDiscount.toFixed(2)}</span>
             </div>
           )}
+          {rewardPointsUsed > 0 && (
+            <div className="flex justify-between text-sm text-purple-600">
+              <span>ของแลกแต้ม</span>
+              <span>-{rewardPointsUsed} แต้ม</span>
+            </div>
+          )}
           <div className="flex justify-between font-bold text-lg text-gray-900">
             <span>รวม</span>
             <span>฿{total.toFixed(2)}</span>
@@ -1341,6 +1551,7 @@ export default function POSClient({ products: allProducts, booth, shiftOpen, shi
           total={total}
           customer={customer}
           pointsConfig={pointsConfig}
+          rewardPoints={rewardPointsUsed}
           cashierId={cashierId}
           promptpayId={promptpayId}
           roundingMode={roundingMode}

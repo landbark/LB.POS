@@ -39,7 +39,7 @@ export async function POST(request: NextRequest) {
   const { data: transactions } = await admin
     .from('transactions')
     .select(`
-      id, transaction_number, total, points_earned, points_used, created_at,
+      id, transaction_number, total, points_earned, points_used, points_used_reward, created_at,
       transaction_items(quantity, unit_price, subtotal, unit_name, products(name, unit))
     `)
     .eq('customer_id', customer.id)

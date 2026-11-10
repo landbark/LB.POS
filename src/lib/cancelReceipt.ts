@@ -21,7 +21,7 @@ export async function cancelReceipt({
 
   const { data: tx, error: txFetchError } = await supabase
     .from('transactions')
-    .select('id, transaction_number, total, points_earned, points_used, credit_used, customer_id, status')
+    .select('id, transaction_number, total, points_earned, points_used, points_used_reward, credit_used, customer_id, status')
     .eq('id', transactionId)
     .single()
 
@@ -72,7 +72,9 @@ export async function cancelReceipt({
       .single()
 
     if (customer) {
-      const pointsDelta = tx.points_earned - tx.points_used
+      // แต้มที่ต้องถอนคืน = ที่ได้จากบิลนี้ − ที่จ่ายไปทั้งเป็นส่วนลดและเป็นของแลก
+      // (ของแลกคืนสต็อกไปพร้อมสินค้าอื่นแล้วถ้าเลือกคืนสต็อก)
+      const pointsDelta = tx.points_earned - tx.points_used - (tx.points_used_reward ?? 0)
       // เครดิตที่ต้องคืนกลับ = เครดิตที่เคยใช้จ่ายในบิลนี้ (คืนกลับเสมอ) + เครดิตใหม่จากการเลือกคืนเงินเป็นเครดิต
       const creditRestore = tx.credit_used + (refundMethod === 'credit' ? tx.total : 0)
       await supabase

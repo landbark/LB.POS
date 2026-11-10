@@ -37,6 +37,9 @@ interface Props {
   netTotal: number
   txCount: number
   discountTotal: number
+  /** มูลค่าของแลกแต้มที่แจกไปวันนี้ (รวมอยู่ใน discountTotal แล้ว) */
+  rewardValue: number
+  rewardPoints: number
   cancelledCount: number
   cancelledTotal: number
   /** ยอดขายผ่านแพลตฟอร์มของวันนั้น — ไม่รวมในยอดสุทธิ/วิธีชำระ โชว์ไว้ดูเฉยๆ */
@@ -64,7 +67,7 @@ const thaiDateLabel = (date: string) =>
   })
 
 export default function DailySummaryClient({
-  date, today, netTotal, txCount, discountTotal, cancelledCount, cancelledTotal,
+  date, today, netTotal, txCount, discountTotal, rewardValue, rewardPoints, cancelledCount, cancelledTotal,
   platformTotal, platformCount, byMethod, byGroup, bestSellers, shifts,
 }: Props) {
   const router = useRouter()
@@ -114,6 +117,11 @@ export default function DailySummaryClient({
             {txCount} บิล
             {discountTotal > 0 && ` · ส่วนลดรวม ฿${money(discountTotal)}`}
           </p>
+          {rewardValue > 0 && (
+            <p className="text-xs text-purple-600 mt-0.5">
+              ในส่วนลดรวมนี้เป็นของแลกแต้ม ฿{money(rewardValue)} ({rewardPoints} แต้ม) — ไม่ใช่การลดราคา
+            </p>
+          )}
           {cancelledCount > 0 && (
             <p className="text-xs text-red-500 mt-0.5">ยกเลิก {cancelledCount} ใบ (฿{money(cancelledTotal)}) — ไม่รวมในยอดข้างบน</p>
           )}

@@ -20,6 +20,8 @@ export interface ReceiptTx {
   change_given: number | null
   points_earned: number
   points_used: number
+  /** แต้มที่จ่ายไปกับของแลกในบิลนี้ (แยกจาก points_used ที่เป็นส่วนลดเงิน) */
+  points_used_reward?: number | null
   credit_used: number
   customers: { name: string; phone: string; hn: string | null } | null
   profiles: { name: string } | null
@@ -32,6 +34,9 @@ export interface ReceiptTx {
     unit_name: string | null
     unit_factor: number
     base_quantity: number
+    /** บรรทัดของแลกแต้ม — ราคาเต็มแต่ส่วนลดเต็มจำนวน ลูกค้าได้ของไปฟรี */
+    is_reward?: boolean | null
+    reward_points?: number | null
     products: { name: string; unit: string; sku: string | null } | null
   }[]
 }
