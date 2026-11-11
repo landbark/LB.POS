@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/client'
 import { isVatApplicable } from '@/lib/vat'
+import { earnsPoints } from '@/lib/points'
 import type { Order } from '@/lib/types'
 
 // ยืนยันออเดอร์ออนไลน์ = ตัดสต็อค (FEFO) + สร้างบิลขายให้เข้ารายงาน/แต้มสะสม
@@ -26,7 +27,7 @@ export async function confirmOrder(order: Order, userId: string): Promise<{ erro
   const productIds = items.map((i) => i.product_id!) as string[]
   const { data: products, error: productError } = await supabase
     .from('products')
-    .select('id, name, unit, is_service, vat_applicable, categories(vat_applicable), product_lots(id, quantity, expiry_date)')
+    .select('id, name, unit, is_service, vat_applicable, earns_points, categories(vat_applicable, earns_points), product_lots(id, quantity, expiry_date)')
     .in('id', productIds)
 
   if (productError) return { error: productError.message }
@@ -51,8 +52,14 @@ export async function confirmOrder(order: Order, userId: string): Promise<{ erro
   ])
 
   const goodsTotal = Number(order.subtotal)
-  const earnedPoints = pointsConfig?.enabled && goodsTotal > 0
-    ? Math.floor(goodsTotal / pointsConfig.spend_amount) * pointsConfig.earn_points
+  // แต้มคิดจากของที่สะสมแต้มได้เท่านั้น — ยากันเห็บหมัดขายบนเว็บได้แต่ไม่สะสมแต้ม
+  // ดู src/lib/points.ts (ออเดอร์เว็บไม่มีส่วนลดท้ายบิล ยอดรายรายการจึงเป็นฐานตรง ๆ)
+  const pointsBase = items.reduce((sum, item) => {
+    const product = products?.find((p) => p.id === item.product_id)
+    return sum + (product && earnsPoints(product as never) ? Number(item.subtotal) : 0)
+  }, 0)
+  const earnedPoints = pointsConfig?.enabled && pointsBase > 0
+    ? Math.floor(pointsBase / pointsConfig.spend_amount) * pointsConfig.earn_points
     : 0
 
   // เลขที่บิล — ชนกันได้ถ้ามีการขายพร้อมกัน ลองใหม่อีกรอบ

@@ -7,7 +7,7 @@ import { Ruler, Tag, Plus, Trash2 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { confirmDialog } from '@/lib/confirm'
 
-type Flag = 'vat_applicable' | 'clinic_only' | 'is_vaccine'
+type Flag = 'vat_applicable' | 'clinic_only' | 'is_vaccine' | 'earns_points'
 
 interface Item {
   id: string
@@ -15,6 +15,7 @@ interface Item {
   vat_applicable?: boolean
   clinic_only?: boolean
   is_vaccine?: boolean
+  earns_points?: boolean
 }
 
 interface Props {
@@ -151,6 +152,18 @@ export default function NameListSection({ title, table, items, placeholder, dele
                       className="w-3.5 h-3.5 accent-blue-600"
                     />
                     วัคซีน
+                  </label>
+                  <label
+                    className="flex items-center gap-1.5 text-xs text-gray-500 cursor-pointer"
+                    title="ซื้อของในหมวดนี้ได้แต้มสะสมไหม — ยา ค่ารักษา ค่าบริการ ไม่ต้องติ๊ก (ลูกค้ายังใช้แต้มมาหักได้ตามปกติ)"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={flagOf(item, 'earns_points')}
+                      onChange={(e) => toggleFlag(item, 'earns_points', e.target.checked)}
+                      className="w-3.5 h-3.5 accent-blue-600"
+                    />
+                    สะสมแต้ม
                   </label>
                 </>
               )}

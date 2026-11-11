@@ -6,7 +6,7 @@ import { X, CheckCircle2, Printer, AlertTriangle, History } from 'lucide-react'
 import toast from 'react-hot-toast'
 import type { CartItem, Customer, PointsConfig, PaymentMethod, SalesChannel, RoundingMode } from '@/lib/types'
 import { roundTotal } from '@/lib/rounding'
-import { earnedPointsFor, serviceSubtotal } from '@/lib/points'
+import { earnedPointsFor, noPointsSubtotal } from '@/lib/points'
 import { deductStock } from '@/lib/deductStock'
 import { baseQty } from '@/lib/productUnits'
 import { SALES_CHANNELS, isPlatformChannel } from '@/lib/salesChannel'
@@ -198,9 +198,9 @@ export default function PaymentModal({
         ? change
         : null
 
-  // ค่ารักษา/ค่าบริการไม่สะสมแต้ม (แต่ใช้แต้มมาหักค่ารักษาได้ตามปกติ) — ดู src/lib/points.ts
+  // ยา/ค่ารักษา/ค่าบริการไม่สะสมแต้ม (แต่ใช้แต้มมาหักได้ตามปกติ) — ดู src/lib/points.ts
   const earnedPoints = !platform ? earnedPointsFor(cart, finalTotal, pointsConfig) : 0
-  const serviceAmount = serviceSubtotal(cart)
+  const noPointsAmount = noPointsSubtotal(cart)
 
   // ปิดระบบแต้ม (pointsConfig = null) → ไม่ต้องขึ้นการ์ดแต้มบนจอลูกค้า
   const displayCustomer = customer && pointsConfig
@@ -1031,10 +1031,10 @@ export default function PaymentModal({
                 ได้รับ {earnedPoints} แต้ม
               </div>
             )}
-            {/* บิลคลินิกมีค่าตรวจปนมากับยา แคชเชียร์ต้องตอบลูกค้าได้ว่าทำไมแต้มน้อยกว่าที่คิด */}
-            {!platform && pointsConfig && customer && serviceAmount > 0 && (
+            {/* บิลคลินิกมีค่าตรวจกับยาปนมากับของ แคชเชียร์ต้องตอบลูกค้าได้ว่าทำไมแต้มน้อยกว่าที่คิด */}
+            {!platform && pointsConfig && customer && noPointsAmount > 0 && (
               <div className="text-xs text-gray-500">
-                ค่ารักษา/ค่าบริการ ฿{serviceAmount.toFixed(2)} ไม่สะสมแต้ม (ใช้แต้มมาหักได้ตามปกติ)
+                ยา/ค่ารักษา/ค่าบริการ ฿{noPointsAmount.toFixed(2)} ไม่สะสมแต้ม (ใช้แต้มมาหักได้ตามปกติ)
               </div>
             )}
             {customer && (rewardPoints > 0 || usePoints > 0) && (

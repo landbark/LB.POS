@@ -11,7 +11,7 @@ import type { ClinicQueueItem, ClinicQueueVisit, Customer, Product } from './typ
 /** คอลัมน์ของสินค้าที่หน้าขายต้องใช้ครบ — ล็อตไว้ตัด FEFO, หน่วยไว้ขายเป็นกล่อง/ซอง */
 export const POS_PRODUCT_SELECT = `
   *,
-  categories(name, vat_applicable, clinic_only),
+  categories(name, vat_applicable, clinic_only, earns_points),
   product_lots(id, quantity, expiry_date, lot_number),
   product_units!product_units_product_id_fkey(id, product_id, unit_name, factor, sku, barcode, price, cost, sellable_pos, sellable_online, purchasable, sort_order, active, created_at)
 `

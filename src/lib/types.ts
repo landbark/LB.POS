@@ -41,6 +41,8 @@ export interface Category {
   clinic_only: boolean
   /** เป็นวัคซีน — จ่ายในหน้าตรวจแล้วลงประวัติวัคซีนอัตโนมัติ */
   is_vaccine: boolean
+  /** ซื้อของในหมวดนี้ได้แต้มสะสมไหม — ยา/ค่ารักษา/ค่าบริการ ตั้งเป็น false */
+  earns_points: boolean
   created_at: string
 }
 
@@ -99,6 +101,8 @@ export interface Product {
   booster_interval_days: number | null
   /** ค่าตรวจ/ค่าหัตถการ — ขายได้ตามปกติ แต่ไม่มีสต็อคให้ตัด */
   is_service: boolean
+  /** ได้แต้มสะสมไหม (null = ตามหมวดหมู่) — ค่าบริการไม่ได้แต้มอยู่แล้วไม่ต้องตั้ง */
+  earns_points: boolean | null
   /** ชื่อที่พิมพ์บนฉลากยา (ไม่ใส่ = ใช้ชื่อสินค้า) */
   label_name: string | null
   /** ชื่อบนฉลากภาษาอังกฤษ (ไม่ใส่ = ใช้ชื่อไทย) */

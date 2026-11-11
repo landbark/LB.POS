@@ -34,6 +34,7 @@ export default function ProductForm({ categories, units, suppliers, product }: P
     vat: product?.vat_applicable === true ? 'yes' : product?.vat_applicable === false ? 'no' : '',
     clinic: product?.clinic_only === true ? 'yes' : product?.clinic_only === false ? 'no' : '',
     vaccine: product?.is_vaccine === true ? 'yes' : product?.is_vaccine === false ? 'no' : '',
+    points: product?.earns_points === true ? 'yes' : product?.earns_points === false ? 'no' : '',
     boosterType: product?.booster_type ?? '',
     booster: product?.booster_interval_days?.toString() ?? '',
     is_service: product?.is_service ?? false,
@@ -159,6 +160,7 @@ export default function ProductForm({ categories, units, suppliers, product }: P
       vat_applicable: form.vat === '' ? null : form.vat === 'yes',
       clinic_only: form.clinic === '' ? null : form.clinic === 'yes',
       is_vaccine: form.vaccine === '' ? null : form.vaccine === 'yes',
+      earns_points: form.points === '' ? null : form.points === 'yes',
       booster_type: form.boosterType || null,
       booster_interval_days: form.boosterType === 'custom' && form.booster.trim() ? parseInt(form.booster) : null,
       is_service: form.is_service,
@@ -205,6 +207,9 @@ export default function ProductForm({ categories, units, suppliers, product }: P
   const categoryVaccineLabel = !selectedCat
     ? 'ไม่ระบุหมวด = ไม่ใช่วัคซีน'
     : selectedCat.is_vaccine ? 'เป็นวัคซีน' : 'ไม่ใช่วัคซีน'
+  const categoryPointsLabel = !selectedCat
+    ? 'ไม่ระบุหมวด = สะสมแต้ม'
+    : selectedCat.earns_points ? 'สะสมแต้ม' : 'ไม่สะสมแต้ม'
   // ตีความว่าสินค้านี้เป็นวัคซีนไหม (ค่ารายสินค้าชนะหมวด) — ใช้ตัดสินว่าจะโชว์ช่องนัดกระตุ้น
   const effectiveVaccine = form.vaccine === 'yes' || (form.vaccine === '' && !!selectedCat?.is_vaccine)
 
@@ -434,6 +439,20 @@ export default function ProductForm({ categories, units, suppliers, product }: P
           </select>
           <p className="text-xs text-gray-400 mt-1">
             ยา/เวชภัณฑ์ที่ต้องให้หมอสั่งจ่าย — จะไม่ขึ้นในหน้าขาย แต่เลือกจ่ายได้จากหน้าตรวจรักษา
+          </p>
+        </div>
+
+        <div>
+          <label className={labelClass}>แต้มสะสม</label>
+          <select value={form.points} onChange={(e) => set('points', e.target.value)} className={inputClass}>
+            <option value="">ตามหมวดหมู่ ({categoryPointsLabel})</option>
+            <option value="yes">สะสมแต้ม</option>
+            <option value="no">ไม่สะสมแต้ม</option>
+          </select>
+          <p className="text-xs text-gray-400 mt-1">
+            {form.is_service
+              ? 'ค่าบริการไม่สะสมแต้มอยู่แล้ว ไม่ต้องตั้งค่านี้'
+              : 'ยากันเห็บหมัด/ยาถ่ายพยาธิ ตั้งเป็น "ไม่สะสมแต้ม" — ลูกค้ายังใช้แต้มมาหักค่ายาได้ตามปกติ'}
           </p>
         </div>
 
