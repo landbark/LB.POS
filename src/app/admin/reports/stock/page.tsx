@@ -66,7 +66,7 @@ export default async function StockMovementReportPage({
   for (const l of lots) onHand.set(l.product_id, (onHand.get(l.product_id) ?? 0) + l.quantity)
 
   const byProduct = new Map<string, ProductTotals>()
-  const grand: Record<StockMovementType, number> = { sale: 0, receive: 0, adjust_in: 0, adjust_out: 0, cancel: 0 }
+  const grand: Record<StockMovementType, number> = { sale: 0, receive: 0, adjust_in: 0, adjust_out: 0, cancel: 0, return: 0 }
 
   for (const m of moves) {
     const product = toOne<{ name: string; unit: string }>(m.products)
@@ -76,7 +76,7 @@ export default async function StockMovementReportPage({
         productId: m.product_id,
         name: product?.name ?? '—',
         unit: product?.unit ?? '',
-        byType: { sale: 0, receive: 0, adjust_in: 0, adjust_out: 0, cancel: 0 },
+        byType: { sale: 0, receive: 0, adjust_in: 0, adjust_out: 0, cancel: 0, return: 0 },
         inQty: 0,
         outQty: 0,
         onHand: onHand.get(m.product_id) ?? 0,

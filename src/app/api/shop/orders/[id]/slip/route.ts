@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from 'next/server'
 import { getCustomerId } from '@/lib/customer-session'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { buildPaymentSlipMessage, notifyEvent } from '@/lib/notify'
+import { pushAppNotification } from '@/lib/appNotify'
 
 const BUCKET = 'payment-slips'
 const MAX_SIZE = 5 * 1024 * 1024
@@ -65,6 +66,13 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     }),
     { dedupeKey: `slip:${path}` }
   )
+
+  await pushAppNotification(admin, {
+    kind: 'payment_slip',
+    title: `ลูกค้าแจ้งโอนแล้ว ${order.order_number}`,
+    body: `${order.recipient_name || customer?.name || 'ลูกค้า'} · ฿${Number(order.total).toLocaleString('th-TH', { minimumFractionDigits: 2 })} — รอตรวจสลิปแล้วยืนยันออเดอร์`,
+    link: `/admin/orders/${order.id}`,
+  })
 
   return NextResponse.json({ ok: true })
 }

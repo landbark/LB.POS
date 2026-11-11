@@ -22,6 +22,8 @@ interface NotifySettings {
   notify_sale?: boolean
   notify_purchase_order?: boolean
   notify_stock_received?: boolean
+  notify_receipt_cancelled?: boolean
+  notify_product_return?: boolean
   notify_customer_appointment?: boolean
   customer_reminder_footer?: string | null
   cash_diff_threshold?: number
@@ -38,6 +40,8 @@ const EVENTS = [
   { key: 'notify_sale', label: 'ทุกครั้งที่ขายของ', hint: 'เด้งทุกบิลที่ปิดการขาย — ร้านขายวันละหลายสิบบิลจะเด้งบ่อยมาก', ownerOnly: true },
   { key: 'notify_purchase_order', label: 'สร้างใบสั่งซื้อ', hint: 'มีคนบันทึกใบสั่งซื้อใหม่ส่งซัพพลายเออร์' },
   { key: 'notify_stock_received', label: 'รับของเข้าสต็อก', hint: 'ของมาส่งแล้วและกดรับเข้าสต็อกเรียบร้อย' },
+  { key: 'notify_receipt_cancelled', label: 'ยกเลิกใบเสร็จ', hint: 'มีคนยกเลิกบิล — บอกยอด วิธีคืนเงิน และเตือนถ้าเป็นบิลข้ามวัน', ownerOnly: true },
+  { key: 'notify_product_return', label: 'รับคืน / เปลี่ยนสินค้า', hint: 'มีใบคืนใหม่ — ของที่รับคืน เงินที่เก็บเพิ่มหรือคืนไป', ownerOnly: true },
 ] as const
 
 type EventKey = (typeof EVENTS)[number]['key']

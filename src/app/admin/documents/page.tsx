@@ -19,7 +19,7 @@ export default async function DocumentsPage({
   const adjustSince = thaiDayRange(thaiDateIn(-ADJUST_DAYS)).startISO
 
   // สัตวแพทย์พิเศษเปิดหน้านี้ได้แต่ดูอย่างเดียว — RLS ก็กันการเขียน transactions ไว้อีกชั้น
-  const [{ data: profile }, { data: receipts }, { data: purchaseOrders }, { data: adjustments }] = await Promise.all([
+  const [{ data: profile }, { data: receipts }, { data: purchaseOrders }, { data: adjustments }, { data: returns }] = await Promise.all([
     supabase.from('profiles').select('role').eq('id', user?.id ?? '').maybeSingle(),
     supabase
       .from('transactions')
@@ -40,6 +40,19 @@ export default async function DocumentsPage({
       .gte('created_at', adjustSince)
       .order('created_at', { ascending: false })
       .limit(1000),
+    // ใบคืน/เปลี่ยนสินค้า — บิลเดิมยังอยู่ครบ ใบนี้เก็บเฉพาะของที่รับคืนกับเงินที่คืน/เก็บเพิ่ม
+    supabase
+      .from('returns')
+      .select(`
+        id, return_number, created_at, return_value, offset_amount, refund_amount, refund_method, restocked, reason,
+        transactions!returns_transaction_id_fkey(transaction_number),
+        exchange:transactions!returns_exchange_transaction_id_fkey(id, transaction_number, total),
+        customers(name),
+        profiles(name),
+        return_items(id, quantity, unit_name, amount, products(name, sku, unit))
+      `)
+      .order('created_at', { ascending: false })
+      .limit(100),
   ])
 
   // จับแถวที่มาจากการกดครั้งเดียวกันให้เป็นใบเดียว แล้วส่งเฉพาะที่ client ต้องใช้วาดตาราง
@@ -71,9 +84,10 @@ export default async function DocumentsPage({
       receipts={(receipts as never[]) ?? []}
       purchaseOrders={(purchaseOrders as never[]) ?? []}
       stockDocs={stockDocs}
+      returns={(returns as never[]) ?? []}
       currentUserId={user?.id ?? ''}
       canEdit={!isVet(profile?.role)}
-      initialTab={tab === 'stock' || tab === 'purchase' ? tab : 'receipt'}
+      initialTab={tab === 'stock' || tab === 'purchase' || tab === 'return' ? tab : 'receipt'}
     />
   )
 }

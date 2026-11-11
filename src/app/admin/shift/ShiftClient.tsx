@@ -132,6 +132,8 @@ export default function ShiftClient({
   // เวลาที่พิมพ์ใบสรุป — ตั้งตอนกดพิมพ์เท่านั้น (คิดตอน render จะได้ HTML ฝั่ง server ไม่ตรงกับ client)
   const [printedAt, setPrintedAt] = useState('')
   const [cashRefunds, setCashRefunds] = useState(0)
+  // เงินสดที่จ่ายคืนจากใบคืน/เปลี่ยนสินค้าในกะนี้ (ดู src/lib/returns.ts)
+  const [cashReturnRefunds, setCashReturnRefunds] = useState(0)
   // เงินสดจากบิลในกะนี้ที่ถูกยกเลิกทีหลัง — รับไว้แล้วตอนขาย ต้องนับเป็นเงินเข้าเก๊ะ (ดู lib/shiftCash)
   const [cashFromCancelled, setCashFromCancelled] = useState(0)
   const [cancelledBills, setCancelledBills] = useState(0)
@@ -215,7 +217,7 @@ export default function ShiftClient({
       // จดเวลา "ก่อน" ยิง query — บิลที่เกิดระหว่าง query อาจติดมาในชุดนี้แล้ว ถือเป็นบิลใหม่ไว้ก่อน
       // ดีกว่าถือว่าเก่าแล้วปิดกะทับเงียบ ๆ (ถามเกินแล้วกดอัปเดตยอดได้ ไม่ถามแล้วยอดผิดแก้ไม่ได้)
       const startedAt = new Date().toISOString()
-      const [{ data: sold }, { data: refunds }, { data: moves }] = await Promise.all([
+      const [{ data: sold }, { data: refunds }, { data: moves }, { data: returnRefunds }] = await Promise.all([
         // ดึงทุกช่องทางมา แล้วคัดเฉพาะ 'store' ไปคิดเงินในเก๊ะ — ที่เหลือโชว์เป็นบรรทัดข้อมูลในสรุป
         // ยอดขายที่บูธไม่เข้าเก๊ะที่ร้าน — คนที่ไปงานถือเงินทอนแยกไปต่างหาก (ดูสรุปที่ /admin/booth)
         // ขายผ่านแพลตฟอร์ม (Shopee/TikTok/Lazada) ก็ไม่ใช่เงินที่รับหน้าร้าน แพลตฟอร์มหักค่าธรรมเนียมแล้วโอนทีหลัง
@@ -223,6 +225,14 @@ export default function ShiftClient({
         supabase.from('transactions').select('status, total, payment_method, sales_channel, transaction_payments(method, amount)').gte('created_at', shift.opened_at),
         supabase.from('transactions').select('total').eq('status', 'cancelled').eq('refund_method', 'cash').gte('cancelled_at', shift.opened_at),
         supabase.from('cash_movements').select('*, profiles(name)').eq('shift_id', shift.id).order('created_at'),
+        // ใบคืนที่จ่ายเงินสดคืนลูกค้าในกะนี้ — เงินออกจากเก๊ะจริง ต้องหักออกเหมือนคืนเงินบิลยกเลิก
+        // (ส่วนที่หักกับบิลใหม่ไม่ใช่เงินสด และยอดที่เก็บเพิ่มเข้าทาง cashSales ของบิลใหม่เอง)
+        supabase
+          .from('returns')
+          .select('refund_amount')
+          .eq('refund_method', 'cash')
+          .gt('refund_amount', 0)
+          .gte('created_at', shift.opened_at),
       ])
       if (cancelled) return
       setMovements((moves as unknown as CashMovement[]) ?? [])
@@ -243,6 +253,7 @@ export default function ShiftClient({
           .filter((g) => g.count > 0),
       )
       setCashRefunds((refunds ?? []).reduce((s, t) => s + t.total, 0))
+      setCashReturnRefunds((returnRefunds ?? []).reduce((s, r) => s + Number(r.refund_amount), 0))
       setLoadedAt(startedAt)
       setLoadingSummary(false)
     }
@@ -259,7 +270,7 @@ export default function ShiftClient({
   const expectedCash = openShift
     ? computeExpectedCash({
         openingCash: openShift.opening_cash,
-        cashSales, cashFromCancelled, cashRefunds, cashIn, cashOut,
+        cashSales, cashFromCancelled, cashRefunds, cashReturnRefunds, cashIn, cashOut,
       })
     : 0
   // กะที่ปิดล่าสุด = แถวแรกของประวัติ → เงินที่ควรยกมาให้กะที่เปิดอยู่
@@ -1001,6 +1012,11 @@ export default function ShiftClient({
                 {cashRefunds > 0 && (
                   <div className="flex justify-between text-red-500">
                     <span>คืนเงินสด (ใบเสร็จยกเลิก)</span><span>-฿{money(cashRefunds)}</span>
+                  </div>
+                )}
+                {cashReturnRefunds > 0 && (
+                  <div className="flex justify-between text-red-500" title="เงินสดที่จ่ายคืนลูกค้าจากใบคืน/เปลี่ยนสินค้า — ส่วนที่หักกับบิลใหม่ไม่นับตรงนี้">
+                    <span>คืนเงินสด (ใบคืน/เปลี่ยนสินค้า)</span><span>-฿{money(cashReturnRefunds)}</span>
                   </div>
                 )}
                 {cashIn > 0 && (

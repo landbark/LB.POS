@@ -372,7 +372,7 @@ export async function sendStockAlerts(
 
 export type NotifyEvent =
   | 'new_order' | 'payment_slip' | 'new_appointment' | 'shift_close' | 'daily_sales'
-  | 'sale' | 'purchase_order' | 'stock_received'
+  | 'sale' | 'purchase_order' | 'stock_received' | 'receipt_cancelled' | 'product_return'
 
 const EVENT_COLUMN: Record<NotifyEvent, string> = {
   new_order: 'notify_new_order',
@@ -383,6 +383,8 @@ const EVENT_COLUMN: Record<NotifyEvent, string> = {
   sale: 'notify_sale',
   purchase_order: 'notify_purchase_order',
   stock_received: 'notify_stock_received',
+  receipt_cancelled: 'notify_receipt_cancelled',
+  product_return: 'notify_product_return',
 }
 
 export type RecipientRole = 'owner' | 'staff' | 'vet'
@@ -403,6 +405,9 @@ const EVENT_ROLES: Record<NotifyEvent, readonly RecipientRole[]> = {
   sale: ['owner'],
   purchase_order: ['owner', 'staff'],
   stock_received: ['owner', 'staff'],
+  // ยกเลิกบิล/รับคืนของเป็นเงินออกจากร้าน — เจ้าของต้องเห็นทุกใบ ไม่ใช่มารู้ตอนปิดกะ
+  receipt_cancelled: ['owner'],
+  product_return: ['owner'],
 }
 
 /** role ของผู้รับ — รองรับข้อมูลเก่าที่ยังมีแต่ธง is_owner (ก่อนรัน migration) */
@@ -779,4 +784,81 @@ export function buildStockReceivedMessage(p: PurchaseInfo): string {
     p.by ? `รับโดย: ${p.by}` : null,
     `เวลา ${timeThai()} น.`,
   ].filter(Boolean).join('\n') + adminLink('/admin/inventory')
+}
+
+export interface CancelInfo {
+  transactionNumber: string
+  total: number
+  /** เงินที่คืนลูกค้าไป — บิลที่จ่ายด้วยเครดิตบางส่วนจะน้อยกว่ายอดบิล */
+  refundLabel: string
+  restocked: boolean
+  reason: string | null
+  by: string | null
+  customer: string | null
+  /** วันที่ขายจริงของบิลที่ถูกยกเลิก — บิลข้ามวันต้องเห็นชัด ยอดของวันนั้นจะขยับ */
+  soldAt: string
+  /** true = บิลไม่ได้ขายวันนี้ (ยกเลิกข้ามวัน ยอดวันเก่า/VAT เดือนเก่าเปลี่ยนย้อนหลัง) */
+  crossDay: boolean
+}
+
+export function buildCancelMessage(c: CancelInfo): string {
+  const lines = [
+    `🚫 ยกเลิกใบเสร็จ ${c.transactionNumber}`,
+    `ยอด ${baht(c.total)} · คืนเงิน: ${c.refundLabel}`,
+    c.restocked ? '📦 คืนของเข้าสต็อกแล้ว' : '⚠️ ไม่ได้คืนของเข้าสต็อก',
+  ]
+  if (c.customer) lines.push(`ลูกค้า: ${c.customer}`)
+  if (c.reason) lines.push(`เหตุผล: ${c.reason}`)
+  if (c.by) lines.push(`ยกเลิกโดย: ${c.by}`)
+  // ยกเลิกบิลของวันก่อนทำให้ยอดขายวันนั้นกับ VAT เดือนนั้นเปลี่ยนย้อนหลัง — ต้องเตือนให้รู้ตัว
+  if (c.crossDay) {
+    lines.push(`⚠️ บิลของ ${c.soldAt} — ยอดขายวันนั้นและ VAT เดือนนั้นเปลี่ยนย้อนหลัง`)
+  }
+  lines.push(`เวลา ${timeThai()} น.`)
+  return lines.join('\n') + adminLink('/admin/documents')
+}
+
+export interface ReturnInfo {
+  returnNumber: string
+  transactionNumber: string
+  /** บิลใหม่ที่เกิดจากการเปลี่ยนสินค้า · null = คืนของล้วน */
+  exchangeNumber: string | null
+  itemLines: string[]
+  returnValue: number
+  /** ส่วนที่หักกับบิลใหม่ */
+  offsetAmount: number
+  /** ส่วนที่คืนลูกค้าเป็นเงิน/เครดิต */
+  refundAmount: number
+  refundLabel: string | null
+  /** เงินที่ลูกค้าจ่ายเพิ่มในบิลใหม่ (บวก = เก็บเพิ่ม) */
+  extraPaid: number
+  restocked: boolean
+  reason: string | null
+  by: string | null
+  customer: string | null
+}
+
+export function buildReturnMessage(r: ReturnInfo): string {
+  const lines = [
+    r.exchangeNumber
+      ? `🔄 เปลี่ยนสินค้า ${r.returnNumber}`
+      : `↩️ รับคืนสินค้า ${r.returnNumber}`,
+    `บิลเดิม ${r.transactionNumber}${r.exchangeNumber ? ` → บิลใหม่ ${r.exchangeNumber}` : ''}`,
+    '',
+    '📥 ของที่รับคืน',
+    ...r.itemLines.slice(0, MAX_ITEMS_PER_SECTION).map((l) => `   • ${l}`),
+  ]
+  if (r.itemLines.length > MAX_ITEMS_PER_SECTION) {
+    lines.push(`   … อีก ${r.itemLines.length - MAX_ITEMS_PER_SECTION} รายการ`)
+  }
+  lines.push('', `มูลค่าที่รับคืน ${baht(r.returnValue)}`)
+  if (r.offsetAmount > 0) lines.push(`หักกับบิลใหม่ ${baht(r.offsetAmount)}`)
+  if (r.extraPaid > 0) lines.push(`💰 ลูกค้าจ่ายเพิ่ม ${baht(r.extraPaid)}`)
+  if (r.refundAmount > 0) lines.push(`💸 คืนลูกค้า ${baht(r.refundAmount)}${r.refundLabel ? ` (${r.refundLabel})` : ''}`)
+  lines.push(r.restocked ? '📦 คืนของเข้าสต็อกแล้ว' : '⚠️ ไม่ได้คืนของเข้าสต็อก')
+  if (r.customer) lines.push(`ลูกค้า: ${r.customer}`)
+  if (r.reason) lines.push(`เหตุผล: ${r.reason}`)
+  if (r.by) lines.push(`ทำโดย: ${r.by}`)
+  lines.push(`เวลา ${timeThai()} น.`)
+  return lines.join('\n') + adminLink('/admin/documents?tab=return')
 }

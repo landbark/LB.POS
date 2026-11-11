@@ -3,11 +3,12 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { Receipt, ShoppingBag, Printer, Ban, Wallet, PackageMinus } from 'lucide-react'
+import { Receipt, ShoppingBag, Printer, Ban, Wallet, PackageMinus, RotateCcw } from 'lucide-react'
 import CancelReceiptModal from './CancelReceiptModal'
+import ReturnModal from '@/components/ReturnModal'
 import EditPaymentModal from './EditPaymentModal'
 import DocumentDetailModal, { type DetailTarget, type StockDocItem } from './DocumentDetailModal'
-import type { PaymentMethod, SalesChannel, StockMovementType } from '@/lib/types'
+import type { PaymentMethod, RefundMethod, SalesChannel, StockMovementType } from '@/lib/types'
 import { MOVEMENT_LABEL } from '@/lib/stockMovements'
 import { CHANNEL_LABEL, CHANNEL_BADGE, channelGroup, isPlatformChannel, platformPaymentLabel } from '@/lib/salesChannel'
 import { PAYMENT_BADGE, PAYMENT_LABEL } from '@/lib/payments'
@@ -58,7 +59,25 @@ interface StockDocRow {
   items: StockDocItem[]
 }
 
-type Tab = 'receipt' | 'purchase' | 'stock'
+/** ใบคืน/เปลี่ยนสินค้า — บิลเดิมยังอยู่ครบ (ดู src/lib/returns.ts) */
+interface ReturnRow {
+  id: string
+  return_number: string
+  created_at: string
+  return_value: number
+  offset_amount: number
+  refund_amount: number
+  refund_method: RefundMethod | null
+  restocked: boolean
+  reason: string | null
+  transactions: { transaction_number: string } | null
+  exchange: { id: string; transaction_number: string; total: number } | null
+  customers: { name: string } | null
+  profiles: { name: string } | null
+  return_items: { id: string; quantity: number; unit_name: string | null; products: { name: string; sku: string | null; unit: string } | null; amount: number }[]
+}
+
+type Tab = 'receipt' | 'purchase' | 'stock' | 'return'
 
 const fmtDate = (d: string) =>
   new Date(d).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit', hour: '2-digit', minute: '2-digit' })
@@ -74,6 +93,18 @@ const PaymentTag = ({ method, amount }: { method: PaymentMethod; amount?: number
     {amount != null && <span className="ml-1 tabular-nums font-normal">฿{amount.toFixed(2)}</span>}
   </span>
 )
+
+const REFUND_LABEL: Record<RefundMethod, string> = {
+  cash: 'คืนเงินสด',
+  transfer: 'คืนโดยโอน',
+  credit: 'เก็บเป็นเครดิต',
+}
+
+/** ของที่รับคืน 2 ตัวแรกไว้อ่านในตารางโดยไม่ต้องเปิดใบ */
+const returnPreview = (r: { return_items: { quantity: number; unit_name: string | null; products: { name: string; unit: string } | null }[] }) => {
+  const names = r.return_items.map((i) => `${i.products?.name ?? '—'} × ${i.quantity}`)
+  return names.slice(0, 2).join(', ') + (names.length > 2 ? ` +${names.length - 2}` : '')
+}
 
 const StatusTag = ({ cancelled }: { cancelled: boolean }) => (
   <span className={`${BADGE} ${cancelled ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>
@@ -96,6 +127,7 @@ export default function DocumentsClient({
   receipts,
   purchaseOrders,
   stockDocs,
+  returns,
   currentUserId,
   canEdit,
   initialTab = 'receipt',
@@ -103,6 +135,7 @@ export default function DocumentsClient({
   receipts: ReceiptRow[]
   purchaseOrders: PurchaseOrderRow[]
   stockDocs: StockDocRow[]
+  returns: ReturnRow[]
   currentUserId: string
   canEdit: boolean
   /** ?tab=stock — ให้ลิงก์จากหน้ารายงานเปิดมาที่แท็บใบตัดสต็อกได้ตรง ๆ */
@@ -112,6 +145,7 @@ export default function DocumentsClient({
   const [tab, setTab] = useState<Tab>(initialTab)
   const [query, setQuery] = useState('')
   const [cancelling, setCancelling] = useState<ReceiptRow | null>(null)
+  const [returning, setReturning] = useState<ReceiptRow | null>(null)
   const [editingPayment, setEditingPayment] = useState<ReceiptRow | null>(null)
   const [detail, setDetail] = useState<DetailTarget | null>(null)
 
@@ -134,6 +168,16 @@ export default function DocumentsClient({
           d.preview.toLowerCase().includes(q)
       )
     : stockDocs
+  const filteredReturns = q
+    ? returns.filter(
+        (r) =>
+          r.return_number.toLowerCase().includes(q) ||
+          (r.transactions?.transaction_number ?? '').toLowerCase().includes(q) ||
+          (r.customers?.name ?? '').toLowerCase().includes(q) ||
+          (r.profiles?.name ?? '').toLowerCase().includes(q) ||
+          r.return_items.some((i) => (i.products?.name ?? '').toLowerCase().includes(q))
+      )
+    : returns
 
   const tabClass = (active: boolean) =>
     `flex shrink-0 items-center gap-1.5 whitespace-nowrap px-3 sm:px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
@@ -198,6 +242,16 @@ export default function DocumentsClient({
           <Wallet size={15} />
         </button>
       )}
+      {/* รับคืนบางรายการ — ไม่แตะบิลเดิม ยอดขายของวันที่ขายไม่ขยับ (ต่างจากยกเลิกทั้งใบ) */}
+      {canEdit && r.status !== 'cancelled' && !isPlatformChannel(r.sales_channel) && (
+        <button
+          onClick={() => setReturning(r)}
+          title="รับคืน / เปลี่ยนสินค้า"
+          className="p-2 text-gray-400 hover:text-teal-600 hover:bg-gray-100 rounded-lg"
+        >
+          <RotateCcw size={15} />
+        </button>
+      )}
       {canEdit && r.status !== 'cancelled' && (
         <button
           onClick={() => setCancelling(r)}
@@ -221,13 +275,21 @@ export default function DocumentsClient({
     ) : null
 
   const emptyText =
-    tab === 'receipt' ? 'ไม่พบใบเสร็จ' : tab === 'purchase' ? 'ไม่พบใบสั่งซื้อ' : 'ไม่พบใบตัดสต็อก/ปรับสต็อก'
+    tab === 'receipt'
+      ? 'ไม่พบใบเสร็จ'
+      : tab === 'purchase'
+        ? 'ไม่พบใบสั่งซื้อ'
+        : tab === 'return'
+          ? 'ไม่พบใบคืน/เปลี่ยนสินค้า'
+          : 'ไม่พบใบตัดสต็อก/ปรับสต็อก'
   const emptyOnThisTab =
     tab === 'receipt'
       ? filteredReceipts.length === 0
       : tab === 'purchase'
         ? filteredPurchases.length === 0
-        : filteredStockDocs.length === 0
+        : tab === 'return'
+          ? filteredReturns.length === 0
+          : filteredStockDocs.length === 0
 
   return (
     <div>
@@ -247,6 +309,9 @@ export default function DocumentsClient({
               <button className={tabClass(tab === 'purchase')} onClick={() => setTab('purchase')}>
                 <ShoppingBag size={15} /> ใบสั่งซื้อ ({purchaseOrders.length})
               </button>
+              <button className={tabClass(tab === 'return')} onClick={() => setTab('return')}>
+                <RotateCcw size={15} /> ใบคืน/เปลี่ยน ({returns.length})
+              </button>
               <button className={tabClass(tab === 'stock')} onClick={() => setTab('stock')}>
                 <PackageMinus size={15} /> ใบตัดสต็อก ({stockDocs.length})
               </button>
@@ -260,7 +325,9 @@ export default function DocumentsClient({
                   ? 'ค้นหาเลขที่ / แคชเชียร์...'
                   : tab === 'purchase'
                     ? 'ค้นหาเลขที่ / ซัพพลายเออร์...'
-                    : 'ค้นหาเหตุผล / สินค้า / คนทำ...'
+                    : tab === 'return'
+                      ? 'ค้นหาเลขที่ใบคืน / บิลเดิม / สินค้า...'
+                      : 'ค้นหาเหตุผล / สินค้า / คนทำ...'
               }
               className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm w-full sm:w-56 mt-2 sm:my-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
@@ -355,11 +422,116 @@ export default function DocumentsClient({
               )
             })}
 
+          {tab === 'return' &&
+            filteredReturns.map((r) => (
+              <div key={r.id} className="px-4 py-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="font-mono text-sm text-gray-700">{r.return_number}</p>
+                    <p className="mt-0.5 text-xs text-gray-500">
+                      {fmtDate(r.created_at)} · {r.profiles?.name ?? '—'}
+                    </p>
+                    <p className="mt-0.5 text-sm text-gray-700">{returnPreview(r)}</p>
+                    <p className="mt-0.5 text-xs text-gray-500">
+                      บิลเดิม {r.transactions?.transaction_number ?? '—'}
+                      {r.exchange && ` → ${r.exchange.transaction_number}`}
+                    </p>
+                  </div>
+                  <div className="shrink-0 text-right">
+                    <p className="text-sm font-semibold text-teal-700">−฿{money(r.return_value)}</p>
+                    {r.exchange && Number(r.exchange.total) > 0 && (
+                      <p className="text-xs text-green-700">เก็บเพิ่ม ฿{money(Number(r.exchange.total))}</p>
+                    )}
+                    {r.refund_amount > 0 && (
+                      <p className="text-xs text-red-600">
+                        คืน ฿{money(r.refund_amount)}
+                        {r.refund_method && ` · ${REFUND_LABEL[r.refund_method]}`}
+                      </p>
+                    )}
+                  </div>
+                </div>
+                <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                  <span className={`${BADGE} ${r.exchange ? 'bg-teal-100 text-teal-700' : 'bg-gray-100 text-gray-600'}`}>
+                    {r.exchange ? 'เปลี่ยนสินค้า' : 'รับคืน'}
+                  </span>
+                  {!r.restocked && <span className={`${BADGE} bg-amber-100 text-amber-700`}>ไม่คืนสต็อก</span>}
+                  {r.reason && <span className="text-xs text-gray-500">{r.reason}</span>}
+                </div>
+              </div>
+            ))}
+
           {emptyOnThisTab && <p className="px-4 py-10 text-center text-sm text-gray-400">{emptyText}</p>}
         </div>
 
         <div className="hidden md:block overflow-x-auto">
-          {tab === 'stock' ? (
+          {tab === 'return' ? (
+            <table className="w-full">
+              <thead className="bg-gray-50 border-b border-gray-100">
+                <tr>
+                  <th className="text-left text-xs font-medium text-gray-500 uppercase px-4 py-3">เลขที่</th>
+                  <th className="text-left text-xs font-medium text-gray-500 uppercase px-4 py-3">วันที่</th>
+                  <th className="text-left text-xs font-medium text-gray-500 uppercase px-4 py-3">บิลเดิม → บิลใหม่</th>
+                  <th className="text-left text-xs font-medium text-gray-500 uppercase px-4 py-3">ของที่รับคืน</th>
+                  <th className="text-left text-xs font-medium text-gray-500 uppercase px-4 py-3">โดย</th>
+                  <th className="text-right text-xs font-medium text-gray-500 uppercase px-4 py-3 whitespace-nowrap">มูลค่าคืน</th>
+                  <th className="text-right text-xs font-medium text-gray-500 uppercase px-4 py-3 whitespace-nowrap">เงินเพิ่ม/คืน</th>
+                  <th className="px-4 py-3"></th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-50">
+                {filteredReturns.map((r) => (
+                  <tr key={r.id} className="hover:bg-gray-50">
+                    <td className="px-4 py-3 text-sm font-mono text-gray-600 whitespace-nowrap">
+                      {r.return_number}
+                      <span className={`${BADGE} ml-2 ${r.exchange ? 'bg-teal-100 text-teal-700' : 'bg-gray-100 text-gray-600'}`}>
+                        {r.exchange ? 'เปลี่ยน' : 'คืน'}
+                      </span>
+                      {!r.restocked && <span className={`${BADGE} ml-1 bg-amber-100 text-amber-700`}>ไม่คืนสต็อก</span>}
+                    </td>
+                    <td className="px-4 py-3 text-sm text-gray-600 whitespace-nowrap">{fmtDate(r.created_at)}</td>
+                    <td className="px-4 py-3 text-sm font-mono text-gray-600 whitespace-nowrap">
+                      {r.transactions?.transaction_number ?? '—'}
+                      {r.exchange && <span className="text-teal-700"> → {r.exchange.transaction_number}</span>}
+                    </td>
+                    <td className="px-4 py-3 text-sm text-gray-700">
+                      {returnPreview(r)}
+                      {r.reason && <span className="block text-xs text-gray-400">{r.reason}</span>}
+                    </td>
+                    <td className="px-4 py-3 text-sm text-gray-600 whitespace-nowrap">{r.profiles?.name ?? '—'}</td>
+                    <td className="px-4 py-3 text-sm font-semibold text-teal-700 text-right whitespace-nowrap">
+                      −฿{money(r.return_value)}
+                    </td>
+                    <td className="px-4 py-3 text-sm text-right whitespace-nowrap">
+                      {r.exchange && Number(r.exchange.total) > 0 && (
+                        <span className="block text-green-700">+฿{money(Number(r.exchange.total))}</span>
+                      )}
+                      {r.refund_amount > 0 && (
+                        <span className="block text-red-600">
+                          −฿{money(r.refund_amount)}
+                          {r.refund_method && <span className="text-xs text-gray-400"> {REFUND_LABEL[r.refund_method]}</span>}
+                        </span>
+                      )}
+                      {r.exchange && Number(r.exchange.total) === 0 && r.refund_amount === 0 && (
+                        <span className="text-gray-400">—</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex justify-end">
+                        {r.exchange && <PrintLink href={`/print/receipt/${r.exchange.id}`} title="พิมพ์ใบเสร็จบิลใหม่" />}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+                {filteredReturns.length === 0 && (
+                  <tr>
+                    <td colSpan={8} className="px-4 py-10 text-center text-sm text-gray-400">
+                      ไม่พบใบคืน/เปลี่ยนสินค้า
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          ) : tab === 'stock' ? (
             <table className="w-full">
               <thead className="bg-gray-50 border-b border-gray-100">
                 <tr>
@@ -518,6 +690,15 @@ export default function DocumentsClient({
             setEditingPayment(null)
             router.refresh()
           }}
+        />
+      )}
+
+      {returning && (
+        <ReturnModal
+          currentUserId={currentUserId}
+          initialBillId={returning.id}
+          onClose={() => setReturning(null)}
+          onDone={() => router.refresh()}
         />
       )}
 

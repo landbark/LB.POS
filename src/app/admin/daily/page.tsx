@@ -15,7 +15,7 @@ export default async function DailySummaryPage({
   const { startISO, endISO } = thaiDayRange(date)
 
   const supabase = await createClient()
-  const [{ data: completedTx }, { data: cancelledTx }, { data: items }, { data: shifts }] = await Promise.all([
+  const [{ data: completedTx }, { data: cancelledTx }, { data: items }, { data: shifts }, { data: returns }, { data: returnedItems }] = await Promise.all([
     supabase
       .from('transactions')
       .select('total, discount, payment_method, sales_channel, transaction_payments(method, amount)')
@@ -46,6 +46,18 @@ export default async function DailySummaryPage({
       .lt('opened_at', endISO)
       .or(`closed_at.is.null,closed_at.gte.${startISO}`)
       .order('opened_at', { ascending: true }),
+    // ใบคืน/เปลี่ยนสินค้าของวันนั้น — ส่วนที่หักกับบิลใหม่ไม่ต้องหักซ้ำ (total ของบิลใหม่หักให้แล้ว)
+    supabase
+      .from('returns')
+      .select('return_value, refund_amount, exchange_transaction_id')
+      .gte('created_at', startISO)
+      .lt('created_at', endISO),
+    // ของที่รับคืนรายตัว — หักออกจากตาราง "ขายดีวันนี้" ไม่งั้นของที่ถูกเอามาคืนยังขึ้นเป็นขายดี
+    supabase
+      .from('return_items')
+      .select('quantity, base_quantity, product_id, products(name, unit), transaction_items(subtotal, quantity), returns!inner(created_at)')
+      .gte('returns.created_at', startISO)
+      .lt('returns.created_at', endISO),
   ])
 
   // ยอดขายผ่านแพลตฟอร์มไม่ใช่เงินที่ร้านได้จริง (โดนหักค่าธรรมเนียม/ค่าส่ง) — แยกออกจากยอดสุทธิ
@@ -54,7 +66,11 @@ export default async function DailySummaryPage({
   const platformTx = (completedTx ?? []).filter((t) => !isOwnMoney(t.sales_channel))
   const ownCancelled = (cancelledTx ?? []).filter((t) => isOwnMoney(t.sales_channel))
 
-  const netTotal = ownTx.reduce((s, t) => s + t.total, 0)
+  const returnRows = returns ?? []
+  const returnValueTotal = returnRows.reduce((s, r) => s + Number(r.return_value), 0)
+  const returnRefundTotal = returnRows.reduce((s, r) => s + Number(r.refund_amount), 0)
+
+  const netTotal = ownTx.reduce((s, t) => s + t.total, 0) - returnRefundTotal
   const discountTotal = ownTx.reduce((s, t) => s + (t.discount ?? 0), 0)
 
   // บิลที่แยกจ่ายนับยอดเข้าทุกช่องทางที่รับมา ส่วน count นับใบ (ใบเดียวโผล่ได้หลายช่องทาง)
@@ -85,7 +101,30 @@ export default async function DailySummaryPage({
     p.qty += it.base_quantity
     p.revenue += it.subtotal
   }
-  const bestSellers = Object.values(productMap).sort((a, b) => b.qty - a.qty || b.revenue - a.revenue)
+  // หักของที่รับคืนออกจากยอดขายรายสินค้า ด้วย "ราคาในบิลเดิม" ให้ฐานเดียวกับยอดขายข้างบน
+  for (const r of (returnedItems ?? []) as unknown as {
+    quantity: number
+    base_quantity: number
+    product_id: string | null
+    products: { name: string; unit: string } | null
+    transaction_items: { subtotal: number; quantity: number } | null
+  }[]) {
+    if (!r.product_id) continue
+    const p = (productMap[r.product_id] ??= {
+      name: r.products?.name ?? 'สินค้าที่ถูกลบ',
+      unit: r.products?.unit ?? '',
+      qty: 0,
+      revenue: 0,
+    })
+    p.qty -= r.base_quantity
+    p.revenue -= r.transaction_items && r.transaction_items.quantity
+      ? (r.transaction_items.subtotal / r.transaction_items.quantity) * r.quantity
+      : 0
+  }
+  const bestSellers = Object.values(productMap)
+    // ขายแล้วถูกคืนหมดในวันเดียวกัน = ไม่ต้องขึ้นเป็นแถวเปล่า
+    .filter((p) => p.qty !== 0 || Math.abs(p.revenue) > 0.004)
+    .sort((a, b) => b.qty - a.qty || b.revenue - a.revenue)
 
   // ของแลกแต้มบันทึกเป็นส่วนลดเต็มราคา (บรรทัด 0 บาท) — ตัวเลข "ส่วนลดรวม" จึงมีของแจกปนอยู่
   // แยกออกมาบอกไว้ ไม่งั้นเจ้าของเห็นส่วนลดพุ่งแล้วไปหาว่าใครกดลดราคา
@@ -105,6 +144,9 @@ export default async function DailySummaryPage({
       rewardPoints={rewardPoints}
       cancelledCount={ownCancelled.length}
       cancelledTotal={ownCancelled.reduce((s, t) => s + t.total, 0)}
+      returnCount={returnRows.length}
+      returnValueTotal={returnValueTotal}
+      returnRefundTotal={returnRefundTotal}
       platformTotal={platformTx.reduce((s, t) => s + t.total, 0)}
       platformCount={platformTx.length}
       byMethod={byMethod}

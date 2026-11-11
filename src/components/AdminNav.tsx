@@ -37,6 +37,7 @@ import {
   Gift,
 } from 'lucide-react'
 import { isVet } from '@/lib/roles'
+import NotificationBell from '@/components/NotificationBell'
 
 /** ถามจำนวนออเดอร์ค้างซ้ำทุกกี่มิลลิวินาที (เฉพาะตอนแท็บถูกมองอยู่) */
 const POLL_MS = 300_000
@@ -73,7 +74,7 @@ const navItems = [
   { href: '/admin/help', label: 'คู่มือพนักงาน', icon: BookOpen, adminOnly: false },
 ]
 
-export default function AdminNav({ userName, role }: { userName: string; role: string }) {
+export default function AdminNav({ userName, role, userId }: { userName: string; role: string; userId: string }) {
   const pathname = usePathname()
   const router = useRouter()
   // มือถือ: เมนูซ่อนไว้เป็นลิ้นชัก เปิดด้วยปุ่มบนแถบด้านบน (จอ md ขึ้นไปโชว์ค้างเหมือนเดิม)
@@ -160,7 +161,10 @@ export default function AdminNav({ userName, role }: { userName: string; role: s
           )}
         </button>
         <span className="font-bold truncate" style={{ color: '#F0E8DC' }}>LANDBARK</span>
-        <span className="text-xs truncate ml-auto" style={{ color: '#D4A87A' }}>{userName}</span>
+        <div className="ml-auto flex items-center gap-1 shrink-0">
+          <span className="text-xs truncate max-w-[9rem]" style={{ color: '#D4A87A' }}>{userName}</span>
+          <NotificationBell userId={userId} iconColor="#D4A87A" />
+        </div>
       </div>
 
       {/* ฉากหลังตอนเปิดเมนูบนมือถือ — แตะแล้วปิด */}
@@ -177,6 +181,10 @@ export default function AdminNav({ userName, role }: { userName: string; role: s
         <div className="flex-1 min-w-0">
           <h1 className="text-lg font-bold" style={{ color: '#F0E8DC' }}>LANDBARK</h1>
           <p className="text-xs mt-0.5 truncate" style={{ color: '#D4A87A' }}>{userName}</p>
+        </div>
+        {/* กระดิ่งในลิ้นชักเมนูโชว์เฉพาะจอ md ขึ้นไป — จอเล็กมีตัวเดียวกันอยู่บนแถบด้านบนแล้ว */}
+        <div className="hidden md:block -mr-1">
+          <NotificationBell userId={userId} iconColor="#D4A87A" />
         </div>
         <button
           onClick={() => setOpen(false)}

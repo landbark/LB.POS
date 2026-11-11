@@ -6,6 +6,7 @@ import { quoteShipping } from '@/lib/shop'
 import { expireStaleOrders } from '@/lib/order-stock'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { buildNewOrderMessage, notifyEvent } from '@/lib/notify'
+import { pushAppNotification } from '@/lib/appNotify'
 
 interface AddressInput {
   recipient_name?: string
@@ -185,6 +186,14 @@ export async function POST(request: NextRequest) {
     }),
     { dedupeKey: `order:${order.id}` }
   )
+
+  // ขึ้นกระดิ่งในระบบด้วย — Telegram เข้าเครื่องเจ้าของ ส่วนคนที่ยืนอยู่หน้าขายไม่เห็น
+  await pushAppNotification(admin, {
+    kind: 'new_order',
+    title: `ออเดอร์ออนไลน์ใหม่ ${order.order_number}`,
+    body: `${address.recipient_name?.trim() || customer?.name || 'ลูกค้า'} · ${priced.lines.length} รายการ · ฿${total.toLocaleString('th-TH', { minimumFractionDigits: 2 })} · ${fulfillment === 'pickup' ? 'รับที่ร้าน' : 'จัดส่ง'} — รอลูกค้าชำระเงิน`,
+    link: `/admin/orders/${order.id}`,
+  })
 
   return NextResponse.json({ id: order.id, order_number: order.order_number })
 }

@@ -87,6 +87,7 @@ export default function ReceiptSlip({ tx, store }: { tx: ReceiptTx; store: Store
         <div className="flex justify-between"><span>ยอดรวม</span><span>{money(tx.subtotal)}</span></div>
         {tx.discount > 0 && <div className="flex justify-between"><span>ส่วนลด</span><span>-{money(tx.discount)}</span></div>}
         {tx.credit_used > 0 && <div className="flex justify-between"><span>ใช้เครดิต</span><span>-{money(tx.credit_used)}</span></div>}
+        {(tx.return_credit ?? 0) > 0 && <div className="flex justify-between"><span>หักด้วยของที่รับคืน</span><span>-{money(tx.return_credit!)}</span></div>}
         {!!tx.rounding && tx.rounding !== 0 && (
           <div className="flex justify-between"><span>ปัดเศษ</span><span>{tx.rounding > 0 ? '+' : '-'}{money(Math.abs(tx.rounding))}</span></div>
         )}

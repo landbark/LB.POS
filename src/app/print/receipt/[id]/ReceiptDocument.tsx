@@ -137,6 +137,9 @@ export default function ReceiptDocument({ tx, store }: { tx: ReceiptTx; store: S
           {tx.credit_used > 0 && (
             <div className="flex justify-between"><span className="text-gray-500">ใช้เครดิต</span><span>-{money(tx.credit_used)}</span></div>
           )}
+          {(tx.return_credit ?? 0) > 0 && (
+            <div className="flex justify-between"><span className="text-gray-500">หักด้วยของที่รับคืน</span><span>-{money(tx.return_credit!)}</span></div>
+          )}
           {!!tx.rounding && tx.rounding !== 0 && (
             <div className="flex justify-between">
               <span className="text-gray-500">ปัดเศษ</span>

@@ -16,7 +16,7 @@ export default async function CashierLayout({ children }: { children: React.Reac
 
   return (
     <div className="min-h-screen flex flex-col">
-      <CashierNav userName={profile?.name ?? ''} isAdmin={profile?.role === 'admin'} />
+      <CashierNav userName={profile?.name ?? ''} isAdmin={profile?.role === 'admin'} userId={user.id} />
       <main className="flex-1 pt-14">{children}</main>
     </div>
   )

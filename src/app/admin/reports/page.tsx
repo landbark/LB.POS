@@ -14,7 +14,7 @@ export default async function ReportsPage() {
   const startOfMonth = thaiDayRange(thaiMonthStart()).startISO
 
   // ยอดทั้งเดือนอาจเกิน 1000 แถว — ต้องไล่ดึงทีละหน้า ไม่งั้นตัวเลขจะขาดแบบไม่มี error
-  const [todayTx, monthTx, { data: recentTx }, monthItems, { data: store }, monthMoves] = await Promise.all([
+  const [todayTx, monthTx, { data: recentTx }, monthItems, { data: store }, monthMoves, { data: todayRefunds }, { data: monthRefunds }, monthReturnedItems] = await Promise.all([
     fetchAll((from, to) =>
       supabase.from('transactions').select('total, sales_channel, payment_method, transaction_payments(method, amount)')
         .neq('status', 'cancelled')
@@ -51,6 +51,23 @@ export default async function ReportsPage() {
         .order('id')
         .range(from, to)
     ),
+    // เงินที่จ่ายคืนลูกค้าจากใบคืน — ส่วนที่เอาไปหักบิลใหม่ไม่ต้องหักซ้ำ เพราะ total ของบิลใหม่
+    // หักให้แล้ว ที่เหลือ (คืนของล้วน / ของใหม่ถูกกว่า) ไม่มีบิลไหนสะท้อนเงินก้อนนี้
+    supabase.from('returns').select('refund_amount').gt('refund_amount', 0).gte('created_at', today).lt('created_at', tomorrow),
+    supabase.from('returns').select('refund_amount').gt('refund_amount', 0).gte('created_at', startOfMonth),
+    // ของที่รับคืนเดือนนี้ — หักออกจากฐาน VAT / รายได้บริการ เพราะของกลับมาอยู่ที่ร้านแล้ว
+    fetchAll<{
+      quantity: number
+      transaction_items: { subtotal: number; quantity: number; vat_applicable: boolean } | null
+      products: { is_service: boolean } | null
+    }>((from, to) =>
+      supabase
+        .from('return_items')
+        .select('quantity, products(is_service), transaction_items(subtotal, quantity, vat_applicable), returns!inner(created_at)')
+        .gte('returns.created_at', startOfMonth)
+        .order('id')
+        .range(from, to) as never
+    ),
   ])
 
   // สรุปของเข้า-ออกจากชั้นเดือนนี้ไว้ข้างยอดขาย รายละเอียดอยู่หน้า /admin/reports/stock
@@ -61,12 +78,30 @@ export default async function ReportsPage() {
   const moveIn = IN_TYPES.reduce((s, t) => s + (moveByType[t] ?? 0), 0)
   const moveOut = OUT_TYPES.reduce((s, t) => s + (moveByType[t] ?? 0), 0)
 
-  const vatBase = monthItems?.reduce((s, i) => s + (i.vat_applicable ? i.subtotal : 0), 0) ?? 0
-  const nonVatBase = monthItems?.reduce((s, i) => s + (i.vat_applicable ? 0 : i.subtotal), 0) ?? 0
+  // ของที่รับคืน แปลงกลับเป็น "ราคาในบิลเดิม" ให้เป็นฐานเดียวกับยอดขายที่คิดจาก transaction_items
+  const returnedBack = monthReturnedItems
+    .map((r) => ({
+      amount: r.transaction_items && r.transaction_items.quantity
+        ? (r.transaction_items.subtotal / r.transaction_items.quantity) * r.quantity
+        : 0,
+      vat: r.transaction_items?.vat_applicable ?? false,
+      isService: Boolean(r.products?.is_service),
+    }))
+
+  const vatBase =
+    (monthItems?.reduce((s, i) => s + (i.vat_applicable ? i.subtotal : 0), 0) ?? 0) -
+    returnedBack.reduce((s, r) => s + (r.vat ? r.amount : 0), 0)
+  const nonVatBase =
+    (monthItems?.reduce((s, i) => s + (i.vat_applicable ? 0 : i.subtotal), 0) ?? 0) -
+    returnedBack.reduce((s, r) => s + (r.vat ? 0 : r.amount), 0)
 
   // รายได้ค่าบริการคลินิก (สินค้าที่ตั้งเป็นบริการ เช่น ค่าตรวจ/ค่าหัตถการ/ค่าผ่าตัด) แยกจากยอดขายสินค้า
-  const serviceRevenue = monthItems?.reduce((s, i) => s + ((i.products as { is_service?: boolean } | null)?.is_service ? i.subtotal : 0), 0) ?? 0
-  const productRevenue = monthItems?.reduce((s, i) => s + ((i.products as { is_service?: boolean } | null)?.is_service ? 0 : i.subtotal), 0) ?? 0
+  const serviceRevenue =
+    (monthItems?.reduce((s, i) => s + ((i.products as { is_service?: boolean } | null)?.is_service ? i.subtotal : 0), 0) ?? 0) -
+    returnedBack.reduce((s, r) => s + (r.isService ? r.amount : 0), 0)
+  const productRevenue =
+    (monthItems?.reduce((s, i) => s + ((i.products as { is_service?: boolean } | null)?.is_service ? 0 : i.subtotal), 0) ?? 0) -
+    returnedBack.reduce((s, r) => s + (r.isService ? 0 : r.amount), 0)
   const vatRate = store?.vat_rate ?? 7
   const vatAmount = vatBase * (vatRate / 100)
 
@@ -74,12 +109,15 @@ export default async function ReportsPage() {
   const ownTodayTx = (todayTx ?? []).filter((t) => isOwnMoney(t.sales_channel))
   const paymentBreakdown = sumByMethod(ownTodayTx as PaidTransaction[])
 
-  const todayTotal = ownTodayTx.reduce((s, t) => s + t.total, 0)
+  const todayRefundTotal = (todayRefunds ?? []).reduce((s, r) => s + Number(r.refund_amount), 0)
+  const monthRefundTotal = (monthRefunds ?? []).reduce((s, r) => s + Number(r.refund_amount), 0)
+
+  const todayTotal = ownTodayTx.reduce((s, t) => s + t.total, 0) - todayRefundTotal
 
   // แยกยอด หน้าร้าน / ออกบูธ / ออนไลน์ ทั้งของวันนี้และของเดือนนี้ ไว้เทียบกันในตารางเดียว
   const todayGroups = totalsByChannelGroup(todayTx ?? [])
   const monthGroups = totalsByChannelGroup(monthTx ?? [])
-  const monthTotal = monthGroups.reduce((s, g) => s + g.ownAmount, 0)
+  const monthTotal = monthGroups.reduce((s, g) => s + g.ownAmount, 0) - monthRefundTotal
   const monthOwnCount = monthGroups.reduce((s, g) => s + g.ownCount, 0)
 
   const PAYMENT_TH: Record<string, string> = {
@@ -99,14 +137,24 @@ export default async function ReportsPage() {
           <p className="text-2xl font-bold text-gray-900 mt-1">
             ฿{todayTotal.toLocaleString('th-TH', { minimumFractionDigits: 2 })}
           </p>
-          <p className="text-xs text-gray-400 mt-0.5">{ownTodayTx.length} รายการ</p>
+          <p className="text-xs text-gray-400 mt-0.5">
+            {ownTodayTx.length} รายการ
+            {todayRefundTotal > 0 && (
+              <span className="text-teal-700"> · หักคืนของ ฿{todayRefundTotal.toLocaleString('th-TH', { minimumFractionDigits: 2 })}</span>
+            )}
+          </p>
         </div>
         <div className="bg-white rounded-xl p-5 shadow-sm border border-gray-100">
           <p className="text-sm text-gray-500">ยอดขายเดือนนี้ <span className="text-xs text-gray-400">· ไม่รวมแพลตฟอร์ม</span></p>
           <p className="text-2xl font-bold text-gray-900 mt-1">
             ฿{monthTotal.toLocaleString('th-TH', { minimumFractionDigits: 2 })}
           </p>
-          <p className="text-xs text-gray-400 mt-0.5">{monthOwnCount} รายการ</p>
+          <p className="text-xs text-gray-400 mt-0.5">
+            {monthOwnCount} รายการ
+            {monthRefundTotal > 0 && (
+              <span className="text-teal-700"> · หักคืนของ ฿{monthRefundTotal.toLocaleString('th-TH', { minimumFractionDigits: 2 })}</span>
+            )}
+          </p>
         </div>
         <div className="bg-white rounded-xl p-5 shadow-sm border border-gray-100">
           <p className="text-sm text-gray-500 mb-2">

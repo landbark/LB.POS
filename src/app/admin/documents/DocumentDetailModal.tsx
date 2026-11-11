@@ -60,6 +60,7 @@ interface ReceiptDetail {
   points_earned: number
   points_used: number
   credit_used: number
+  return_credit: number | null
   cancelled_at: string | null
   cancel_reason: string | null
   refund_method: string | null
@@ -136,7 +137,7 @@ export default function DocumentDetailModal({ target, onClose }: { target: Detai
           .select(`
             transaction_number, created_at, recorded_at, backdate_reason, subtotal, discount, total, status,
             rounding, payment_method, sales_channel, external_order_no, cash_received, change_given,
-            points_earned, points_used, credit_used, cancelled_at, cancel_reason, refund_method,
+            points_earned, points_used, credit_used, return_credit, cancelled_at, cancel_reason, refund_method,
             customers(name, phone, hn),
             profiles!transactions_cashier_id_fkey(name),
             transaction_items(quantity, unit_price, discount, subtotal, unit_name, unit_factor, base_quantity, products(name, unit, sku)),
@@ -311,6 +312,9 @@ function ReceiptBody({ tx }: { tx: ReceiptDetail }) {
           {tx.discount > 0 && <Row label="ส่วนลด" value={`-${money(tx.discount)}`} />}
           {tx.points_used > 0 && <Row label="ใช้แต้ม" value={`${tx.points_used} แต้ม`} />}
           {tx.credit_used > 0 && <Row label="ใช้เครดิต" value={`-${money(tx.credit_used)}`} />}
+          {(tx.return_credit ?? 0) > 0 && (
+            <Row label="หักด้วยของที่รับคืน" value={`-${money(tx.return_credit!)}`} />
+          )}
           {!!tx.rounding && (
             <Row label="ปัดเศษ" value={`${tx.rounding > 0 ? '+' : '-'}${money(Math.abs(tx.rounding))}`} />
           )}

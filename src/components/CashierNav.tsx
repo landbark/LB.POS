@@ -4,8 +4,17 @@ import Link from '@/components/ProgressLink'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Settings, LogOut } from 'lucide-react'
+import NotificationBell from '@/components/NotificationBell'
 
-export default function CashierNav({ userName, isAdmin }: { userName: string; isAdmin: boolean }) {
+export default function CashierNav({
+  userName,
+  isAdmin,
+  userId,
+}: {
+  userName: string
+  isAdmin: boolean
+  userId: string
+}) {
   const router = useRouter()
 
   async function handleLogout() {
@@ -21,6 +30,9 @@ export default function CashierNav({ userName, isAdmin }: { userName: string; is
       <span className="hidden sm:inline text-sm" style={{ color: '#7A6A5A' }}>|</span>
       <span className="hidden sm:block text-sm truncate max-w-[14rem]" style={{ color: '#D4A87A' }}>{userName}</span>
       <div className="ml-auto flex items-center gap-1 sm:gap-2 shrink-0">
+        {/* ออเดอร์ออนไลน์เข้ามาแล้วคนหน้าร้านต้องรู้ทันทีตรงนี้ ไม่ต้องเดินเข้าเมนูจัดการร้าน
+            — ถามถี่กว่าหลังร้าน (นาทีละครั้ง) และมีเสียง/toast เพราะมีคนยืนอยู่ตรงนี้จริง */}
+        <NotificationBell userId={userId} pollMs={60_000} announce iconColor="#D4A87A" />
         <Link
           href={isAdmin ? '/admin/dashboard' : '/admin/products'}
           className="flex items-center gap-1.5 text-sm px-2 sm:px-3 py-1.5 rounded transition-colors whitespace-nowrap"

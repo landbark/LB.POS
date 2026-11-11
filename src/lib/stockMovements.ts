@@ -15,9 +15,10 @@ export const MOVEMENT_LABEL: Record<
   adjust_in: { text: 'ปรับเพิ่ม', className: 'bg-blue-100 text-blue-700', sign: '+' },
   adjust_out: { text: 'ปรับลด', className: 'bg-orange-100 text-orange-700', sign: '-' },
   cancel: { text: 'คืนจากยกเลิก', className: 'bg-purple-100 text-purple-700', sign: '+' },
+  return: { text: 'รับคืนจากลูกค้า', className: 'bg-teal-100 text-teal-700', sign: '+' },
 }
 
-export const IN_TYPES: StockMovementType[] = ['receive', 'adjust_in', 'cancel']
+export const IN_TYPES: StockMovementType[] = ['receive', 'adjust_in', 'cancel', 'return']
 export const OUT_TYPES: StockMovementType[] = ['sale', 'adjust_out']
 
 /** เหตุผลที่หน้าขายเขียนลงประวัติตอนกดปุ่ม "ตัดสต็อกออก" (ดู PaymentModal) */

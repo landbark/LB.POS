@@ -23,6 +23,8 @@ export interface ReceiptTx {
   /** แต้มที่จ่ายไปกับของแลกในบิลนี้ (แยกจาก points_used ที่เป็นส่วนลดเงิน) */
   points_used_reward?: number | null
   credit_used: number
+  /** มูลค่าของที่รับคืนที่หักกับบิลนี้ (บิลเปลี่ยนสินค้า) */
+  return_credit?: number
   customers: { name: string; phone: string; hn: string | null } | null
   profiles: { name: string } | null
   transaction_items: {

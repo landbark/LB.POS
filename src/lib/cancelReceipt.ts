@@ -106,5 +106,15 @@ export async function cancelReceipt({
     .update({ status: 'pending_payment', transaction_id: null })
     .eq('transaction_id', transactionId)
 
+  // แจ้งเตือน Telegram + กระดิ่งในระบบ — งานเสริม ล้มเหลวไม่ให้กระทบการยกเลิก
+  // (ยิงเฉพาะตอนอัปเดตสถานะสำเร็จ ไม่งั้นจะเตือนบิลที่ยังไม่ได้ยกเลิกจริง)
+  if (!updateError) {
+    fetch('/api/notify/cancel', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ transactionId }),
+    }).catch(() => {})
+  }
+
   return { error: updateError?.message ?? null }
 }

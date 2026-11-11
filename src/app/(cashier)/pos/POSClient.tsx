@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo, useRef, useCallback, useDeferredValue, useSyncExternalStore } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { Search, X, Plus, Minus, ShoppingCart, User, MonitorPlay, Stethoscope, ScanBarcode, Store, AlertTriangle, Gift } from 'lucide-react'
+import { Search, X, Plus, Minus, ShoppingCart, User, MonitorPlay, Stethoscope, ScanBarcode, Store, AlertTriangle, Gift, RotateCcw } from 'lucide-react'
 import toast from 'react-hot-toast'
 import type { Product, ProductUnit, CartItem, Promotion, PointsConfig, Customer, ClinicQueueVisit, RoundingMode, Reward } from '@/lib/types'
 import { keptIdForMergedPhone } from '@/lib/merge'
@@ -15,6 +15,7 @@ import { confirmDialog } from '@/lib/confirm'
 import BarcodeScanner, { type ScanFeedback } from '@/components/BarcodeScanner'
 import ScanList from '@/components/ScanList'
 import OpenShiftModal from '@/components/OpenShiftModal'
+import ReturnModal from '@/components/ReturnModal'
 import { withBoothPrices, getBoothTrip, getBoothTripOnServer, setBoothTrip, subscribeBoothTrip } from '@/lib/booth'
 import { buildHaystacks, haystackOf, matchesTokens, scoreOf, tokenize } from '@/lib/productSearch'
 import { openCustomerDisplay } from '@/lib/posDisplayWindow'
@@ -112,6 +113,8 @@ export default function POSClient({ products: allProducts, booth, shiftOpen, shi
   const [showQueue, setShowQueue] = useState(false)
   // แผงตะกร้าบนมือถือ — จอใหญ่โชว์ตลอดอยู่แล้ว ไม่สนค่านี้
   const [cartOpen, setCartOpen] = useState(false)
+  // รับคืน/เปลี่ยนสินค้า — ทำจากหน้าขายได้เลย ลูกค้ายืนอยู่ตรงหน้า ไม่ต้องเดินไปหลังร้าน
+  const [showReturn, setShowReturn] = useState(false)
   // เวชระเบียนที่เพิ่งเก็บเงินไป — ซ่อนออกจากคิวทันที ไม่ต้องรอ router.refresh() ตามมาทัน
   // (เก็บเป็นรายการ id แทนการ copy คิวมาเป็น state เพราะถ้า refresh คืนข้อมูลเก่ามา ตัวที่จ่ายแล้วจะโผล่ซ้ำ)
   const [paidVisitIds, setPaidVisitIds] = useState<string[]>([])
@@ -952,7 +955,8 @@ export default function POSClient({ products: allProducts, booth, shiftOpen, shi
 
         {/* Search + Filter */}
         <div className="p-4 bg-white border-b border-gray-200 space-y-2">
-          <div className="relative">
+          <div className="flex items-center gap-2">
+          <div className="relative flex-1 min-w-0">
             <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
             <input
               ref={searchRef}
@@ -972,6 +976,16 @@ export default function POSClient({ products: allProducts, booth, shiftOpen, shi
                 <ScanBarcode size={20} />
               </button>
             )}
+          </div>
+          {/* ของเดิมทำได้แค่ยกเลิกบิลทั้งใบจากหลังร้าน — ใบคืนทำที่นี่ได้เลย ไม่แตะบิลเดิม */}
+          <button
+            onClick={() => setShowReturn(true)}
+            title="รับคืน / เปลี่ยนสินค้า"
+            className="shrink-0 inline-flex items-center gap-1.5 px-3 py-2.5 rounded-lg border-2 border-teal-200 text-teal-700 text-sm font-semibold hover:bg-teal-50 active:bg-teal-100"
+          >
+            <RotateCcw size={16} />
+            <span className="hidden sm:inline">คืน/เปลี่ยน</span>
+          </button>
           </div>
           <div className="flex gap-2 overflow-x-auto pb-0.5">
             <button
@@ -1629,6 +1643,15 @@ export default function POSClient({ products: allProducts, booth, shiftOpen, shi
             </div>
           </div>
         </div>
+      )}
+
+      {showReturn && (
+        <ReturnModal
+          currentUserId={cashierId}
+          onClose={() => setShowReturn(false)}
+          // ของคืนเข้าสต็อก/ของใหม่ถูกตัดออกแล้ว — ดึงหน้าใหม่ให้ยอดสต็อกบนการ์ดสินค้าตรง
+          onDone={() => router.refresh()}
+        />
       )}
 
       {showOpenShift && (

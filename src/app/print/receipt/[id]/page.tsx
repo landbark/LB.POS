@@ -20,7 +20,7 @@ export default async function ReceiptPrintPage({
       .from('transactions')
       .select(`
         id, transaction_number, created_at, recorded_at, subtotal, discount, total, status,
-        rounding, payment_method, sales_channel, external_order_no, cash_received, change_given, points_earned, points_used, points_used_reward, credit_used,
+        rounding, payment_method, sales_channel, external_order_no, cash_received, change_given, points_earned, points_used, points_used_reward, credit_used, return_credit,
         customers(name, phone, hn),
         profiles!transactions_cashier_id_fkey(name),
         transaction_items(quantity, unit_price, discount, subtotal, unit_name, unit_factor, base_quantity, is_reward, reward_points, products(name, unit, sku)),

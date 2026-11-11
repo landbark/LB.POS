@@ -42,6 +42,12 @@ interface Props {
   rewardPoints: number
   cancelledCount: number
   cancelledTotal: number
+  /** ใบคืน/เปลี่ยนสินค้าของวันนั้น */
+  returnCount: number
+  /** มูลค่าของที่รับคืนรวม (รวมส่วนที่หักกับบิลใหม่) */
+  returnValueTotal: number
+  /** เงินที่จ่ายคืนลูกค้าจริง — ส่วนนี้เท่านั้นที่หักออกจากยอดสุทธิ */
+  returnRefundTotal: number
   /** ยอดขายผ่านแพลตฟอร์มของวันนั้น — ไม่รวมในยอดสุทธิ/วิธีชำระ โชว์ไว้ดูเฉยๆ */
   platformTotal: number
   platformCount: number
@@ -68,6 +74,7 @@ const thaiDateLabel = (date: string) =>
 
 export default function DailySummaryClient({
   date, today, netTotal, txCount, discountTotal, rewardValue, rewardPoints, cancelledCount, cancelledTotal,
+  returnCount, returnValueTotal, returnRefundTotal,
   platformTotal, platformCount, byMethod, byGroup, bestSellers, shifts,
 }: Props) {
   const router = useRouter()
@@ -124,6 +131,14 @@ export default function DailySummaryClient({
           )}
           {cancelledCount > 0 && (
             <p className="text-xs text-red-500 mt-0.5">ยกเลิก {cancelledCount} ใบ (฿{money(cancelledTotal)}) — ไม่รวมในยอดข้างบน</p>
+          )}
+          {returnCount > 0 && (
+            <p className="text-xs text-teal-700 mt-0.5">
+              รับคืน/เปลี่ยนสินค้า {returnCount} ใบ · มูลค่าของที่รับคืน ฿{money(returnValueTotal)}
+              {returnRefundTotal > 0
+                ? ` — หักออกจากยอดข้างบนแล้ว ฿${money(returnRefundTotal)} (ที่เหลือหักอยู่ในบิลเปลี่ยนสินค้า)`
+                : ' — หักอยู่ในบิลเปลี่ยนสินค้าแล้ว ไม่หักซ้ำ'}
+            </p>
           )}
           {platformCount > 0 && (
             <p className="text-xs text-orange-600 mt-0.5">

@@ -46,7 +46,7 @@ export function splitShiftBills(bills: ShiftBill[]): ShiftBillSplit {
   }
 }
 
-/** เงินสดที่ควรมีในลิ้นชักตอนนี้ */
+/** เงินสดที่ควรมีในลิ้นชักตอนนี้ — ขายเมื่อไหร่เงินเข้าเมื่อนั้น คืนเมื่อไหร่เงินออกเมื่อนั้น */
 export function expectedCash(p: {
   openingCash: number
   /** ขายเงินสดในกะ (บิลที่ยังไม่ถูกยกเลิก) */
@@ -55,10 +55,25 @@ export function expectedCash(p: {
   cashFromCancelled: number
   /** เงินสดที่คืนลูกค้าจากใบเสร็จที่ยกเลิกในช่วงกะนี้ */
   cashRefunds: number
+  /**
+   * เงินสดที่คืนลูกค้าจากใบคืน/เปลี่ยนสินค้าในช่วงกะนี้ (ดู src/lib/returns.ts)
+   *
+   * บิลเปลี่ยนสินค้าไม่ต้องคิดแยก — ยอดที่เก็บเพิ่มเป็นบิลขายปกติเข้า cashSales เอง
+   * ส่วนที่ต้องหักคือเงินที่จ่ายคืนออกจากเก๊ะจริง (ของใหม่ถูกกว่า หรือคืนของล้วน)
+   */
+  cashReturnRefunds?: number
   cashIn: number
   cashOut: number
 }) {
-  return p.openingCash + p.cashSales + p.cashFromCancelled - p.cashRefunds + p.cashIn - p.cashOut
+  return (
+    p.openingCash +
+    p.cashSales +
+    p.cashFromCancelled -
+    p.cashRefunds -
+    (p.cashReturnRefunds ?? 0) +
+    p.cashIn -
+    p.cashOut
+  )
 }
 
 /**

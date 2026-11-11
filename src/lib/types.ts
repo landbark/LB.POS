@@ -213,7 +213,7 @@ export interface StoreSettings {
   updated_at: string
 }
 
-export type StockMovementType = 'sale' | 'receive' | 'adjust_in' | 'adjust_out' | 'cancel'
+export type StockMovementType = 'sale' | 'receive' | 'adjust_in' | 'adjust_out' | 'cancel' | 'return'
 
 export interface StockMovement {
   id: string
@@ -223,6 +223,8 @@ export interface StockMovement {
   type: StockMovementType
   quantity: number
   reason: string | null
+  /** ใบคืนที่ทำให้ของกลับเข้าสต็อค — มีเฉพาะ type = 'return' */
+  return_id?: string | null
   created_by: string | null
   created_at: string
   profiles?: Profile
@@ -661,6 +663,8 @@ export interface Transaction {
   /** แต้มที่จ่ายไปกับของแลกในบิลนี้ — แยกจาก points_used ที่เป็นส่วนลดเงิน */
   points_used_reward?: number
   credit_used: number
+  /** มูลค่าของที่รับคืนที่เอามาหักบิลนี้ (บิลเปลี่ยนสินค้า) — total ไม่รวมส่วนนี้ */
+  return_credit?: number
   notes: string | null
   status: TransactionStatus
   cancelled_at: string | null
@@ -980,4 +984,67 @@ export interface BoothTripItem {
   returned_quantity: number | null
   created_at: string
   products?: Product
+}
+
+/**
+ * ใบคืน — รับคืน/เปลี่ยนสินค้าบางรายการจากบิลเดิม (ดู src/lib/returns.ts)
+ *
+ * return_value  = มูลค่าของที่รับคืนรวม
+ * offset_amount = ส่วนที่เอาไปหักบิลใหม่ (เปลี่ยนสินค้า)
+ * refund_amount = ส่วนที่คืนให้ลูกค้าจริง = return_value − offset_amount
+ */
+export interface ProductReturn {
+  id: string
+  return_number: string
+  transaction_id: string
+  /** บิลใหม่ที่เกิดจากการเปลี่ยนสินค้า · null = คืนของล้วน ไม่ได้ซื้อใหม่ */
+  exchange_transaction_id: string | null
+  customer_id: string | null
+  return_value: number
+  offset_amount: number
+  refund_amount: number
+  /** null = ไม่มีเงินคืน (หักกับบิลใหม่พอดี) */
+  refund_method: RefundMethod | null
+  points_revoked: number
+  points_refunded: number
+  restocked: boolean
+  reason: string | null
+  created_by: string | null
+  created_at: string
+  profiles?: Profile
+  customers?: Customer
+  return_items?: ProductReturnItem[]
+}
+
+export interface ProductReturnItem {
+  id: string
+  return_id: string
+  transaction_item_id: string | null
+  product_id: string | null
+  quantity: number
+  unit_factor: number
+  unit_name: string | null
+  base_quantity: number
+  amount: number
+  reward_points: number
+  created_at: string
+  products?: Product
+}
+
+/** ชนิดของแจ้งเตือนในระบบ (กระดิ่งบนหน้าขาย/หลังร้าน) */
+export type AppNotificationKind =
+  | 'new_order'
+  | 'payment_slip'
+  | 'receipt_cancelled'
+  | 'product_return'
+  | 'new_appointment'
+
+export interface AppNotification {
+  id: string
+  kind: AppNotificationKind
+  title: string
+  body: string | null
+  /** path ในระบบที่กดแล้วไปถึงเรื่องนั้น เช่น /admin/orders/<id> */
+  link: string | null
+  created_at: string
 }
