@@ -11,6 +11,8 @@
 --   - เหลือคำท้าย "คำเดียว" เท่านั้นถึงแยก  "สมชาย ใจดี" ✓ / "สมชาย ใจดี มากมาย" ✗
 --   - คำนำหน้าที่เขียนแยก ("คุณ สมชาย ใจดี") นับรวมกับชื่อ ไม่ใช่นามสกุล
 --   - คำท้ายต้องเป็นตัวอักษรล้วน  "(บ้านสวน)" / "ห้อง 3" / "ม.3" ✗
+--   - คำท้ายต้องยาว >= 4 ตัวอักษร — คำสั้นคือชื่อเล่น ("สุธาติณี แนน", "โบ โช่")
+--     ไม่ใช่นามสกุล ตรวจกับข้อมูลจริง 367 ราย (12 พ.ย. 2026) แล้วไม่มีนามสกุลจริงสั้นกว่านี้
 --   - ใบที่กรอกนามสกุลไว้แล้ว ไม่แตะ
 --
 -- รันใน Supabase SQL Editor ตามลำดับ 1 → 2 → 3 (รันซ้ำได้ ไม่พังของเดิม)
@@ -55,7 +57,7 @@ SELECT
     WHEN coalesce(array_length(rest, 1), 0) = 0        THEN 'ข้าม — ไม่มีเว้นวรรค'
     WHEN array_length(rest, 1) > 1                     THEN 'ข้าม — ท้ายชื่อหลายคำ ดูเอง'
     WHEN rest[1] !~ '^[A-Za-zก-๛]+$'                   THEN 'ข้าม — มีวงเล็บ/ตัวเลข ดูเอง'
-    WHEN char_length(rest[1]) < 2                      THEN 'ข้าม — ท้ายชื่อสั้นเกิน ดูเอง'
+    WHEN char_length(rest[1]) < 4                      THEN 'ข้าม — ท้ายชื่อสั้นเกิน ดูเอง'
     ELSE 'จะแยก'
   END AS ผลลัพธ์,
   count(*) AS จำนวน
@@ -96,7 +98,7 @@ c AS (
       WHEN coalesce(array_length(rest, 1), 0) = 0 THEN 'ข้าม — ไม่มีเว้นวรรค'
       WHEN array_length(rest, 1) > 1              THEN 'ข้าม — ท้ายชื่อหลายคำ ดูเอง'
       WHEN rest[1] !~ '^[A-Za-zก-๛]+$'            THEN 'ข้าม — มีวงเล็บ/ตัวเลข ดูเอง'
-      WHEN char_length(rest[1]) < 2               THEN 'ข้าม — ท้ายชื่อสั้นเกิน ดูเอง'
+      WHEN char_length(rest[1]) < 4               THEN 'ข้าม — ท้ายชื่อสั้นเกิน ดูเอง'
       ELSE 'จะแยก'
     END AS ผลลัพธ์
   FROM s
@@ -139,14 +141,14 @@ ok AS (
   WHERE coalesce(btrim(last_name), '') = ''
     AND array_length(rest, 1) = 1
     AND rest[1] ~ '^[A-Za-zก-๛]+$'
-    AND char_length(rest[1]) >= 2
+    AND char_length(rest[1]) >= 4
 )
 SELECT rest[1] AS นามสกุลที่จะได้,
        count(*) AS กี่คน,
        string_agg(name, '  |  ' ORDER BY name) AS ชื่อเดิม
 FROM ok
 GROUP BY 1
-HAVING count(*) > 1 OR char_length(rest[1]) <= 3
+HAVING count(*) > 1 OR char_length(rest[1]) <= 5
 ORDER BY count(*) DESC, 1;
 
 
@@ -183,7 +185,7 @@ WHERE cu.id = s.id
   AND coalesce(btrim(cu.last_name), '') = ''
   AND array_length(s.rest, 1) = 1
   AND s.rest[1] ~ '^[A-Za-zก-๛]+$'
-  AND char_length(s.rest[1]) >= 2;
+  AND char_length(s.rest[1]) >= 4;
 
 
 -- ════════════════════════════════════════════════════════════════════════
