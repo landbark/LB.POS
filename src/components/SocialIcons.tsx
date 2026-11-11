@@ -35,6 +35,17 @@ export function FacebookIcon({ size = 20, className }: IconProps) {
   )
 }
 
+export function LinktreeIcon({ size = 20, className }: IconProps) {
+  return (
+    <svg {...base(size)} className={className} aria-hidden="true">
+      <path d="M7 4.5 12 9.5" />
+      <path d="M17 4.5 12 9.5" />
+      <path d="M4.5 9.5h15" />
+      <path d="M12 13.5V20" />
+    </svg>
+  )
+}
+
 export function InstagramIcon({ size = 20, className }: IconProps) {
   return (
     <svg {...base(size)} className={className} aria-hidden="true">

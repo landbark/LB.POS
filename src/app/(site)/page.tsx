@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { ArrowRight, CalendarDays, Pin, ShoppingBag } from 'lucide-react'
-import { FacebookIcon, InstagramIcon, LineIcon } from '@/components/SocialIcons'
+import { FacebookIcon, InstagramIcon, LineIcon, LinktreeIcon } from '@/components/SocialIcons'
 import { createClient } from '@/lib/supabase/server'
 import { homePath } from '@/lib/home-path'
 import { getAnnouncements, getStorefront } from '@/lib/shop-data'
@@ -111,7 +111,26 @@ export default async function HomePage() {
         )}
       </section>
 
-      {channels.length > 0 && (
+      {store?.linktree_url ? (
+        <section>
+          <h2 className="text-xl font-bold text-brand-dark mb-4">ติดต่อร้าน</h2>
+          <a
+            href={store.linktree_url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-4 rounded-xl bg-white border border-brand-muted/30 p-5 hover:border-brand-brown transition-colors"
+          >
+            <span className="w-12 h-12 shrink-0 rounded-full bg-brand-light flex items-center justify-center text-brand-brown">
+              <LinktreeIcon size={24} />
+            </span>
+            <span className="min-w-0">
+              <span className="block font-medium text-brand-dark">ทุกช่องทางติดต่อ</span>
+              <span className="block text-xs text-gray-500">LINE · Facebook · Instagram · เบอร์โทร รวมไว้ที่เดียว</span>
+            </span>
+            <ArrowRight size={18} className="ml-auto shrink-0 text-brand-brown" />
+          </a>
+        </section>
+      ) : channels.length > 0 ? (
         <section>
           <h2 className="text-xl font-bold text-brand-dark mb-4">ติดต่อร้าน</h2>
           <div className="grid gap-3 sm:grid-cols-3">
@@ -134,7 +153,7 @@ export default async function HomePage() {
             ))}
           </div>
         </section>
-      )}
+      ) : null}
     </div>
   )
 }

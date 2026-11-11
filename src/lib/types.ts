@@ -199,6 +199,8 @@ export interface StoreSettings {
   line_url: string | null
   facebook_url: string | null
   instagram_url: string | null
+  /** Linktree รวมทุกช่องทาง — ตั้งไว้แล้วหน้าแรกจะโชว์ลิงก์เดียวแทนการ์ดแยกช่องทาง */
+  linktree_url: string | null
   /** ปิดอยู่ = เว็บโชว์แค่ข่าว/ช่องทางติดต่อ ยังสั่งซื้อไม่ได้ */
   shop_enabled: boolean
   shop_intro: string | null

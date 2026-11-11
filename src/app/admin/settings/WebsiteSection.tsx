@@ -17,6 +17,7 @@ export default function WebsiteSection({ config }: { config: StoreSettings | nul
     line_url: config?.line_url ?? '',
     facebook_url: config?.facebook_url ?? '',
     instagram_url: config?.instagram_url ?? '',
+    linktree_url: config?.linktree_url ?? '',
     shop_enabled: config?.shop_enabled ?? false,
     shop_intro: config?.shop_intro ?? '',
     pickup_note: config?.pickup_note ?? '',
@@ -39,6 +40,7 @@ export default function WebsiteSection({ config }: { config: StoreSettings | nul
         line_url: form.line_url.trim() || null,
         facebook_url: form.facebook_url.trim() || null,
         instagram_url: form.instagram_url.trim() || null,
+        linktree_url: form.linktree_url.trim() || null,
         shop_enabled: form.shop_enabled,
         shop_intro: form.shop_intro.trim() || null,
         pickup_note: form.pickup_note.trim() || null,
@@ -93,6 +95,18 @@ export default function WebsiteSection({ config }: { config: StoreSettings | nul
               className={inputClass} placeholder="https://instagram.com/..."
             />
           </div>
+        </div>
+
+        <div>
+          <label className={labelClass}>ลิงก์ Linktree (รวมทุกช่องทาง)</label>
+          <input
+            type="url" value={form.linktree_url}
+            onChange={(e) => set('linktree_url', e.target.value)}
+            className={inputClass} placeholder="https://linktr.ee/..."
+          />
+          <p className="text-xs text-gray-500 mt-1">
+            ใส่แล้วหน้าแรกจะโชว์ปุ่ม &ldquo;ทุกช่องทางติดต่อ&rdquo; ลิงก์เดียวแทนการ์ด Facebook/Instagram
+          </p>
         </div>
 
         <div>

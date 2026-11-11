@@ -16,6 +16,7 @@ export interface Storefront {
   line_url: string | null
   facebook_url: string | null
   instagram_url: string | null
+  linktree_url: string | null
   shop_enabled: boolean
   shop_intro: string | null
   pickup_note: string | null
@@ -30,7 +31,7 @@ export const getStorefront = cache(async (): Promise<Storefront | null> => {
   const { data } = await admin
     .from('store_settings')
     .select(
-      'name, address, phone, logo_url, line_url, facebook_url, instagram_url, shop_enabled, shop_intro, pickup_note, free_shipping_min, promptpay_id, payment_qr_url'
+      'name, address, phone, logo_url, line_url, facebook_url, instagram_url, linktree_url, shop_enabled, shop_intro, pickup_note, free_shipping_min, promptpay_id, payment_qr_url'
     )
     .limit(1)
     .maybeSingle()
