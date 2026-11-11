@@ -37,6 +37,8 @@ const TONE: Record<AppNotificationKind, string> = {
 /** ย้อนหลังกี่วันที่ยังถือว่าน่าสนใจ — ของเก่ากว่านี้มีหน้าของตัวเองให้ดูอยู่แล้ว */
 const LOOKBACK_DAYS = 7
 const MAX_ROWS = 30
+/** ความกว้างกล่องรายการ (21rem) — ใช้คำนวณว่าจะกางไปทางไหนไม่ให้ตกขอบจอ */
+const PANEL_WIDTH = 336
 
 interface Row extends AppNotification {
   read: boolean
@@ -93,6 +95,8 @@ export default function NotificationBell({
   // ไอดีที่เห็นแล้วในรอบนี้ของหน้า — รอบแรกเก็บเงียบ ๆ ไม่ขึ้น toast ย้อนหลังทั้งกอง
   const seen = useRef<Set<string> | null>(null)
   const boxRef = useRef<HTMLDivElement>(null)
+  // กางไปทางขวาแทนซ้าย เมื่อกระดิ่งอยู่ชิดขอบซ้ายจอ (กระดิ่งในลิ้นชักเมนูหลังร้าน)
+  const [alignLeft, setAlignLeft] = useState(false)
 
   const load = useCallback(async () => {
     const supabase = createClient()
@@ -178,6 +182,24 @@ export default function NotificationBell({
       })
   }
 
+  /**
+   * วัดตำแหน่งกระดิ่งตอนกดเปิด แล้วเลือกข้างที่กางแล้วไม่ตกขอบจอ
+   * วัดตอนกด ไม่ใช่ใน effect เพราะตำแหน่งเปลี่ยนได้ระหว่างที่หน้ายังเปิดอยู่ (ย่อจอ/เลื่อนแถบ)
+   *
+   * ปกติกางไปทางซ้าย (กระดิ่งอยู่มุมขวาบน) — สลับไปทางขวาเฉพาะตอนกางซ้ายแล้วตกขอบซ้าย
+   * และกางขวาแล้วยังอยู่ในจอ ไม่งั้นจอแคบ ๆ จะย้ายจากตกขอบซ้ายไปตกขอบขวาแทน
+   */
+  function toggle() {
+    if (!open) {
+      const rect = boxRef.current?.getBoundingClientRect()
+      const vw = window.innerWidth
+      // กล่องถูกบีบด้วย max-w-[calc(100vw-1.5rem)] บนจอแคบ ใช้ความกว้างจริงมาคิด
+      const w = Math.min(PANEL_WIDTH, vw - 24)
+      setAlignLeft(!!rect && rect.right - w < 8 && rect.left + w <= vw - 8)
+    }
+    setOpen((v) => !v)
+  }
+
   function openRow(row: Row) {
     markRead([row.id])
     setOpen(false)
@@ -187,7 +209,7 @@ export default function NotificationBell({
   return (
     <div ref={boxRef} className={`relative ${className}`}>
       <button
-        onClick={() => setOpen((v) => !v)}
+        onClick={toggle}
         aria-label={unread.length > 0 ? `แจ้งเตือน ${unread.length} รายการใหม่` : 'แจ้งเตือน'}
         className="relative flex items-center p-2 rounded-lg"
         style={iconColor ? { color: iconColor } : undefined}
@@ -204,7 +226,7 @@ export default function NotificationBell({
       </button>
 
       {open && (
-        <div className="absolute right-0 top-full mt-1 w-[21rem] max-w-[calc(100vw-1.5rem)] bg-white rounded-xl shadow-2xl border border-gray-200 z-50 overflow-hidden">
+        <div className={`absolute ${alignLeft ? 'left-0' : 'right-0'} top-full mt-1 w-[21rem] max-w-[calc(100vw-1.5rem)] bg-white rounded-xl shadow-2xl border border-gray-200 z-50 overflow-hidden`}>
           <div className="flex items-center justify-between px-4 py-2.5 border-b border-gray-100">
             <span className="text-sm font-semibold text-gray-900">แจ้งเตือน</span>
             {unread.length > 0 && (
