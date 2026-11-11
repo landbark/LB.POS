@@ -9,25 +9,6 @@
 -- แล้วมูลค่าของที่รับคืนเอาไปทำได้ 3 ทาง — คืนเงินสด / โอน / เก็บเป็นเครดิต
 -- หรือ "หักกับบิลใหม่" (เปลี่ยนสินค้า) ซึ่งเป็นเคสที่ถามกันมา
 
--- เลขที่ใบคืน RTddmmyyyy9999 — รูปแบบเดียวกับใบเสร็จ (RC) และรีเซ็ตรายวันเหมือนกัน
-CREATE OR REPLACE FUNCTION public.next_return_number(p_at timestamptz DEFAULT now())
-RETURNS text
-SECURITY DEFINER SET search_path = public
-LANGUAGE plpgsql AS $$
-DECLARE
-  prefix text := 'RT' || to_char(p_at AT TIME ZONE 'Asia/Bangkok', 'DDMMYYYY');
-  seq int;
-BEGIN
-  -- กันเลขชนตอนสองเครื่องกดพร้อมกัน — ล็อกชื่อเดียวกันทั้งวัน ปล่อยเมื่อ transaction จบ
-  PERFORM pg_advisory_xact_lock(hashtext('return_number:' || prefix));
-  SELECT COALESCE(MAX(SUBSTRING(return_number FROM 11)::int), 0) + 1
-  INTO seq
-  FROM returns
-  WHERE return_number LIKE prefix || '%';
-  RETURN prefix || LPAD(seq::text, 4, '0');
-END;
-$$;
-
 -- หัวใบคืน
 --
 -- return_value  = มูลค่าของที่รับคืนรวม (คิดตามสัดส่วนเงินที่ลูกค้าจ่ายจริงในบิลเดิม)
@@ -83,6 +64,25 @@ CREATE TABLE IF NOT EXISTS return_items (
 
 CREATE INDEX IF NOT EXISTS idx_return_items_return ON return_items(return_id);
 CREATE INDEX IF NOT EXISTS idx_return_items_tx_item ON return_items(transaction_item_id);
+
+-- เลขที่ใบคืน RTddmmyyyy9999 — รูปแบบเดียวกับใบเสร็จ (RC) และรีเซ็ตรายวันเหมือนกัน
+CREATE OR REPLACE FUNCTION public.next_return_number(p_at timestamptz DEFAULT now())
+RETURNS text
+SECURITY DEFINER SET search_path = public
+LANGUAGE plpgsql AS $$
+DECLARE
+  prefix text := 'RT' || to_char(p_at AT TIME ZONE 'Asia/Bangkok', 'DDMMYYYY');
+  seq int;
+BEGIN
+  -- กันเลขชนตอนสองเครื่องกดพร้อมกัน — ล็อกชื่อเดียวกันทั้งวัน ปล่อยเมื่อ transaction จบ
+  PERFORM pg_advisory_xact_lock(hashtext('return_number:' || prefix));
+  SELECT COALESCE(MAX(SUBSTRING(return_number FROM 11)::int), 0) + 1
+  INTO seq
+  FROM returns
+  WHERE return_number LIKE prefix || '%';
+  RETURN prefix || LPAD(seq::text, 4, '0');
+END;
+$$;
 
 -- ประวัติสต็อคได้ประเภทใหม่ 'return' แยกจาก 'cancel' (ยกเลิกทั้งใบ) เพื่ออ่านรายงานย้อนหลังได้ว่าอันไหนคืนบางส่วน
 ALTER TABLE stock_movements DROP CONSTRAINT IF EXISTS stock_movements_type_check;
