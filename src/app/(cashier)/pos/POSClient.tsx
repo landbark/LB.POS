@@ -20,6 +20,7 @@ import { withBoothPrices, getBoothTrip, getBoothTripOnServer, setBoothTrip, subs
 import { buildHaystacks, haystackOf, matchesTokens, scoreOf, tokenize } from '@/lib/productSearch'
 import { openCustomerDisplay } from '@/lib/posDisplayWindow'
 import { clearSavedCart, loadSavedCart, saveCart } from '@/lib/posCart'
+import { earnedPointsFor } from '@/lib/points'
 
 // เครื่องที่ใช้เมาส์ยิงด้วยเครื่องยิงบาร์โค้ดอยู่แล้ว ไม่ต้องมีปุ่มกล้อง
 // อ่านผ่าน useSyncExternalStore เพื่อให้ฝั่ง server ได้ false เสมอ html จะได้ไม่ต่างกับฝั่ง client
@@ -840,9 +841,8 @@ export default function POSClient({ products: allProducts, booth, shiftOpen, shi
 
   useEffect(() => {
     if (showPayment) return // ตอนจ่ายเงิน ให้ PaymentModal เป็นคนส่งสถานะแทน
-    const earnedPoints = pointsConfig && total > 0
-      ? Math.floor(total / pointsConfig.spend_amount) * pointsConfig.earn_points
-      : 0
+    // ต้องใช้สูตรเดียวกับ PaymentModal ไม่งั้นจอลูกค้าโชว์แต้มไม่ตรงกับที่ได้จริง
+    const earnedPoints = earnedPointsFor(cart, total, pointsConfig)
     const msg: PosDisplayMessage = {
       stage: 'cart',
       items: cart.map((item) => ({

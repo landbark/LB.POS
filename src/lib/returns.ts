@@ -2,6 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { deductStock } from '@/lib/deductStock'
 import { isPlatformChannel } from '@/lib/salesChannel'
 import { isVatApplicable } from '@/lib/vat'
+import { earnedPointsFor } from '@/lib/points'
 import type { CartItem, PaymentMethod, PointsConfig, RefundMethod, TransactionStatus } from '@/lib/types'
 
 /**
@@ -304,9 +305,8 @@ export async function createReturn(
   // ถ้าล้มตรงนี้ยังไม่มีอะไรถูกแก้เลย ของยังไม่เข้าสต็อก แต้มยังไม่ขยับ
   let exchangeTx: { id: string; transaction_number: string } | null = null
   if (p.exchangeCart.length > 0) {
-    const earnedPoints = p.pointsConfig && extraPaid > 0
-      ? Math.floor(extraPaid / p.pointsConfig.spend_amount) * p.pointsConfig.earn_points
-      : 0
+    // ค่ารักษา/ค่าบริการในบิลเปลี่ยนสินค้าก็ไม่สะสมแต้มเหมือนขายปกติ
+    const earnedPoints = earnedPointsFor(p.exchangeCart, extraPaid, p.pointsConfig)
 
     let lastError: string | undefined
     for (let attempt = 0; attempt < 2 && !exchangeTx; attempt++) {
@@ -464,11 +464,7 @@ export async function createReturn(
       .single()
 
     if (customer) {
-      const earnedOnExchange = exchangeTx
-        ? (p.pointsConfig && extraPaid > 0
-            ? Math.floor(extraPaid / p.pointsConfig.spend_amount) * p.pointsConfig.earn_points
-            : 0)
-        : 0
+      const earnedOnExchange = exchangeTx ? earnedPointsFor(p.exchangeCart, extraPaid, p.pointsConfig) : 0
       const pointsDelta = quote.pointsRestored + quote.rewardPointsBack - quote.pointsRevoked + earnedOnExchange
       await supabase
         .from('customers')
