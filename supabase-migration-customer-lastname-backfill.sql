@@ -108,6 +108,49 @@ ORDER BY name;
 
 
 -- ════════════════════════════════════════════════════════════════════════
+-- ขั้น 2.5 — ตรวจจุดเสี่ยงในกลุ่ม "จะแยก" โดยไม่ต้องไล่อ่านทุกแถว
+--
+-- คำท้ายที่ "ซ้ำกันหลายคน" หรือ "สั้นมาก" มักไม่ใช่นามสกุล แต่เป็นชื่อเล่น
+-- ชื่อสัตว์ หรือคำขยาย ("แอน หมา", "เก่ง ร้าน") — นามสกุลจริงซ้ำได้เฉพาะคนในบ้านเดียวกัน
+-- ════════════════════════════════════════════════════════════════════════
+WITH p AS (
+  SELECT id, name, last_name,
+         string_to_array(btrim(regexp_replace(name, '\s+', ' ', 'g')), ' ') AS parts
+  FROM customers
+),
+t AS (
+  SELECT *,
+    CASE WHEN coalesce(array_length(parts, 1), 0) >= 3
+          AND lower(parts[1]) = ANY (ARRAY[
+                'นาย','นาง','นางสาว','น.ส.','ด.ช.','ด.ญ.','เด็กชาย','เด็กหญิง',
+                'คุณ','พี่','น้อง','หมอ','คุณหมอ',
+                'mr','mrs','ms','miss','mr.','mrs.','ms.','khun','k.'])
+         THEN 1 ELSE 0 END AS off
+  FROM p
+),
+s AS (
+  SELECT id, name, last_name,
+         array_to_string(parts[1 : 1 + off], ' ') AS new_name,
+         parts[(2 + off) : coalesce(array_length(parts, 1), 0)] AS rest
+  FROM t
+),
+ok AS (
+  SELECT * FROM s
+  WHERE coalesce(btrim(last_name), '') = ''
+    AND array_length(rest, 1) = 1
+    AND rest[1] ~ '^[A-Za-zก-๛]+$'
+    AND char_length(rest[1]) >= 2
+)
+SELECT rest[1] AS นามสกุลที่จะได้,
+       count(*) AS กี่คน,
+       string_agg(name, '  |  ' ORDER BY name) AS ชื่อเดิม
+FROM ok
+GROUP BY 1
+HAVING count(*) > 1 OR char_length(rest[1]) <= 3
+ORDER BY count(*) DESC, 1;
+
+
+-- ════════════════════════════════════════════════════════════════════════
 -- ขั้น 3 — แยกจริง (ตรวจขั้น 2 แล้วค่อยรัน)
 -- เงื่อนไขใน WHERE ตรงกับกฎข้างบนเป๊ะ — แถวที่ "ข้าม" ไม่ถูกแตะ
 -- ════════════════════════════════════════════════════════════════════════
