@@ -124,7 +124,7 @@ export default async function HomePage() {
               <LinktreeIcon size={24} />
             </span>
             <span className="min-w-0">
-              <span className="block font-medium text-brand-dark">ทุกช่องทางติดต่อ</span>
+              <span className="block font-medium text-brand-dark">Linktree</span>
               <span className="block text-xs text-gray-500">LINE · Facebook · Instagram · เบอร์โทร รวมไว้ที่เดียว</span>
             </span>
             <ArrowRight size={18} className="ml-auto shrink-0 text-brand-brown" />

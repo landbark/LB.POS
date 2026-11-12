@@ -105,7 +105,7 @@ export default function WebsiteSection({ config }: { config: StoreSettings | nul
             className={inputClass} placeholder="https://linktr.ee/..."
           />
           <p className="text-xs text-gray-500 mt-1">
-            ใส่แล้วหน้าแรกจะโชว์ปุ่ม &ldquo;ทุกช่องทางติดต่อ&rdquo; ลิงก์เดียวแทนการ์ด Facebook/Instagram
+            ใส่แล้วหน้าแรกกับท้ายเว็บจะโชว์ปุ่ม &ldquo;Linktree&rdquo; ลิงก์เดียว แทนการ์ด LINE/Facebook/Instagram
           </p>
         </div>
 
