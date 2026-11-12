@@ -24,6 +24,7 @@ interface NotifySettings {
   notify_stock_received?: boolean
   notify_receipt_cancelled?: boolean
   notify_product_return?: boolean
+  notify_member_link?: boolean
   notify_customer_appointment?: boolean
   customer_reminder_footer?: string | null
   cash_diff_threshold?: number
@@ -35,6 +36,7 @@ const EVENTS = [
   { key: 'notify_new_order', label: 'ออเดอร์ออนไลน์ใหม่', hint: 'ลูกค้ากดสั่งของบนเว็บร้าน' },
   { key: 'notify_payment_slip', label: 'ลูกค้าแนบสลิปโอนเงิน', hint: 'เตือนให้ไปตรวจสลิปและยืนยันออเดอร์' },
   { key: 'notify_new_appointment', label: 'มีการจองนัดใหม่', hint: 'ทันทีที่บันทึกนัดจากหน้านัดหมายหรือหน้า OPD' },
+  { key: 'notify_member_link', label: 'ขอผูกบัญชีสมาชิก', hint: 'ลูกค้าล็อกอิน LINE แล้วกรอกเบอร์ที่เป็นสมาชิกอยู่แล้ว — รอยืนยันตัวตนก่อนจะเห็นแต้ม' },
   { key: 'notify_shift_close', label: 'ปิดกะ / นับเงิน', hint: 'สรุปยอดขายในกะ + เงินขาดเกิน', ownerOnly: true },
   { key: 'notify_daily_sales', label: 'สรุปยอดขายรายวัน', hint: 'ส่งทุกเย็น 20:00 น. (เฉพาะวันที่มีการขาย)', ownerOnly: true },
   { key: 'notify_sale', label: 'ทุกครั้งที่ขายของ', hint: 'เด้งทุกบิลที่ปิดการขาย — ร้านขายวันละหลายสิบบิลจะเด้งบ่อยมาก', ownerOnly: true },

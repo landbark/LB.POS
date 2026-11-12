@@ -1,5 +1,5 @@
 import { notFound, redirect } from 'next/navigation'
-import { getSessionCustomer } from '@/lib/customer-session'
+import { getSessionCustomer, orderCutoff } from '@/lib/customer-session'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getStorefront } from '@/lib/shop-data'
 import type { Order } from '@/lib/types'
@@ -13,10 +13,16 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
   if (!customer) redirect(`/api/shop/login?next=/orders/${id}`)
 
   const admin = createAdminClient()
-  const [{ data }, store] = await Promise.all([
-    admin.from('orders').select('*, order_items(*)').eq('id', id).eq('customer_id', customer.id).maybeSingle(),
-    getStorefront(),
-  ])
+  let lookup = admin
+    .from('orders')
+    .select('*, order_items(*)')
+    .eq('id', id)
+    .eq('customer_id', customer.id)
+  // บัญชีที่ยังรอร้านยืนยัน เปิดได้แค่ใบที่สั่งเอง ไม่ใช่ของเจ้าของบัญชีเดิม
+  const cutoff = orderCutoff(customer)
+  if (cutoff) lookup = lookup.gte('created_at', cutoff)
+
+  const [{ data }, store] = await Promise.all([lookup.maybeSingle(), getStorefront()])
 
   if (!data) notFound()
   const order = data as Order

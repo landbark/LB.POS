@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from 'next/server'
-import { getCustomerId } from '@/lib/customer-session'
+import { getCustomerSession, orderCutoff } from '@/lib/customer-session'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { buildPaymentSlipMessage, notifyEvent } from '@/lib/notify'
 import { pushAppNotification } from '@/lib/appNotify'
@@ -9,18 +9,23 @@ const MAX_SIZE = 5 * 1024 * 1024
 
 // ลูกค้าแนบสลิปโอนเงิน → ออเดอร์เข้าคิวรอร้านตรวจสอบ
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const customerId = await getCustomerId()
-  if (!customerId) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
+  const session = await getCustomerSession()
+  if (!session) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
+  const customerId = session.id
+  const cutoff = orderCutoff(session)
 
   const { id } = await params
   const admin = createAdminClient()
 
-  const { data: order } = await admin
+  let lookup = admin
     .from('orders')
     .select('id, status, payment_slip_path, order_number, total, recipient_name, customers(name)')
     .eq('id', id)
     .eq('customer_id', customerId)
-    .maybeSingle()
+  // ยังรอร้านยืนยัน = แตะได้แค่ใบที่สั่งเอง ไม่ใช่ของเจ้าของบัญชีเดิม
+  if (cutoff) lookup = lookup.gte('created_at', cutoff)
+
+  const { data: order } = await lookup.maybeSingle()
 
   if (!order) return NextResponse.json({ error: 'ไม่พบออเดอร์' }, { status: 404 })
   if (!['pending_payment', 'awaiting_confirm'].includes(order.status)) {

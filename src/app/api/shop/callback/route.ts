@@ -57,6 +57,10 @@ export async function GET(request: NextRequest) {
   const response = NextResponse.redirect(new URL(next, origin))
   response.cookies.delete(OAUTH_STATE_COOKIE)
   response.cookies.delete(LINE_PENDING_COOKIE)
-  response.cookies.set(CUSTOMER_COOKIE, await createSessionValue(customer.id), sessionCookieOptions)
+  response.cookies.set(
+    CUSTOMER_COOKIE,
+    await createSessionValue(customer.id, profile.userId),
+    sessionCookieOptions
+  )
   return response
 }

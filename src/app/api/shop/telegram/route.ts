@@ -1,12 +1,15 @@
 import { NextResponse } from 'next/server'
-import { getCustomerId } from '@/lib/customer-session'
+import { getVerifiedCustomerId } from '@/lib/customer-session'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { botUsername, createLinkToken } from '@/lib/customer-notify'
 
 /** ขอลิงก์ผูก Telegram — คืน deep link ที่กดแล้วบอททักกลับมาเอง */
 export async function POST() {
-  const customerId = await getCustomerId()
-  if (!customerId) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
+  // ผูก Telegram = ดักการแจ้งเตือนวันนัดของบัญชีนั้น ต้องยืนยันตัวตนก่อน
+  const customerId = await getVerifiedCustomerId()
+  if (!customerId) {
+    return NextResponse.json({ error: 'บัญชีนี้รอร้านยืนยันตัวตนก่อน' }, { status: 403 })
+  }
 
   const bot = botUsername()
   if (!bot) return NextResponse.json({ error: 'ร้านยังไม่ได้ตั้งค่าบอท' }, { status: 503 })
@@ -17,8 +20,11 @@ export async function POST() {
 
 /** ยกเลิกการเชื่อมต่อจากหน้าเว็บ (ลูกค้าพิมพ์ /stop ในแชทก็ได้เหมือนกัน) */
 export async function DELETE() {
-  const customerId = await getCustomerId()
-  if (!customerId) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
+  // ผูก Telegram = ดักการแจ้งเตือนวันนัดของบัญชีนั้น ต้องยืนยันตัวตนก่อน
+  const customerId = await getVerifiedCustomerId()
+  if (!customerId) {
+    return NextResponse.json({ error: 'บัญชีนี้รอร้านยืนยันตัวตนก่อน' }, { status: 403 })
+  }
 
   const admin = createAdminClient()
   const { error } = await admin
@@ -32,8 +38,11 @@ export async function DELETE() {
 
 /** เปิด/ปิดรับแจ้งเตือนโดยไม่ตัดการเชื่อมต่อ */
 export async function PATCH(request: Request) {
-  const customerId = await getCustomerId()
-  if (!customerId) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
+  // ผูก Telegram = ดักการแจ้งเตือนวันนัดของบัญชีนั้น ต้องยืนยันตัวตนก่อน
+  const customerId = await getVerifiedCustomerId()
+  if (!customerId) {
+    return NextResponse.json({ error: 'บัญชีนี้รอร้านยืนยันตัวตนก่อน' }, { status: 403 })
+  }
 
   const { enabled } = await request.json()
   const admin = createAdminClient()

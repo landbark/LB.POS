@@ -1,5 +1,5 @@
 import { redirect } from 'next/navigation'
-import { LINE_PENDING_COOKIE, getCustomerId, readSignedValue } from '@/lib/customer-session'
+import { LINE_PENDING_COOKIE, getCustomerSession, readSignedValue } from '@/lib/customer-session'
 import { cookies } from 'next/headers'
 import LinkClient from './LinkClient'
 
@@ -13,7 +13,8 @@ export default async function LinkAccountPage({
 }) {
   const { next } = await searchParams
 
-  if (await getCustomerId()) redirect(next?.startsWith('/') ? next : '/account')
+  // เช็คเซสชันที่ใช้ได้จริง ไม่ใช่แค่มีคุกกี้ — คนที่คำขอถูกปฏิเสธไปต้องกรอกขอผูกใหม่ได้
+  if (await getCustomerSession()) redirect(next?.startsWith('/') ? next : '/account')
 
   const pending = await readSignedValue((await cookies()).get(LINE_PENDING_COOKIE)?.value)
   if (!pending) redirect('/account?error=line-state')

@@ -1044,6 +1044,7 @@ export type AppNotificationKind =
   | 'receipt_cancelled'
   | 'product_return'
   | 'new_appointment'
+  | 'member_link'
 
 export interface AppNotification {
   id: string

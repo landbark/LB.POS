@@ -1,9 +1,8 @@
 'use client'
 
 import { Suspense, useState } from 'react'
-import { useRouter, useSearchParams } from 'next/navigation'
+import { useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { homePath } from '@/lib/home-path'
 import Image from 'next/image'
 import toast from 'react-hot-toast'
 
@@ -25,10 +24,6 @@ function LoginError() {
 }
 
 export default function LoginPage() {
-  const router = useRouter()
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
-  const [loading, setLoading] = useState(false)
   const [googleLoading, setGoogleLoading] = useState(false)
 
   async function handleGoogleLogin() {
@@ -44,25 +39,6 @@ export default function LoginPage() {
     }
   }
 
-  async function handleLogin(e: React.FormEvent) {
-    e.preventDefault()
-    setLoading(true)
-    const supabase = createClient()
-    const { data, error } = await supabase.auth.signInWithPassword({ email, password })
-    if (error) {
-      toast.error('อีเมลหรือรหัสผ่านไม่ถูกต้อง')
-      setLoading(false)
-      return
-    }
-    // หน้าแรกตาม role — admin/หมอ ไป dashboard, แคชเชียร์ไปหน้าขาย
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('role')
-      .eq('id', data.user.id)
-      .single()
-    router.push(homePath(profile?.role))
-    router.refresh()
-  }
 
   return (
     <div
@@ -112,59 +88,10 @@ export default function LoginPage() {
 
           {/* เข้าได้เฉพาะอีเมลที่เจ้าของร้านเพิ่มไว้แล้ว (staff_emails) */}
           <p className="text-xs text-center mb-5 -mt-3" style={{ color: '#D4A87A' }}>
-            พนักงานใหม่: แจ้งเจ้าของร้านเพิ่มอีเมลของคุณก่อน แล้วจึงเข้าด้วย Google
+            เข้าได้ด้วยบัญชี Google ของอีเมลที่เจ้าของร้านเพิ่มไว้เท่านั้น
+            — พนักงานใหม่แจ้งเจ้าของร้านเพิ่มอีเมลก่อน
           </p>
 
-          {/* Divider */}
-          <div className="flex items-center gap-3 mb-5">
-            <div className="flex-1 h-px" style={{ background: '#7A6A5A' }} />
-            <span className="text-xs" style={{ color: '#D4A87A' }}>หรือใช้อีเมล</span>
-            <div className="flex-1 h-px" style={{ background: '#7A6A5A' }} />
-          </div>
-
-          {/* Email / Password */}
-          <form onSubmit={handleLogin} className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium mb-1" style={{ color: '#F0E8DC' }}>
-                อีเมล
-              </label>
-              <input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required
-                className="w-full rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2"
-                style={{ background: '#4A4338', border: '1px solid #7A6A5A', color: '#F0E8DC', '--tw-ring-color': '#C4865A' } as React.CSSProperties}
-                placeholder="email@example.com"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium mb-1" style={{ color: '#F0E8DC' }}>
-                รหัสผ่าน
-              </label>
-              <input
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-                className="w-full rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2"
-                style={{ background: '#4A4338', border: '1px solid #7A6A5A', color: '#F0E8DC', '--tw-ring-color': '#C4865A' } as React.CSSProperties}
-                placeholder="••••••••"
-              />
-            </div>
-
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full font-semibold py-2.5 rounded-xl text-sm transition-all disabled:opacity-50 mt-1"
-              style={{ background: '#C4865A', color: '#FDF6EE' }}
-              onMouseEnter={(e) => { if (!loading) e.currentTarget.style.background = '#D4A87A' }}
-              onMouseLeave={(e) => { if (!loading) e.currentTarget.style.background = '#C4865A' }}
-            >
-              {loading ? 'กำลังเข้าสู่ระบบ...' : 'เข้าสู่ระบบ'}
-            </button>
-          </form>
         </div>
 
         {/* ทางกลับหน้าเว็บร้าน (หน้าสาธารณะ) — ลูกค้าที่หลงเข้ามาหน้านี้จะได้ไม่ตัน */}

@@ -68,12 +68,71 @@ const baseCookieOptions = {
 export const sessionCookieOptions = { ...baseCookieOptions, maxAge: SESSION_MAX_AGE }
 export const pendingCookieOptions = { ...baseCookieOptions, maxAge: PENDING_MAX_AGE }
 
-export const createSessionValue = (customerId: string) => signValue(customerId, SESSION_MAX_AGE)
+/**
+ * คุกกี้ผูกไว้กับ "บัญชี LINE" ด้วย ไม่ใช่แค่ id ลูกค้า
+ *
+ * ถ้าเก็บแค่ id ลูกค้า คุกกี้จะอยู่ยาวกว่าการเชื่อมต่อที่มันอ้างถึง — ร้านปลด
+ * การเชื่อมต่อ (หรือปฏิเสธคำขอผูก) แล้วเจ้าตัวมาผูกใหม่ คุกกี้ใบเดิมของคนก่อน
+ * จะกลับมาใช้ได้อีกและกลายเป็นเซสชันที่ยืนยันแล้ว เก็บ LINE id ไว้ด้วยจึงเทียบได้
+ * ว่าคนถือคุกกี้ยังเป็น LINE ที่ผูกอยู่จริง
+ */
+export const createSessionValue = (customerId: string, lineUserId: string) =>
+  signValue(`${customerId}|${lineUserId}`, SESSION_MAX_AGE)
 export const createPendingValue = (data: string) => signValue(data, PENDING_MAX_AGE)
 
-/** id ลูกค้าจากคุกกี้ (ตรวจลายเซ็น + วันหมดอายุ) — null = ยังไม่ล็อกอิน */
+/** id ลูกค้าจากคุกกี้ (ตรวจลายเซ็น + วันหมดอายุ) — ยังไม่เทียบกับ LINE ที่ผูกอยู่ */
 export async function getCustomerId(): Promise<string | null> {
-  return readSignedValue((await cookies()).get(CUSTOMER_COOKIE)?.value)
+  const raw = await readSignedValue((await cookies()).get(CUSTOMER_COOKIE)?.value)
+  return raw ? raw.split('|')[0] : null
+}
+
+export interface CustomerSession {
+  id: string
+  /** ร้านยืนยันแล้วว่าเป็นเจ้าของบัญชีจริง — false = เห็นแต้ม/ประวัติ/ที่อยู่ไม่ได้ */
+  verified: boolean
+  /** LINE นี้มาจับจองบัญชีเมื่อไหร่ — ออเดอร์ก่อนเวลานี้ไม่ใช่ของคนที่ถืออยู่ */
+  claimedAt: string | null
+}
+
+/**
+ * เซสชันลูกค้าที่ใช้ได้จริง — ตรวจว่า LINE ในคุกกี้ยังเป็นตัวที่ผูกกับบัญชีนี้อยู่
+ *
+ * คุกกี้รุ่นเก่า (เก็บแค่ id ลูกค้า) ใช้ต่อไม่ได้ ต้องกดเข้าสู่ระบบด้วย LINE อีกครั้ง
+ * — แลกกับการที่เซสชันเก่าค้างอยู่เหนือการเชื่อมต่อที่เปลี่ยนไปแล้ว
+ */
+export async function getCustomerSession(): Promise<CustomerSession | null> {
+  const raw = await readSignedValue((await cookies()).get(CUSTOMER_COOKIE)?.value)
+  if (!raw) return null
+
+  const [id, lineUserId] = raw.split('|')
+  if (!id || !lineUserId) return null
+
+  const admin = createAdminClient()
+  // select('*') กันพังช่วงก่อนรัน migration (คอลัมน์ line_verified_at อาจยังไม่มี)
+  const { data } = await admin.from('customers').select('*').eq('id', id).maybeSingle()
+  const row = data as Record<string, unknown> | null
+  if (!row || row.line_user_id !== lineUserId) return null
+
+  return {
+    id,
+    verified: Boolean(row.line_verified_at),
+    claimedAt: (row.line_claimed_at as string | null) ?? null,
+  }
+}
+
+/** id ลูกค้าเฉพาะเซสชันที่ร้านยืนยันแล้ว — null = ยังไม่ล็อกอิน หรือยังรอยืนยัน */
+export async function getVerifiedCustomerId(): Promise<string | null> {
+  const session = await getCustomerSession()
+  return session?.verified ? session.id : null
+}
+
+/**
+ * ออเดอร์ที่เซสชันนี้มีสิทธิ์เห็น — คืนเวลาเริ่มต้น (null = เห็นได้ทั้งหมด)
+ *
+ * เซสชันที่ยังไม่ยืนยันเห็นเฉพาะใบที่สั่งเองหลังจับจองบัญชี ไม่ใช่ของเจ้าของเดิม
+ */
+export function orderCutoff(session: Pick<CustomerSession, 'verified' | 'claimedAt'>): string | null {
+  return session.verified ? null : (session.claimedAt ?? new Date().toISOString())
 }
 
 export interface SessionCustomer {
@@ -84,19 +143,22 @@ export interface SessionCustomer {
   credit_balance: number
   total_spent: number
   line_user_id: string | null
+  verified: boolean
+  claimedAt: string | null
 }
 
 /** ข้อมูลลูกค้าที่ล็อกอินอยู่ (อ่านด้วย service role — หน้าเว็บลูกค้าไม่มี session Supabase) */
 export async function getSessionCustomer(): Promise<SessionCustomer | null> {
-  const id = await getCustomerId()
-  if (!id) return null
+  const session = await getCustomerSession()
+  if (!session) return null
 
   const admin = createAdminClient()
   const { data } = await admin
     .from('customers')
     .select('id, name, phone, points, credit_balance, total_spent, line_user_id')
-    .eq('id', id)
+    .eq('id', session.id)
     .maybeSingle()
 
-  return (data as SessionCustomer) ?? null
+  if (!data) return null
+  return { ...(data as Omit<SessionCustomer, 'verified' | 'claimedAt'>), verified: session.verified, claimedAt: session.claimedAt }
 }

@@ -47,6 +47,47 @@ export default async function AccountPage({
     )
   }
 
+  // จับจองบัญชีสมาชิกเดิมไว้ แต่ร้านยังไม่ยืนยันว่าเป็นเจ้าของตัวจริง
+  //
+  // เบอร์โทรพิสูจน์ตัวตนไม่ได้ จึงยังไม่ให้เห็นอะไรที่เป็นของเจ้าของบัญชีเลย —
+  // แม้แต่ "ชื่อ" ก็ไม่บอก (ไม่งั้นกรอกเบอร์มั่วแล้วรู้ว่าเบอร์นี้ชื่ออะไร)
+  // สั่งของได้ตามปกติ ออเดอร์ที่สั่งเองดูได้ที่ /orders
+  if (!customer.verified) {
+    return (
+      <div className="max-w-lg mx-auto space-y-4">
+        <div className="rounded-xl bg-white border border-brand-muted/30 p-6">
+          <h1 className="text-lg font-bold text-brand-dark">รอร้านยืนยันบัญชีสมาชิก</h1>
+          <p className="mt-2 text-sm text-gray-600 leading-relaxed">
+            เบอร์ <span className="font-medium">{customer.phone}</span> เป็นสมาชิกของร้านอยู่แล้ว
+            เพื่อความปลอดภัยของเจ้าของบัญชี ทางร้านต้องยืนยันตัวตนก่อน
+            จึงจะแสดงแต้มสะสม เครดิตร้าน ประวัติการซื้อ และบัตรสมาชิกให้
+          </p>
+          <p className="mt-3 rounded-lg bg-brand-cream/60 border border-brand-muted/30 px-3 py-2.5 text-sm text-brand-dark">
+            แจ้งพนักงานที่ร้านได้เลย หรือรอทางร้านติดต่อกลับตามเบอร์ที่ให้ไว้ —
+            ระหว่างนี้สั่งของออนไลน์ได้ตามปกติ
+          </p>
+        </div>
+
+        <div className="flex gap-3">
+          <Link
+            href="/orders"
+            className="flex-1 text-center py-3 rounded-xl bg-white border border-brand-muted/30 text-sm font-medium text-brand-dark hover:border-brand-brown"
+          >
+            ออเดอร์ของฉัน
+          </Link>
+          <form action="/api/shop/logout" method="post" className="flex-1">
+            <button
+              type="submit"
+              className="w-full inline-flex items-center justify-center gap-2 py-3 rounded-xl bg-white border border-brand-muted/30 text-sm text-gray-600 hover:border-red-300 hover:text-red-600"
+            >
+              <LogOut size={16} /> ออกจากระบบ
+            </button>
+          </form>
+        </div>
+      </div>
+    )
+  }
+
   const admin = createAdminClient()
   const [{ data: addresses }, { data: telegram }, { data: rewards }, { data: pointsConfig }] = await Promise.all([
     admin

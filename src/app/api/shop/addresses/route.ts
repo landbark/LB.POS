@@ -1,10 +1,12 @@
 import { NextResponse, type NextRequest } from 'next/server'
-import { getCustomerId } from '@/lib/customer-session'
+import { getVerifiedCustomerId } from '@/lib/customer-session'
 import { createAdminClient } from '@/lib/supabase/admin'
 
+// สมุดที่อยู่เป็นของสมาชิกเดิม — เซสชันที่ยังรอร้านยืนยันเห็นเป็นรายการว่าง
+// (คืนว่างแทน 401 เพราะหน้าชำระเงินเรียกตัวนี้ตรง ๆ ให้กรอกที่อยู่ใหม่ได้ตามปกติ)
 export async function GET() {
-  const customerId = await getCustomerId()
-  if (!customerId) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
+  const customerId = await getVerifiedCustomerId()
+  if (!customerId) return NextResponse.json({ addresses: [] })
 
   const admin = createAdminClient()
   const { data } = await admin
@@ -18,8 +20,10 @@ export async function GET() {
 }
 
 export async function POST(request: NextRequest) {
-  const customerId = await getCustomerId()
-  if (!customerId) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
+  const customerId = await getVerifiedCustomerId()
+  if (!customerId) {
+    return NextResponse.json({ error: 'บัญชีนี้รอร้านยืนยันตัวตนก่อน' }, { status: 403 })
+  }
 
   const body = await request.json()
   const required = ['recipient_name', 'phone', 'address_line', 'province'] as const
@@ -59,8 +63,10 @@ export async function POST(request: NextRequest) {
 }
 
 export async function DELETE(request: NextRequest) {
-  const customerId = await getCustomerId()
-  if (!customerId) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
+  const customerId = await getVerifiedCustomerId()
+  if (!customerId) {
+    return NextResponse.json({ error: 'บัญชีนี้รอร้านยืนยันตัวตนก่อน' }, { status: 403 })
+  }
 
   const id = request.nextUrl.searchParams.get('id')
   if (!id) return NextResponse.json({ error: 'missing id' }, { status: 400 })

@@ -1,19 +1,14 @@
 import { NextResponse, type NextRequest } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { getAdmin } from '@/lib/require-staff'
 
 const BUCKET = 'store-assets'
 const MAX_SIZE = 1024 * 1024 // 1MB — รูปถูก compress ฝั่ง browser แล้ว
 
+// ต้องเป็นแอดมินที่ "ยังอยู่ในทีม" — getAdmin() เช็ค profiles.active ให้ด้วย
+// (เช็คแค่ role ไม่พอ: ตอนถอดพนักงานออกระบบตั้ง active = false แต่ role ยังเป็น admin)
 async function requireAdmin() {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return { error: NextResponse.json({ error: 'unauthorized' }, { status: 401 }) }
-
-  const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).single()
-  if (profile?.role !== 'admin') {
-    return { error: NextResponse.json({ error: 'forbidden' }, { status: 403 }) }
-  }
+  if (!(await getAdmin())) return { error: NextResponse.json({ error: 'forbidden' }, { status: 403 }) }
   return {}
 }
 
@@ -25,6 +20,9 @@ export async function POST(request: NextRequest) {
   const formData = await request.formData()
   const file = formData.get('file')
   if (!(file instanceof File)) return NextResponse.json({ error: 'missing file' }, { status: 400 })
+  if (!file.type.startsWith('image/')) {
+    return NextResponse.json({ error: 'แนบได้เฉพาะรูปภาพ' }, { status: 400 })
+  }
   if (file.size > MAX_SIZE) {
     return NextResponse.json({ error: 'ไฟล์ใหญ่เกินไป (เกิน 1MB)' }, { status: 400 })
   }

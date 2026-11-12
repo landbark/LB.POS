@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from 'next/server'
-import { getCustomerId } from '@/lib/customer-session'
+import { getCustomerSession, orderCutoff } from '@/lib/customer-session'
 import { priceCart } from '@/lib/order-pricing'
 import { getShippingZones, getStorefront } from '@/lib/shop-data'
 import { quoteShipping } from '@/lib/shop'
@@ -19,23 +19,29 @@ interface AddressInput {
 }
 
 export async function GET() {
-  const customerId = await getCustomerId()
-  if (!customerId) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
+  const session = await getCustomerSession()
+  if (!session) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
 
   const admin = createAdminClient()
-  const { data } = await admin
+  let query = admin
     .from('orders')
     .select('*, order_items(*)')
-    .eq('customer_id', customerId)
+    .eq('customer_id', session.id)
     .order('created_at', { ascending: false })
 
+  // ยังรอร้านยืนยัน = เห็นเฉพาะใบที่สั่งเอง ไม่ใช่ประวัติของเจ้าของบัญชีเดิม
+  const cutoff = orderCutoff(session)
+  if (cutoff) query = query.gte('created_at', cutoff)
+
+  const { data } = await query
   return NextResponse.json({ orders: data ?? [] })
 }
 
 // สร้างออเดอร์ — ยังไม่ตัดสต็อค (ตัดตอนพนักงานกดยืนยันในหน้า /admin/orders)
 export async function POST(request: NextRequest) {
-  const customerId = await getCustomerId()
-  if (!customerId) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
+  const session = await getCustomerSession()
+  if (!session) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
+  const customerId = session.id
 
   const store = await getStorefront()
   if (!store?.shop_enabled) {
@@ -64,7 +70,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    if (body.addressId) {
+    if (body.addressId && session.verified) {
       const { data: saved } = await admin
         .from('customer_addresses')
         .select('*')
@@ -97,7 +103,7 @@ export async function POST(request: NextRequest) {
     zoneName = quote.zoneName
 
     // เก็บที่อยู่ใหม่เข้าสมุดที่อยู่ให้ด้วย ถ้าลูกค้าติ๊กไว้
-    if (!body.addressId && body.saveAddress) {
+    if (!body.addressId && body.saveAddress && session.verified) {
       await admin.from('customer_addresses').insert({
         customer_id: customerId,
         recipient_name: address.recipient_name!.trim(),

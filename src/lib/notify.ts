@@ -373,6 +373,7 @@ export async function sendStockAlerts(
 export type NotifyEvent =
   | 'new_order' | 'payment_slip' | 'new_appointment' | 'shift_close' | 'daily_sales'
   | 'sale' | 'purchase_order' | 'stock_received' | 'receipt_cancelled' | 'product_return'
+  | 'member_link'
 
 const EVENT_COLUMN: Record<NotifyEvent, string> = {
   new_order: 'notify_new_order',
@@ -385,6 +386,7 @@ const EVENT_COLUMN: Record<NotifyEvent, string> = {
   stock_received: 'notify_stock_received',
   receipt_cancelled: 'notify_receipt_cancelled',
   product_return: 'notify_product_return',
+  member_link: 'notify_member_link',
 }
 
 export type RecipientRole = 'owner' | 'staff' | 'vet'
@@ -408,6 +410,8 @@ const EVENT_ROLES: Record<NotifyEvent, readonly RecipientRole[]> = {
   // ยกเลิกบิล/รับคืนของเป็นเงินออกจากร้าน — เจ้าของต้องเห็นทุกใบ ไม่ใช่มารู้ตอนปิดกะ
   receipt_cancelled: ['owner'],
   product_return: ['owner'],
+  // ลูกค้ามักยืนรออยู่หน้าร้านตอนขอผูก — พนักงานที่อยู่ตรงนั้นต้องเห็นด้วย ไม่ใช่เจ้าของคนเดียว
+  member_link: ['owner', 'staff'],
 }
 
 /** role ของผู้รับ — รองรับข้อมูลเก่าที่ยังมีแต่ธง is_owner (ก่อนรัน migration) */

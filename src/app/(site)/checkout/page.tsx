@@ -37,16 +37,19 @@ export default async function CheckoutPage() {
   }
 
   const admin = createAdminClient()
-  const { data: addresses } = await admin
-    .from('customer_addresses')
-    .select('*')
-    .eq('customer_id', customer.id)
-    .order('is_default', { ascending: false })
-    .order('created_at', { ascending: false })
+  // สมุดที่อยู่เป็นของเจ้าของบัญชีเดิม — บัญชีที่ยังรอร้านยืนยันกรอกที่อยู่ใหม่เอง
+  const { data: addresses } = customer.verified
+    ? await admin
+        .from('customer_addresses')
+        .select('*')
+        .eq('customer_id', customer.id)
+        .order('is_default', { ascending: false })
+        .order('created_at', { ascending: false })
+    : { data: [] }
 
   return (
     <CheckoutClient
-      customerName={customer.name}
+      customerName={customer.verified ? customer.name : ''}
       customerPhone={customer.phone}
       addresses={(addresses ?? []) as CustomerAddress[]}
       pickupNote={store.pickup_note}

@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Users, Plus, KeyRound, Trash2, X, Pencil, Check } from 'lucide-react'
+import { Users, Plus, Trash2, X, Pencil, Check } from 'lucide-react'
 import toast from 'react-hot-toast'
 import type { StaffEmail } from '@/lib/types'
 import { confirmDialog } from '@/lib/confirm'
@@ -19,9 +19,7 @@ export default function StaffSection({ staff, migrated }: Props) {
   const router = useRouter()
   const [adding, setAdding] = useState(false)
   const [loading, setLoading] = useState(false)
-  const [form, setForm] = useState({ name: '', email: '', role: 'cashier', password: '' })
-  const [pwTarget, setPwTarget] = useState<StaffEmail | null>(null)
-  const [newPw, setNewPw] = useState('')
+  const [form, setForm] = useState({ name: '', email: '', role: 'cashier' })
   // แก้ชื่อในตารางได้ทุกคน รวมทั้งตัวเอง (ชื่อนี้ไปโผล่เป็นชื่อผู้ตรวจในเวชระเบียน)
   const [nameEditId, setNameEditId] = useState<string | null>(null)
   const [nameDraft, setNameDraft] = useState('')
@@ -47,7 +45,7 @@ export default function StaffSection({ staff, migrated }: Props) {
     e.preventDefault()
     if (await api('POST', form)) {
       toast.success(`เพิ่ม "${form.name}" แล้ว`)
-      setForm({ name: '', email: '', role: 'cashier', password: '' })
+      setForm({ name: '', email: '', role: 'cashier' })
       setAdding(false)
     }
   }
@@ -70,15 +68,6 @@ export default function StaffSection({ staff, migrated }: Props) {
     }
   }
 
-  async function handleSetPassword(e: React.FormEvent) {
-    e.preventDefault()
-    if (!pwTarget) return
-    if (await api('PATCH', { email: pwTarget.email, password: newPw })) {
-      toast.success(`ตั้งรหัสผ่านใหม่ให้ "${pwTarget.name}" แล้ว`)
-      setPwTarget(null)
-      setNewPw('')
-    }
-  }
 
   async function handleDelete(s: StaffEmail) {
     if (!(await confirmDialog({ message: `ลบ "${s.name}" (${s.email}) ออกจากรายชื่อพนักงาน?\nบัญชีนี้จะเข้าระบบไม่ได้อีก แต่ประวัติการขายยังอยู่` })).confirmed) return
@@ -103,7 +92,7 @@ export default function StaffSection({ staff, migrated }: Props) {
         </button>
       </div>
       <p className="text-xs text-gray-500 mb-4">
-        เฉพาะอีเมลในรายชื่อนี้เท่านั้นที่เข้าระบบได้ — จะเข้าด้วย Google หรือรหัสผ่านที่ตั้งให้ก็ได้
+        เฉพาะอีเมลในรายชื่อนี้เท่านั้นที่เข้าระบบได้ — เข้าด้วยบัญชี Google ของอีเมลนั้น
       </p>
 
       {!migrated && (
@@ -143,14 +132,6 @@ export default function StaffSection({ staff, migrated }: Props) {
               <option value="vet_plus">สัตวแพทย์พิเศษ</option>
               <option value="admin">เจ้าของร้าน</option>
             </select>
-          </div>
-          <div>
-            <label className={labelClass}>รหัสผ่าน (ไม่บังคับ)</label>
-            <input
-              type="text" minLength={6} value={form.password}
-              onChange={(e) => setForm({ ...form, password: e.target.value })}
-              className={inputClass} placeholder="เว้นว่าง = ให้เข้าด้วย Google"
-            />
           </div>
           <div className="md:col-span-2">
             <button
@@ -233,13 +214,6 @@ export default function StaffSection({ staff, migrated }: Props) {
                 <td className="px-4 py-3">
                   <div className="flex items-center gap-2 justify-end">
                     <button
-                      onClick={() => { setPwTarget(s); setNewPw('') }}
-                      title="ตั้งรหัสผ่านใหม่"
-                      className="p-1.5 text-gray-400 hover:text-blue-600 rounded"
-                    >
-                      <KeyRound size={15} />
-                    </button>
-                    <button
                       onClick={() => handleDelete(s)}
                       title="ลบออกจากรายชื่อ"
                       className="p-1.5 text-gray-400 hover:text-red-600 rounded"
@@ -261,38 +235,6 @@ export default function StaffSection({ staff, migrated }: Props) {
         </table>
       </div>
 
-      {/* modal ตั้งรหัสผ่านใหม่ */}
-      {pwTarget && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={() => setPwTarget(null)}>
-          <form
-            onSubmit={handleSetPassword}
-            onClick={(e) => e.stopPropagation()}
-            className="bg-white rounded-xl shadow-xl p-6 w-full max-w-sm"
-          >
-            <h3 className="text-base font-semibold text-gray-900 mb-1">ตั้งรหัสผ่านใหม่</h3>
-            <p className="text-sm text-gray-500 mb-4">{pwTarget.name} — {pwTarget.email}</p>
-            <input
-              type="text" required minLength={6} value={newPw}
-              onChange={(e) => setNewPw(e.target.value)}
-              className={inputClass} placeholder="อย่างน้อย 6 ตัวอักษร" autoFocus
-            />
-            <div className="flex gap-3 mt-4">
-              <button
-                type="submit" disabled={loading}
-                className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-medium py-2.5 rounded-lg text-sm"
-              >
-                {loading ? 'กำลังบันทึก...' : 'บันทึก'}
-              </button>
-              <button
-                type="button" onClick={() => setPwTarget(null)}
-                className="px-4 py-2.5 border border-gray-300 rounded-lg text-sm text-gray-700 hover:bg-gray-50"
-              >
-                ยกเลิก
-              </button>
-            </div>
-          </form>
-        </div>
-      )}
     </section>
   )
 }

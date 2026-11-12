@@ -30,7 +30,12 @@ export default function LinkClient({ displayName, next }: { displayName: string;
       return
     }
 
-    toast.success(data.isNew ? 'สมัครสมาชิกเรียบร้อย' : 'ผูกบัญชีกับสมาชิกเดิมแล้ว')
+    // เบอร์ที่เป็นสมาชิกอยู่แล้วต้องให้ร้านยืนยันตัวตนก่อน จึงจะเห็นแต้ม/ประวัติ
+    toast.success(
+      data.pending
+        ? 'ส่งคำขอให้ร้านยืนยันแล้ว — สั่งของได้เลย'
+        : 'สมัครสมาชิกเรียบร้อย'
+    )
     router.push(next)
     router.refresh()
   }
@@ -40,7 +45,8 @@ export default function LinkClient({ displayName, next }: { displayName: string;
       <div>
         <h1 className="text-lg font-bold text-brand-dark">ผูกบัญชีกับสมาชิกของร้าน</h1>
         <p className="mt-1 text-sm text-gray-500">
-          กรอกเบอร์โทรที่เคยให้ไว้กับร้าน — ถ้าเป็นสมาชิกอยู่แล้วจะผูกแต้มสะสมเดิมให้ ถ้ายังไม่เคย ระบบจะสมัครให้ใหม่
+          กรอกเบอร์โทรที่เคยให้ไว้กับร้าน — ถ้ายังไม่เคยเป็นสมาชิก ระบบจะสมัครให้ใหม่ใช้ได้ทันที
+          ถ้าเป็นสมาชิกอยู่แล้ว ทางร้านจะยืนยันตัวตนก่อนแสดงแต้มสะสมเดิมให้ (สั่งของได้เลยระหว่างรอ)
         </p>
       </div>
 

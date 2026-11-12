@@ -1,25 +1,15 @@
 import { NextResponse, type NextRequest } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { getAdmin } from '@/lib/require-staff'
 
 const BUCKET = 'store-assets'
 // ไม่ผ่านการ crop/บีบอัดฝั่ง browser เหมือนโลโก้ — QR ต้องคมชัด ไม่ให้ compress จนสแกนไม่ติด
 const MAX_SIZE = 3 * 1024 * 1024 // 3MB
 
+// ต้องเป็นแอดมินที่ "ยังอยู่ในทีม" — getAdmin() เช็ค profiles.active ให้ด้วย
+// (เช็คแค่ role ไม่พอ: ตอนถอดพนักงานออกระบบตั้ง active = false แต่ role ยังเป็น admin)
 async function requireAdmin() {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return { error: NextResponse.json({ error: 'unauthorized' }, { status: 401 }) }
-
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('role')
-    .eq('id', user.id)
-    .single()
-
-  if (profile?.role !== 'admin') {
-    return { error: NextResponse.json({ error: 'forbidden' }, { status: 403 }) }
-  }
+  if (!(await getAdmin())) return { error: NextResponse.json({ error: 'forbidden' }, { status: 403 }) }
   return {}
 }
 

@@ -12,17 +12,28 @@ async function requireAdmin() {
   return { user: { id: admin.userId } }
 }
 
-// หา auth user id จากอีเมล (profiles.email ถูก sync จาก trigger/migration)
+/**
+ * หา auth user id จากอีเมล (profiles.email ถูก sync จาก trigger/migration)
+ *
+ * ห้ามใช้ ilike ตรง ๆ กับอีเมล — '_' และ '%' เป็น wildcard ของ LIKE
+ * อีเมลอย่าง arm_mani@gmail.com จะไปแมตช์ armXmani@gmail.com ของคนอื่นได้
+ * แล้วไปตั้งรหัสผ่าน/ปิดบัญชีผิดคน (อีเมลถูกเก็บเป็น lowercase อยู่แล้ว)
+ */
 async function findUserIdByEmail(admin: ReturnType<typeof createAdminClient>, email: string) {
   const { data } = await admin
     .from('profiles')
     .select('id')
-    .ilike('email', email)
+    .eq('email', email.toLowerCase())
     .maybeSingle()
   return data?.id ?? null
 }
 
-// เพิ่มพนักงาน: ใส่ whitelist เสมอ; ถ้าระบุรหัสผ่าน → สร้าง user ให้เลย (เข้า Google ก็ได้)
+// เพิ่มพนักงาน: ใส่อีเมลลง whitelist — พนักงานเข้าครั้งแรกด้วย Google แล้ว trigger
+// handle_new_user จะสร้างโปรไฟล์ให้ตาม role ที่ตั้งไว้ในรายชื่อ
+//
+// ระบบนี้ไม่ใช้รหัสผ่านแล้ว (เข้าทาง Google อย่างเดียว) — ไม่มีรหัสให้เดา/รั่ว
+// และได้ 2-step ของ Google มาด้วย ถ้าต้องเปิดทางรหัสผ่านฉุกเฉิน ทำที่ Supabase
+// → Authentication → Providers → Email
 export async function POST(request: NextRequest) {
   const { error } = await requireAdmin()
   if (error) return error
@@ -31,13 +42,9 @@ export async function POST(request: NextRequest) {
   const email = (body.email ?? '').trim().toLowerCase()
   const name = (body.name ?? '').trim()
   const role = normalizeRole(body.role)
-  const password = body.password?.trim() || null
 
   if (!email || !name) {
     return NextResponse.json({ error: 'กรุณากรอกอีเมลและชื่อ' }, { status: 400 })
-  }
-  if (password && password.length < 6) {
-    return NextResponse.json({ error: 'รหัสผ่านต้องยาวอย่างน้อย 6 ตัวอักษร' }, { status: 400 })
   }
 
   const admin = createAdminClient()
@@ -56,27 +63,12 @@ export async function POST(request: NextRequest) {
   const existingId = await findUserIdByEmail(admin, email)
   if (existingId) {
     await admin.from('profiles').update({ active: true, role, name }).eq('id', existingId)
-    if (password) {
-      await admin.auth.admin.updateUserById(existingId, { password })
-    }
-  } else if (password) {
-    const { error: createError } = await admin.auth.admin.createUser({
-      email,
-      password,
-      email_confirm: true,
-      user_metadata: { full_name: name },
-    })
-    if (createError) {
-      // ถอน whitelist ที่เพิ่งใส่ ให้กดเพิ่มใหม่ได้หลังแก้ปัญหา
-      await admin.from('staff_emails').delete().eq('email', email)
-      return NextResponse.json({ error: createError.message }, { status: 400 })
-    }
   }
 
   return NextResponse.json({ ok: true })
 }
 
-// แก้ไขพนักงาน: เปลี่ยน role / ชื่อ / ตั้งรหัสผ่านใหม่
+// แก้ไขพนักงาน: เปลี่ยน role / ชื่อ
 export async function PATCH(request: NextRequest) {
   const { user, error } = await requireAdmin()
   if (error) return error
@@ -103,21 +95,6 @@ export async function PATCH(request: NextRequest) {
     if (userId) await admin.from('profiles').update(updates).eq('id', userId)
   }
 
-  if (body.password) {
-    const password = body.password.trim()
-    if (password.length < 6) {
-      return NextResponse.json({ error: 'รหัสผ่านต้องยาวอย่างน้อย 6 ตัวอักษร' }, { status: 400 })
-    }
-    if (!userId) {
-      return NextResponse.json(
-        { error: 'พนักงานคนนี้ยังไม่เคยเข้าระบบ — ใช้วิธีลบแล้วเพิ่มใหม่พร้อมตั้งรหัสผ่านแทน' },
-        { status: 400 }
-      )
-    }
-    const { error: pwError } = await admin.auth.admin.updateUserById(userId, { password })
-    if (pwError) return NextResponse.json({ error: pwError.message }, { status: 400 })
-  }
-
   return NextResponse.json({ ok: true })
 }
 
@@ -139,7 +116,9 @@ export async function DELETE(request: NextRequest) {
 
   await admin.from('staff_emails').delete().eq('email', email)
   if (userId) {
-    await admin.from('profiles').update({ active: false }).eq('id', userId)
+    // ลด role ลงด้วย ไม่ใช่แค่ปิดใช้งาน — role ที่ค้างเป็น 'admin' ทำให้โค้ดที่เช็คแค่ role
+    // (โดยไม่เช็ค active) ยังนับคนที่ถูกถอดออกไปแล้วว่าเป็นแอดมิน
+    await admin.from('profiles').update({ active: false, role: 'cashier' }).eq('id', userId)
   }
 
   return NextResponse.json({ ok: true })

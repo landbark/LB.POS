@@ -29,29 +29,61 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'คำขอนี้ถูกดำเนินการไปแล้ว' }, { status: 409 })
   }
 
+  const now = new Date().toISOString()
+
   if (action === 'approve') {
-    // ผูกได้ต่อเมื่อยังว่างอยู่จริง — กันกรณีมีคนผูกไปแล้วระหว่างรอ
-    const { data: linked, error } = await admin
+    // ยืนยันได้ต่อเมื่อบัญชีนี้ยังไม่ถูกยืนยันให้ LINE อื่น และ (ถ้ามีคนจับจองอยู่)
+    // คนที่จับจองยังเป็นเจ้าของคำขอใบนี้ — กันกดยืนยันให้คนที่มาจับจองทับทีหลัง
+    //
+    // รองรับสองทางที่คำขอเข้ามา:
+    //   /api/shop/link  = จับจองไว้แล้ว (line_user_id ตรงกับคำขอ) เหลือแค่ยืนยัน
+    //   /api/member/link = เข้าคิวโดยไม่แตะบัญชี (line_user_id ยังว่าง) ต้องผูกให้ด้วย
+    const { data: target } = await admin
       .from('customers')
-      .update({ line_user_id: req.line_user_id })
+      .select('line_user_id, line_verified_at')
       .eq('id', req.customer_id)
-      .is('line_user_id', null)
-      .select('id')
+      .maybeSingle()
+
+    const claimable = target
+      && !target.line_verified_at
+      && (target.line_user_id === null || target.line_user_id === req.line_user_id)
+
+    const { data: verified, error } = claimable
+      ? await admin
+          .from('customers')
+          .update({ line_user_id: req.line_user_id, line_claimed_at: now, line_verified_at: now })
+          .eq('id', req.customer_id)
+          .is('line_verified_at', null)
+          .select('id')
+      : { data: [], error: null }
 
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-    if ((linked ?? []).length === 0) {
+    if ((verified ?? []).length === 0) {
       await admin.from('member_link_requests')
-        .update({ status: 'rejected', decided_at: new Date().toISOString(), decided_by: staff.userId })
+        .update({ status: 'rejected', decided_at: now, decided_by: staff.userId })
         .eq('id', req.id)
-      return NextResponse.json({ error: 'บัญชีนี้ถูกผูกกับ LINE อื่นไปแล้ว' }, { status: 409 })
+      return NextResponse.json(
+        { error: 'บัญชีนี้ถูกผูกกับ LINE อื่นไปแล้ว — ให้ลูกค้ากดขอผูกใหม่' },
+        { status: 409 }
+      )
     }
+  } else {
+    // ปฏิเสธ = ปลดการจับจองออกด้วย ไม่ใช่แค่ปิดคำขอ
+    // (ถ้าปล่อยค้างไว้ คนที่ถูกปฏิเสธยังถือเซสชันของบัญชีนั้นอยู่ และเจ้าตัวจะผูกเบอร์ตัวเองไม่ได้)
+    const { error } = await admin
+      .from('customers')
+      .update({ line_user_id: null, line_claimed_at: null })
+      .eq('id', req.customer_id)
+      .eq('line_user_id', req.line_user_id)
+      .is('line_verified_at', null)
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
   }
 
   const { error } = await admin
     .from('member_link_requests')
     .update({
       status: action === 'approve' ? 'approved' : 'rejected',
-      decided_at: new Date().toISOString(),
+      decided_at: now,
       decided_by: staff.userId,
     })
     .eq('id', req.id)

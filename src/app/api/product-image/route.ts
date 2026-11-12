@@ -18,6 +18,9 @@ export async function POST(request: NextRequest) {
   if (!(file instanceof File)) {
     return NextResponse.json({ error: 'missing file' }, { status: 400 })
   }
+  if (!file.type.startsWith('image/')) {
+    return NextResponse.json({ error: 'แนบได้เฉพาะรูปภาพ' }, { status: 400 })
+  }
   if (file.size > MAX_SIZE) {
     return NextResponse.json({ error: 'ไฟล์ใหญ่เกินไป (เกิน 1MB)' }, { status: 400 })
   }

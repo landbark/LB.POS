@@ -34,11 +34,13 @@ export default async function SiteLayout({ children }: { children: React.ReactNo
 
   return (
     <div className="min-h-screen flex flex-col bg-brand-light">
+      {/* ชื่อเป็นของเจ้าของบัญชีเดิม — บัญชีที่ยังรอร้านยืนยันไม่ให้เห็น
+          (ไม่งั้นกรอกเบอร์มั่วแล้วรู้ว่าเบอร์นั้นชื่ออะไร) */}
       <SiteHeader
         storeName={storeName}
         logoUrl={store?.logo_url ?? null}
         shopEnabled={store?.shop_enabled ?? false}
-        customerName={customer?.name ?? null}
+        customerName={customer?.verified ? customer.name : null}
       />
 
       <main className="flex-1 w-full max-w-5xl mx-auto px-4 py-6">{children}</main>

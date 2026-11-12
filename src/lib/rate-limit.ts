@@ -66,8 +66,26 @@ export async function rateLimit(
   }
 }
 
-/** ip ของผู้เรียก — หลัง proxy ของ Vercel ใช้ x-forwarded-for */
+/**
+ * ip ของผู้เรียก — เอาค่าที่ "proxy ของเราเอง" เขียนให้ ไม่ใช่ค่าที่ client ส่งมา
+ *
+ * ห้ามอ่าน x-forwarded-for ตัวแรก: ทั้ง Cloudflare และ Caddy *ต่อท้าย* ip จริง
+ * ลงไปในค่าที่ client ส่งมา ไม่ได้เขียนทับ ใครแนบ `X-Forwarded-For: <สุ่ม>`
+ * มาเองทุกครั้งก็ได้ตัวนับใหม่ทุกครั้ง = ลิมิตไม่มีผลอะไรเลย
+ *
+ *   cf-connecting-ip  Cloudflare เขียนให้เสมอและเขียนทับของเดิม (เว็บจริงอยู่บน Workers)
+ *   x-forwarded-for   เอาตัว "ท้ายสุด" คือตัวที่ proxy ชั้นใกล้เราที่สุดเติมเข้ามา
+ *   x-real-ip         Caddy/nginx ตั้งให้เป็นค่าเดี่ยว (ตอนรันเป็น Docker)
+ */
 export function clientIp(request: Request): string {
+  const cf = request.headers.get('cf-connecting-ip')?.trim()
+  if (cf) return cf
+
   const fwd = request.headers.get('x-forwarded-for')
-  return fwd?.split(',')[0].trim() || request.headers.get('x-real-ip') || 'unknown'
+  if (fwd) {
+    const hops = fwd.split(',').map((h) => h.trim()).filter(Boolean)
+    if (hops.length > 0) return hops[hops.length - 1]
+  }
+
+  return request.headers.get('x-real-ip')?.trim() || 'unknown'
 }

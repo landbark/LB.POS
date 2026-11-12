@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { LogIn, Package } from 'lucide-react'
-import { getSessionCustomer } from '@/lib/customer-session'
+import { getSessionCustomer, orderCutoff } from '@/lib/customer-session'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { ORDER_STATUS_LABELS, ORDER_STATUS_STYLE } from '@/lib/shop'
 import { FULFILLMENT_LABELS, type Order } from '@/lib/types'
@@ -30,12 +30,17 @@ export default async function OrdersPage() {
   }
 
   const admin = createAdminClient()
-  const { data } = await admin
+  let query = admin
     .from('orders')
     .select('*, order_items(id, product_name, quantity)')
     .eq('customer_id', customer.id)
     .order('created_at', { ascending: false })
 
+  // บัญชีที่ยังรอร้านยืนยัน เห็นเฉพาะใบที่สั่งเอง ไม่ใช่ประวัติของเจ้าของบัญชีเดิม
+  const cutoff = orderCutoff(customer)
+  if (cutoff) query = query.gte('created_at', cutoff)
+
+  const { data } = await query
   const orders = (data ?? []) as Order[]
 
   return (
