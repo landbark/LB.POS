@@ -168,7 +168,7 @@ export default function LoginPage() {
         </div>
 
         {/* ทางกลับหน้าเว็บร้าน (หน้าสาธารณะ) — ลูกค้าที่หลงเข้ามาหน้านี้จะได้ไม่ตัน */}
-        <p className="text-center mt-5">
+        <p className="hide-in-app text-center mt-5">
           <a href="/storefront" className="text-sm hover:underline" style={{ color: '#D4A87A' }}>
             ← กลับหน้าเว็บร้าน
           </a>

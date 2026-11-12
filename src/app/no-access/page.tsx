@@ -40,7 +40,7 @@ export default function NoAccessPage() {
           </button>
         </div>
 
-        <p className="mt-5">
+        <p className="hide-in-app mt-5">
           <a href="/storefront" className="text-sm hover:underline" style={{ color: '#D4A87A' }}>
             ← กลับหน้าเว็บร้าน
           </a>
