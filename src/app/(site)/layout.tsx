@@ -71,7 +71,7 @@ export default async function SiteLayout({ children }: { children: React.ReactNo
                 className="mt-3 inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-brand-bg-light text-sm hover:bg-brand-brown transition-colors"
               >
                 <LinktreeIcon size={16} />
-                ทุกช่องทางติดต่อ
+                Linktree
               </a>
             ) : channels.length === 0 ? (
               <p className="mt-2 text-sm text-brand-muted">ยังไม่ได้ตั้งค่าช่องทางติดต่อ</p>
