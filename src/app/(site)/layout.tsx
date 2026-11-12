@@ -1,6 +1,6 @@
 import type { Metadata } from 'next'
 import { MapPin, Phone } from 'lucide-react'
-import { FacebookIcon, InstagramIcon, LineIcon } from '@/components/SocialIcons'
+import { FacebookIcon, InstagramIcon, LineIcon, LinktreeIcon } from '@/components/SocialIcons'
 import { getSessionCustomer } from '@/lib/customer-session'
 import { getStorefront } from '@/lib/shop-data'
 import SiteHeader from './SiteHeader'
@@ -63,7 +63,17 @@ export default async function SiteLayout({ children }: { children: React.ReactNo
 
           <div>
             <h3 className="font-semibold text-sm">ช่องทางติดต่อ</h3>
-            {channels.length === 0 ? (
+            {store?.linktree_url ? (
+              <a
+                href={store.linktree_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="mt-3 inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-brand-bg-light text-sm hover:bg-brand-brown transition-colors"
+              >
+                <LinktreeIcon size={16} />
+                ทุกช่องทางติดต่อ
+              </a>
+            ) : channels.length === 0 ? (
               <p className="mt-2 text-sm text-brand-muted">ยังไม่ได้ตั้งค่าช่องทางติดต่อ</p>
             ) : (
               <div className="mt-3 flex flex-wrap gap-2">
