@@ -50,7 +50,8 @@ interface Props {
 const GONE_MS = 1500
 
 // บาร์โค้ดที่เจอบนกล่องสินค้าในร้าน (EAN/UPC) + CODE_128/39 ของฉลากที่พิมพ์เอง
-const NATIVE_FORMATS = ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128', 'code_39', 'itf', 'codabar']
+// qr_code มีไว้อ่านบัตรสมาชิกจากมือถือลูกค้า (ดู lib/member-code)
+const NATIVE_FORMATS = ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128', 'code_39', 'itf', 'codabar', 'qr_code']
 
 // กล้องที่ผู้ใช้เลือกเอง — จำไว้ให้เครื่องนั้นไม่ต้องเลือกใหม่ทุกครั้ง
 const DEVICE_KEY = 'pos.scanner.deviceId'
@@ -287,6 +288,7 @@ export default function BarcodeScanner({ onDetect, onClose, title, hint, panel }
         BarcodeFormat.CODE_39,
         BarcodeFormat.ITF,
         BarcodeFormat.CODABAR,
+        BarcodeFormat.QR_CODE,
       ])
       hints.set(DecodeHintType.TRY_HARDER, true)
       const reader = new BrowserMultiFormatReader(hints, { delayBetweenScanAttempts: 120 })

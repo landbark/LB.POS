@@ -13,6 +13,7 @@ import { POS_DISPLAY_CHANNEL, type PosDisplayMessage } from '@/lib/posDisplay'
 import PaymentModal from './PaymentModal'
 import { confirmDialog } from '@/lib/confirm'
 import BarcodeScanner, { type ScanFeedback } from '@/components/BarcodeScanner'
+import { parseMemberCode } from '@/lib/member-code'
 import ScanList from '@/components/ScanList'
 import OpenShiftModal from '@/components/OpenShiftModal'
 import ReturnModal from '@/components/ReturnModal'
@@ -675,6 +676,30 @@ export default function POSClient({ products: allProducts, booth, shiftOpen, shi
     setNewCustomerName('')
   }
 
+  /**
+   * ยิง QR บัตรสมาชิกจากมือถือลูกค้า — เลือกลูกค้าให้เลยโดยไม่ต้องคลิกช่องเบอร์
+   * สลับไปยิงสินค้าต่อได้ทันที เพราะทั้งคู่เข้าช่องค้นหาช่องเดียวกัน
+   */
+  async function selectCustomerByCode(id: string) {
+    const supabase = createClient()
+    const { data } = await supabase.from('customers').select('*').eq('id', id).maybeSingle()
+    if (!data) {
+      toast.error('ไม่พบลูกค้าจาก QR นี้ — ใช้เบอร์โทรแทน')
+      return
+    }
+
+    // เปลี่ยนตัวลูกค้ากลางคัน: ของแลกแต้มในตะกร้าเป็นแต้มของคนเดิม ต้องเอาออก
+    if (customer && customer.id !== data.id && cart.some((c) => c.reward_points)) {
+      commitCart(cart.filter((c) => !c.reward_points))
+      toast('เปลี่ยนลูกค้าแล้ว — เอาของแลกแต้มของคนเดิมออกจากตะกร้า', { icon: '⚠️' })
+    }
+
+    setCustomer(data)
+    setCustomerPhone(data.phone ?? '')
+    setShowAddCustomer(false)
+    toast.success(pointsConfig ? `${data.name} · ${data.points} แต้ม` : `ลูกค้า: ${data.name}`)
+  }
+
   async function addCustomer() {
     if (!newCustomerName.trim()) {
       toast.error('กรุณาใส่ชื่อลูกค้า')
@@ -739,6 +764,12 @@ export default function POSClient({ products: allProducts, booth, shiftOpen, shi
 
   // ยิงจากกล้อง: รหัสที่ได้คือบาร์โค้ดเต็มๆ ตัวเดียว ไม่ต้องเดาหางข้อความเหมือนเครื่องยิงที่พิมพ์ทับช่องค้นหา
   function handleScannedCode(code: string): ScanFeedback {
+    const member = parseMemberCode(code)
+    if (member) {
+      void selectCustomerByCode(member.id)
+      return { ok: true, message: 'บัตรสมาชิก — กำลังดึงข้อมูลลูกค้า' }
+    }
+
     const found = findExact(code)
     if (!found) return { ok: false, message: `ไม่พบสินค้าที่ใช้บาร์โค้ด ${code}` }
     addToCart(found.product, found.unit)
@@ -777,6 +808,15 @@ export default function POSClient({ products: allProducts, booth, shiftOpen, shi
     // แต่ค่าใน input ครบแล้วเสมอ (เคยยิงแล้วขึ้น "ไม่พบสินค้า" ทั้งที่ยิงถูก เพราะอ่าน state เก่า)
     const text = (searchRef.current?.value ?? search).trim()
     if (!text) return
+
+    // บัตรสมาชิกมาก่อน — ไม่งั้นรหัสยาวๆ จะไปตกที่การค้นหาสินค้าแล้วขึ้นว่าไม่พบ
+    const member = parseMemberCode(text)
+    if (member) {
+      setSearch(member.before)
+      searchRef.current?.focus()
+      void selectCustomerByCode(member.id)
+      return
+    }
 
     const scan = findScannedCode(text)
     if (scan) {
@@ -1292,6 +1332,11 @@ export default function POSClient({ products: allProducts, booth, shiftOpen, shi
               ค้นหา
             </button>
           </div>
+          {!customer && (
+            <p className="mt-1.5 text-[11px] text-gray-400">
+              หรือยิง QR บัตรสมาชิกจากมือถือลูกค้าได้เลย ไม่ต้องคลิกช่องนี้ก่อน
+            </p>
+          )}
           {customer && (
             <div className="mt-2 flex items-center justify-between bg-blue-50 rounded-lg px-3 py-2">
               <div>

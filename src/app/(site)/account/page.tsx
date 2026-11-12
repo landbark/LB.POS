@@ -4,6 +4,7 @@ import { getSessionCustomer } from '@/lib/customer-session'
 import { createAdminClient } from '@/lib/supabase/admin'
 import type { CustomerAddress } from '@/lib/types'
 import AddressBook from './AddressBook'
+import MemberQr from './MemberQr'
 import TelegramConnect from './TelegramConnect'
 
 export const dynamic = 'force-dynamic'
@@ -110,6 +111,8 @@ export default async function AccountPage({
           </div>
         </div>
       </div>
+
+      <MemberQr customerId={customer.id} name={customer.name} phone={customer.phone} />
 
       <div className="flex gap-3">
         <Link
