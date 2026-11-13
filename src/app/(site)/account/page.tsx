@@ -2,9 +2,10 @@ import Link from 'next/link'
 import { Gift, LogIn, LogOut, Package, Sparkles, Wallet } from 'lucide-react'
 import { getSessionCustomer } from '@/lib/customer-session'
 import { createAdminClient } from '@/lib/supabase/admin'
-import type { CustomerAddress } from '@/lib/types'
+import type { AppointmentType, CustomerAddress, PetSpecies } from '@/lib/types'
 import AddressBook from './AddressBook'
 import MemberQr from './MemberQr'
+import PetSection, { daysUntil, type ApptCard, type BillCard, type PetCard } from './PetSection'
 import TelegramConnect from './TelegramConnect'
 
 export const dynamic = 'force-dynamic'
@@ -89,7 +90,14 @@ export default async function AccountPage({
   }
 
   const admin = createAdminClient()
-  const [{ data: addresses }, { data: telegram }, { data: rewards }, { data: pointsConfig }] = await Promise.all([
+  const [
+    { data: addresses },
+    { data: telegram },
+    { data: rewards },
+    { data: pointsConfig },
+    { data: petRows },
+    { data: billRows },
+  ] = await Promise.all([
     admin
       .from('customer_addresses')
       .select('*')
@@ -106,7 +114,88 @@ export default async function AccountPage({
       .eq('active', true)
       .order('points_cost'),
     admin.from('points_config').select('enabled').limit(1).maybeSingle(),
+    admin
+      .from('pets')
+      .select('id, name, species, breed, birth_date, hn')
+      .eq('customer_id', customer.id)
+      .eq('active', true)
+      .order('name'),
+    // บิลหน้าร้าน — ขึ้นเฉพาะใบที่พนักงานผูกลูกค้าไว้ตอนจ่ายเงิน
+    admin
+      .from('transactions')
+      .select('id, transaction_number, created_at, total, points_earned')
+      .eq('customer_id', customer.id)
+      .eq('status', 'completed')
+      .order('created_at', { ascending: false })
+      .limit(5),
   ])
+
+  type PetRow = { id: string; name: string; species: PetSpecies; breed: string | null; birth_date: string | null; hn: string | null }
+  type VaxRow = { pet_id: string; vaccine_name: string; dose_date: string; next_due_date: string | null }
+  type ApptRow = { id: string; scheduled_at: string; type: AppointmentType; pet_id: string }
+
+  const petList = (petRows ?? []) as PetRow[]
+  const petIds = petList.map((p) => p.id)
+
+  let vaxRows: VaxRow[] = []
+  let apptRows: ApptRow[] = []
+  if (petIds.length > 0) {
+    const [vax, appt] = await Promise.all([
+      admin
+        .from('pet_vaccinations')
+        .select('pet_id, vaccine_name, dose_date, next_due_date')
+        .in('pet_id', petIds)
+        .not('next_due_date', 'is', null),
+      admin
+        .from('appointments')
+        .select('id, scheduled_at, type, pet_id')
+        .in('pet_id', petIds)
+        .eq('status', 'scheduled')
+        .gte('scheduled_at', new Date().toISOString())
+        .order('scheduled_at')
+        .limit(5),
+    ])
+    vaxRows = (vax.data ?? []) as VaxRow[]
+    apptRows = (appt.data ?? []) as ApptRow[]
+  }
+
+  // เข็มล่าสุดของวัคซีนตัวนั้นเป็นตัวบอกวันครบกำหนดปัจจุบัน — ฉีดซ้ำแล้วใบเก่าต้องไม่ค้างเป็นเลยกำหนด
+  const latestDose = new Map<string, VaxRow>()
+  for (const v of vaxRows) {
+    const key = `${v.pet_id}|${v.vaccine_name}`
+    const cur = latestDose.get(key)
+    if (!cur || v.dose_date > cur.dose_date) latestDose.set(key, v)
+  }
+
+  const duesByPet = new Map<string, { vaccine: string; due: string }[]>()
+  for (const v of latestDose.values()) {
+    // เลยกำหนดเกินหนึ่งปีไม่ต้องโชว์ ส่วนใหญ่คือเลิกฉีดตัวนั้นไปแล้ว ไม่ใช่ลืม
+    if (!v.next_due_date || daysUntil(v.next_due_date) < -365) continue
+    duesByPet.set(v.pet_id, [...(duesByPet.get(v.pet_id) ?? []), { vaccine: v.vaccine_name, due: v.next_due_date }])
+  }
+
+  const petNames = new Map(petList.map((p) => [p.id, p.name]))
+  // เจ้าของบางรายมีสิบกว่าตัว — ดันตัวที่เลยกำหนด/ใกล้ครบขึ้นก่อน ตัวที่ไม่มีอะไรค้างไปท้ายสุด
+  const pets: PetCard[] = petList
+    .map((p) => ({
+      ...p,
+      dues: (duesByPet.get(p.id) ?? []).sort((a, b) => a.due.localeCompare(b.due)).slice(0, 3),
+    }))
+    .sort((a, b) => (a.dues[0]?.due ?? '9999').localeCompare(b.dues[0]?.due ?? '9999'))
+  const appointments: ApptCard[] = apptRows.map((a) => ({
+    id: a.id,
+    scheduled_at: a.scheduled_at,
+    type: a.type,
+    petName: petNames.get(a.pet_id) ?? null,
+  }))
+  const bills: BillCard[] = ((billRows ?? []) as { id: string; transaction_number: string; created_at: string; total: number; points_earned: number }[])
+    .map((b) => ({
+      id: b.id,
+      number: b.transaction_number,
+      created_at: b.created_at,
+      total: Number(b.total),
+      points_earned: b.points_earned,
+    }))
 
   const tg = telegram as Record<string, unknown> | null
 
@@ -171,6 +260,8 @@ export default async function AccountPage({
           </button>
         </form>
       </div>
+
+      <PetSection pets={pets} appointments={appointments} bills={bills} />
 
       {pointsConfig?.enabled !== false && rewardList.length > 0 && (
         <div className="rounded-xl bg-white border border-brand-muted/30 p-5">
