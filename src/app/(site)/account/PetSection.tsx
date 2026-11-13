@@ -30,7 +30,8 @@ export interface BillCard {
 
 const money = (n: number) => Number(n).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
-const dayTh = (ymd: string) =>
+/** "12 พ.ย. 70" — ใช้ทั้งวันครบวัคซีนและวันหมดอายุแต้ม */
+export const dayTh = (ymd: string) =>
   new Date(`${ymd}T00:00:00+07:00`).toLocaleDateString('th-TH', {
     timeZone: 'Asia/Bangkok', day: 'numeric', month: 'short', year: '2-digit',
   })

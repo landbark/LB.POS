@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/client'
+import { applyPoints } from '@/lib/points'
 import type { RefundMethod } from '@/lib/types'
 
 interface CancelReceiptParams {
@@ -72,19 +73,24 @@ export async function cancelReceipt({
       .single()
 
     if (customer) {
-      // แต้มที่ต้องถอนคืน = ที่ได้จากบิลนี้ − ที่จ่ายไปทั้งเป็นส่วนลดและเป็นของแลก
-      // (ของแลกคืนสต็อกไปพร้อมสินค้าอื่นแล้วถ้าเลือกคืนสต็อก)
-      const pointsDelta = tx.points_earned - tx.points_used - (tx.points_used_reward ?? 0)
       // เครดิตที่ต้องคืนกลับ = เครดิตที่เคยใช้จ่ายในบิลนี้ (คืนกลับเสมอ) + เครดิตใหม่จากการเลือกคืนเงินเป็นเครดิต
       const creditRestore = tx.credit_used + (refundMethod === 'credit' ? tx.total : 0)
       await supabase
         .from('customers')
         .update({
-          points: Math.max(0, customer.points - pointsDelta),
           total_spent: Math.max(0, customer.total_spent - tx.total),
           credit_balance: customer.credit_balance + creditRestore,
         })
         .eq('id', tx.customer_id)
+
+      // ถอนแต้มที่บิลนี้ให้ไว้ออกจากก้อนของบิลนี้เอง และคืนแต้มที่ลูกค้าจ่ายไป
+      // (ทั้งส่วนลดแต้มและของแลก — ของแลกคืนสต็อกไปพร้อมสินค้าอื่นแล้วถ้าเลือกคืนสต็อก)
+      // แต้มที่คืนกลับเข้าก้อนเดิม วันหมดอายุเดิมจึงไม่ถูกต่ออายุเพราะยกเลิกบิล
+      const revoke = tx.points_earned ?? 0
+      const restore = (tx.points_used ?? 0) + (tx.points_used_reward ?? 0)
+      if (revoke > 0 || restore > 0) {
+        await applyPoints(supabase, tx.customer_id, { revoke, restore, transactionId })
+      }
     }
   }
 

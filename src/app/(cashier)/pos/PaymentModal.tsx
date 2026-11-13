@@ -6,7 +6,7 @@ import { X, CheckCircle2, Printer, AlertTriangle, History } from 'lucide-react'
 import toast from 'react-hot-toast'
 import type { CartItem, Customer, PointsConfig, PaymentMethod, SalesChannel, RoundingMode } from '@/lib/types'
 import { roundTotal } from '@/lib/rounding'
-import { earnedPointsFor, noPointsSubtotal } from '@/lib/points'
+import { applyPoints, earnedPointsFor, noPointsSubtotal } from '@/lib/points'
 import { deductStock } from '@/lib/deductStock'
 import { baseQty } from '@/lib/productUnits'
 import { SALES_CHANNELS, isPlatformChannel } from '@/lib/salesChannel'
@@ -432,16 +432,31 @@ export default function PaymentModal({
         .in('id', visitIds)
     }
 
-    // Update customer points + credit
+    // Update customer total_spent + credit
+    // แต้มไม่ได้เขียนตรงนี้แล้ว — ไปที่สมุดก้อนแต้ม เพราะแต่ละก้อนมีวันหมดอายุของตัวเอง
     if (customer) {
       await supabase
         .from('customers')
         .update({
-          points: customer.points + earnedPoints - usePoints - rewardPoints,
           total_spent: customer.total_spent + finalTotal,
           credit_balance: customer.credit_balance - useCredit,
         })
         .eq('id', customer.id)
+
+      // ของแลกแต้มกับส่วนลดแต้มตัดจากกองเดียวกัน ส่งไปเป็นยอดใช้รวมก้อนเดียว
+      // apply_points จัดลำดับให้เอง: ใช้ก่อน แล้วค่อยออกก้อนใหม่ของบิลนี้
+      if (earnedPoints > 0 || usePoints > 0 || rewardPoints > 0) {
+        const left = await applyPoints(supabase, customer.id, {
+          earn: earnedPoints,
+          spend: usePoints + rewardPoints,
+          transactionId: tx.id,
+          at: soldAtISO ?? null,
+        })
+        // บิลบันทึกไปแล้ว ย้อนกลับไม่ได้ — แต่ต้องบอกให้รู้ว่ายอดแต้มยังไม่ขยับ
+        if (left === null) {
+          toast.error(`บิล ${tx.transaction_number} บันทึกแล้ว แต่ปรับแต้มลูกค้าไม่สำเร็จ — แจ้งเจ้าของร้านให้ตรวจแต้มของ${customer.name}`, { duration: 8000 })
+        }
+      }
     }
 
     // แจ้งเตือน Telegram — งานเสริม ล้มเหลวไม่ให้กระทบการขาย

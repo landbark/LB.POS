@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { AlertTriangle, ArrowLeft, Check, MapPin, Merge, Pencil, PawPrint, Plus, Receipt, Stethoscope, X } from 'lucide-react'
 import toast from 'react-hot-toast'
-import { SPECIES_LABELS, VISIT_STATUS_LABELS, type Breed, type Customer, type Pet, type PetSpecies, type VisitStatus } from '@/lib/types'
+import { SPECIES_LABELS, VISIT_STATUS_LABELS, type Breed, type Customer, type Pet, type PetSpecies, type PointLot, type VisitStatus } from '@/lib/types'
 import { ageAt, petAge } from '@/lib/pets'
 import { visitDiagnosisText, type DiagnosisLink } from '@/lib/diagnoses'
 import BreedSelect from '@/components/BreedSelect'
@@ -51,6 +51,7 @@ export default function CustomerDetail({
   breeds,
   transactions,
   visits,
+  pointLots,
   isAdmin,
 }: {
   customer: Customer
@@ -58,6 +59,8 @@ export default function CustomerDetail({
   breeds: Breed[]
   transactions: TxRow[]
   visits: VisitRow[]
+  /** ก้อนแต้มที่ยังไม่หมดอายุ เรียงจากก้อนที่จะหมดก่อน */
+  pointLots: Pick<PointLot, 'id' | 'points' | 'used' | 'expires_at'>[]
   /** ปุ่ม "รวมใบซ้ำ" ให้เฉพาะเจ้าของร้าน (ฟังก์ชันใน DB ก็เช็คอีกชั้น) */
   isAdmin: boolean
 }) {
@@ -68,6 +71,23 @@ export default function CustomerDetail({
   // แก้ชื่อ/เบอร์/ที่อยู่ของเจ้าของได้จากหน้านี้เลย ไม่ต้องย้อนกลับไปหน้ารายชื่อลูกค้า
   const [editing, setEditing] = useState(false)
   const [owner, setOwner] = useState({ name: customer.name, last_name: customer.last_name ?? '', phone: customer.phone, address: customer.address ?? '' })
+
+  // ก้อนแต้มที่ยังมีแต้มเหลือ — expires_at เก็บเป็นเที่ยงคืนของวันถัดจากวันสุดท้าย
+  // ถอยหนึ่งมิลลิวินาทีถึงจะได้วันที่ลูกค้าใช้ได้จริง ไม่งั้นโชว์ช้าไปหนึ่งวัน
+  const liveLots = pointLots
+    .map((l) => {
+      const at = Date.parse(l.expires_at)
+      return {
+        id: l.id,
+        remaining: l.points - l.used,
+        day: Number.isFinite(at)
+          ? new Date(at - 1).toLocaleDateString('th-TH', {
+              timeZone: 'Asia/Bangkok', day: 'numeric', month: 'short', year: '2-digit',
+            })
+          : 'ไม่มีกำหนด',
+      }
+    })
+    .filter((l) => l.remaining > 0)
 
   async function saveCustomer() {
     if (!owner.name.trim() || !owner.phone.trim()) {
@@ -215,6 +235,22 @@ export default function CustomerDetail({
         <div className="bg-white rounded-xl border border-gray-100 p-4">
           <p className="text-xs text-gray-500">แต้มสะสม</p>
           <p className="text-xl font-bold text-blue-600">{customer.points.toLocaleString('th-TH')}</p>
+          {liveLots.length > 0 && (
+            <details className="group mt-1">
+              <summary className="text-[11px] text-gray-500 cursor-pointer list-none hover:text-gray-700">
+                {liveLots[0].remaining} แต้มใช้ได้ถึง {liveLots[0].day}
+                <span className="ml-1 text-gray-400 group-open:hidden">· ดูทุกก้อน</span>
+              </summary>
+              <ul className="mt-1.5 space-y-0.5 text-[11px] text-gray-500">
+                {liveLots.map((l) => (
+                  <li key={l.id} className="flex justify-between gap-2">
+                    <span>{l.remaining} แต้ม</span>
+                    <span>ถึง {l.day}</span>
+                  </li>
+                ))}
+              </ul>
+            </details>
+          )}
         </div>
         <div className="bg-white rounded-xl border border-gray-100 p-4">
           <p className="text-xs text-gray-500">เครดิต</p>

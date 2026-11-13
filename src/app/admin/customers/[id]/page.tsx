@@ -12,7 +12,7 @@ export default async function CustomerPage({ params }: { params: Promise<{ id: s
   const { data: customer } = await supabase.from('customers').select('*').eq('id', id).single()
   if (!customer) notFound()
 
-  const [{ data: pets }, { data: breeds }, { data: transactions }, { data: visits }] = await Promise.all([
+  const [{ data: pets }, { data: breeds }, { data: transactions }, { data: visits }, { data: pointLots }] = await Promise.all([
     supabase.from('pets').select('*, customers(id, name, phone)').eq('customer_id', id).eq('active', true).order('name'),
     supabase.from('breeds').select('*').order('name'),
     supabase
@@ -27,6 +27,14 @@ export default async function CustomerPage({ params }: { params: Promise<{ id: s
       .eq('customer_id', id)
       .order('visit_date', { ascending: false })
       .limit(20),
+    // ก้อนแต้มที่ยังใช้ได้ — ไว้ตอบลูกค้าว่าแต้มชุดไหนหมดเมื่อไหร่
+    supabase
+      .from('point_lots')
+      .select('id, points, used, earned_at, expires_at, note')
+      .eq('customer_id', id)
+      .gt('expires_at', new Date().toISOString())
+      .order('expires_at')
+      .limit(50),
   ])
 
   return (
@@ -36,6 +44,7 @@ export default async function CustomerPage({ params }: { params: Promise<{ id: s
       breeds={breeds ?? []}
       transactions={transactions ?? []}
       visits={(visits as never[]) ?? []}
+      pointLots={pointLots ?? []}
       isAdmin={isAdmin}
     />
   )

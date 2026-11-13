@@ -577,7 +577,27 @@ export interface PointsConfig {
   earn_points: number
   redeem_points: number
   redeem_value: number
+  /** อายุแต้มเป็นวัน · 0 = ไม่มีวันหมดอายุ — ดู supabase-migration-points-expiry.sql */
+  expiry_days: number
   updated_at: string
+}
+
+/**
+ * ก้อนแต้มหนึ่งครั้งที่ลูกค้าได้มา พร้อมวันหมดอายุของก้อนนั้น
+ *
+ * customers.points เป็นแค่ยอดรวมที่คัดลอกไว้โชว์ ความจริงอยู่ที่ตารางนี้
+ * ทุกการขยับแต้มต้องผ่าน rpc('apply_points') ห้าม update customers.points ตรง ๆ
+ */
+export interface PointLot {
+  id: string
+  customer_id: string
+  transaction_id: string | null
+  points: number
+  /** ใช้ไปแล้วกี่แต้มจากก้อนนี้ (เหลือ = points − used) */
+  used: number
+  earned_at: string
+  expires_at: string
+  note: string | null
 }
 
 /**

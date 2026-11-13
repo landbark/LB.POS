@@ -60,3 +60,53 @@ export function earnedPointsFor(
   if (eligible <= 0) return 0
   return Math.floor(eligible / config.spend_amount) * config.earn_points
 }
+
+/**
+ * การขยับแต้มหนึ่งครั้ง — ดู apply_points() ใน supabase-migration-points-expiry.sql
+ *
+ * earn    แต้มใหม่จากบิลนี้           → ก้อนใหม่ นับอายุจากวันขาย
+ * spend   แต้มที่ลูกค้าใช้              → ตัดก้อนที่ใกล้หมดอายุก่อน
+ * restore คืนแต้มที่เคยใช้ (คืนของ)    → คลายก้อนเดิม วันหมดอายุเดิมไม่ถูกต่ออายุ
+ * revoke  ถอนแต้มที่เคยให้ (ยกเลิกบิล) → ลบออกจากก้อนของบิลนั้น
+ */
+export interface PointsChange {
+  earn?: number
+  spend?: number
+  restore?: number
+  revoke?: number
+  /** บิลที่ทำให้แต้มขยับ — ใช้หาก้อนที่ต้องถอนคืน */
+  transactionId?: string | null
+  /** เวลาที่ถือว่าเกิดรายการ (บิลย้อนหลังใส่วันขายจริง) */
+  at?: string | null
+}
+
+/** ชนิดของ client ที่พอเรียก rpc ได้ — ใช้ได้ทั้ง client/server/admin โดยไม่ผูกกับ generic ของ schema */
+interface RpcClient {
+  rpc(fn: string, args: Record<string, unknown>): PromiseLike<{ data: unknown; error: { message: string } | null }>
+}
+
+/**
+ * ขยับแต้มลูกค้า — ทางเดียวที่อนุญาต ห้าม update customers.points ตรง ๆ
+ *
+ * ยอดใน customers.points เป็นแค่สำเนาไว้โชว์ ฟังก์ชันใน DB คิดใหม่จากก้อนแต้มทุกครั้ง
+ * ทำแบบนี้ยอดจะไม่มีทางเพี้ยนจากแต้มที่หมดอายุไปแล้ว
+ *
+ * คืนยอดคงเหลือใหม่ หรือ null ถ้าขยับไม่สำเร็จ (ผู้เรียกตัดสินใจเองว่าจะเตือนไหม)
+ */
+export async function applyPoints(
+  supabase: RpcClient,
+  customerId: string,
+  change: PointsChange,
+): Promise<number | null> {
+  const { data, error } = await supabase.rpc('apply_points', {
+    p_customer: customerId,
+    p_earn: Math.max(0, Math.round(change.earn ?? 0)),
+    p_spend: Math.max(0, Math.round(change.spend ?? 0)),
+    p_restore: Math.max(0, Math.round(change.restore ?? 0)),
+    p_revoke: Math.max(0, Math.round(change.revoke ?? 0)),
+    p_transaction: change.transactionId ?? null,
+    p_at: change.at ?? null,
+  })
+  if (error) return null
+  return typeof data === 'number' ? data : null
+}

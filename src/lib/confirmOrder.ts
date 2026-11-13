@@ -1,6 +1,6 @@
 import { createClient } from '@/lib/supabase/client'
 import { isVatApplicable } from '@/lib/vat'
-import { earnsPoints } from '@/lib/points'
+import { applyPoints, earnsPoints } from '@/lib/points'
 import type { Order } from '@/lib/types'
 
 // ยืนยันออเดอร์ออนไลน์ = ตัดสต็อค (FEFO) + สร้างบิลขายให้เข้ารายงาน/แต้มสะสม
@@ -152,11 +152,13 @@ export async function confirmOrder(order: Order, userId: string): Promise<{ erro
   if (customer) {
     await supabase
       .from('customers')
-      .update({
-        points: customer.points + earnedPoints,
-        total_spent: Number(customer.total_spent) + goodsTotal,
-      })
+      .update({ total_spent: Number(customer.total_spent) + goodsTotal })
       .eq('id', customer.id)
+
+    // แต้มออกเป็นก้อนใหม่พร้อมวันหมดอายุ — นับอายุจากวันที่ยืนยันออเดอร์
+    if (earnedPoints > 0) {
+      await applyPoints(supabase, customer.id, { earn: earnedPoints, transactionId: tx.id })
+    }
   }
 
   const { error: orderError } = await supabase

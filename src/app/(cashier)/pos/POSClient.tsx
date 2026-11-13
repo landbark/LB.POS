@@ -471,6 +471,44 @@ export default function POSClient({ products: allProducts, booth, shiftOpen, shi
   const rewardPointsUsed = cart.reduce((s, i) => s + (i.reward_points ?? 0) * i.quantity, 0)
   const pointsLeftForRewards = customer ? customer.points - rewardPointsUsed : 0
 
+  // ── แต้มก้อนที่จะหมดอายุก่อน ────────────────────────────────────────────
+  // ไว้บอกลูกค้าตรงเคาน์เตอร์ว่าแต้มใช้ได้ถึงเมื่อไหร่ ก่อนจะปล่อยให้หมดไปเฉย ๆ
+  // เก็บ customerId ไว้ในก้อนเดียวกัน ตอนเรนเดอร์จะได้รู้ว่าข้อมูลนี้ของลูกค้าคนที่เลือกอยู่จริงไหม
+  // (เปลี่ยนลูกค้าแล้วค่าเก่ายังค้าง แต่จะไม่ถูกแสดงเพราะ id ไม่ตรง)
+  const [pointsExpiry, setPointsExpiry] = useState<{ customerId: string; points: number; day: string } | null>(null)
+  const customerId = customer?.id ?? null
+  const customerPoints = customer?.points ?? 0
+  const hasPoints = Boolean(pointsConfig)
+
+  useEffect(() => {
+    if (!customerId || !hasPoints) return
+    let cancelled = false
+    createClient()
+      .from('point_lots')
+      .select('points, used, expires_at')
+      .eq('customer_id', customerId)
+      .gt('expires_at', new Date().toISOString())
+      .order('expires_at')
+      .limit(50)
+      .then(({ data }) => {
+        if (cancelled || !data) return
+        // expires_at คือเที่ยงคืนของวันถัดจากวันสุดท้าย — ถอยหนึ่งมิลลิวินาทีให้ได้วันที่ใช้ได้จริง
+        const lots = data
+          .map((l) => ({ remaining: l.points - l.used, at: Date.parse(l.expires_at) }))
+          .filter((l) => l.remaining > 0 && Number.isFinite(l.at))
+        if (lots.length === 0) return
+        const first = Math.min(...lots.map((l) => l.at))
+        const day = new Date(first - 1).toLocaleDateString('th-TH', {
+          timeZone: 'Asia/Bangkok', day: 'numeric', month: 'short', year: '2-digit',
+        })
+        // ก้อนที่หมดวันเดียวกันรวมเป็นยอดเดียว
+        const points = lots.filter((l) => l.at === first).reduce((n, l) => n + l.remaining, 0)
+        setPointsExpiry({ customerId, points, day })
+      })
+    return () => { cancelled = true }
+    // customerPoints อยู่ใน deps เพื่อให้ดึงใหม่หลังปิดบิล (แต้มขยับแล้วก้อนเปลี่ยน)
+  }, [customerId, customerPoints, hasPoints])
+
   /** หยิบของแลกลงตะกร้า — บรรทัดแยกจากของที่ซื้อจริง และแต้มถูกตัดตอนปิดบิล */
   function addReward(reward: PosReward, product: Product) {
     if (!customer) {
@@ -1344,7 +1382,16 @@ export default function POSClient({ products: allProducts, booth, shiftOpen, shi
                   {customer.name}
                   {customer.hn && <span className="ml-2 text-xs font-mono text-gray-500">HN {customer.hn}</span>}
                 </p>
-                {pointsConfig && <p className="text-xs text-blue-600">{customer.points} แต้ม</p>}
+                {pointsConfig && (
+                  <p className="text-xs text-blue-600">
+                    {customer.points} แต้ม
+                    {pointsExpiry?.customerId === customer.id && (
+                      <span className="text-gray-500">
+                        {' · '}{pointsExpiry.points} แต้มใช้ได้ถึง {pointsExpiry.day}
+                      </span>
+                    )}
+                  </p>
+                )}
               </div>
               <button
                 onClick={clearCustomer}

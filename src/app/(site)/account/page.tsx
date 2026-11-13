@@ -5,7 +5,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import type { AppointmentType, CustomerAddress, PetSpecies } from '@/lib/types'
 import AddressBook from './AddressBook'
 import MemberQr from './MemberQr'
-import PetSection, { daysUntil, type ApptCard, type BillCard, type PetCard } from './PetSection'
+import PetSection, { dayTh, daysUntil, type ApptCard, type BillCard, type PetCard } from './PetSection'
 import TelegramConnect from './TelegramConnect'
 
 export const dynamic = 'force-dynamic'
@@ -97,6 +97,7 @@ export default async function AccountPage({
     { data: pointsConfig },
     { data: petRows },
     { data: billRows },
+    { data: lotRows },
   ] = await Promise.all([
     admin
       .from('customer_addresses')
@@ -128,6 +129,13 @@ export default async function AccountPage({
       .eq('status', 'completed')
       .order('created_at', { ascending: false })
       .limit(5),
+    // ก้อนแต้มที่ยังไม่หมดอายุ — ไว้บอกว่าแต้มชุดไหนจะหมดเมื่อไหร่
+    admin
+      .from('point_lots')
+      .select('points, used, expires_at')
+      .eq('customer_id', customer.id)
+      .gt('expires_at', new Date().toISOString())
+      .order('expires_at'),
   ])
 
   type PetRow = { id: string; name: string; species: PetSpecies; breed: string | null; birth_date: string | null; hn: string | null }
@@ -197,6 +205,30 @@ export default async function AccountPage({
       points_earned: b.points_earned,
     }))
 
+  // ── แต้มที่ยังใช้ได้ กับก้อนที่จะหมดอายุก่อน ───────────────────────────────
+  // expires_at เก็บเป็น "เที่ยงคืนของวันถัดจากวันสุดท้าย" วันที่โชว์จึงต้องถอยกลับมาหนึ่งมิลลิวินาที
+  // ไม่งั้นลูกค้าจะเห็นวันหมดอายุช้ากว่าความจริงไปหนึ่งวัน
+  const lastDay = (iso: string): string | null => {
+    const t = Date.parse(iso)
+    // expiry_days = 0 เก็บเป็น infinity — ไม่มีวันหมดอายุให้โชว์
+    if (!Number.isFinite(t)) return null
+    return new Date(t - 1).toLocaleDateString('en-CA', { timeZone: 'Asia/Bangkok' })
+  }
+
+  const liveLots = ((lotRows ?? []) as { points: number; used: number; expires_at: string }[])
+    .map((l) => ({ remaining: l.points - l.used, day: lastDay(l.expires_at) }))
+    .filter((l) => l.remaining > 0)
+
+  // ยอดใน customers.points ถูกคิดใหม่ทุกครั้งที่แต้มขยับ แต่คนที่หายไปทั้งปีต้องรอ cron กวาด
+  // หน้านี้จึงรวมจากก้อนสดเอง ลูกค้าจะได้ไม่เห็นแต้มที่หมดอายุไปแล้ว
+  // (ไม่มีก้อนเลย = ยังไม่ได้รัน migration ใช้ยอดเดิมไปก่อน)
+  const livePoints = lotRows ? liveLots.reduce((s, l) => s + l.remaining, 0) : customer.points
+  const nextDay = liveLots.find((l) => l.day)?.day ?? null
+  const expiringSoon = nextDay
+    ? liveLots.filter((l) => l.day === nextDay).reduce((s, l) => s + l.remaining, 0)
+    : 0
+  const daysLeft = nextDay ? daysUntil(nextDay) : null
+
   const tg = telegram as Record<string, unknown> | null
 
   // ของแลกที่โชว์ให้ลูกค้าเห็น — สินค้าต้องยังเปิดขายและมีของเหลือ
@@ -226,7 +258,7 @@ export default async function AccountPage({
         <div className="mt-4 grid grid-cols-3 gap-3 text-center">
           <div className="rounded-lg bg-brand-bg-light px-1 py-3 min-w-0">
             <Sparkles size={16} className="mx-auto text-brand-muted" />
-            <p className="mt-1 text-base sm:text-lg font-bold">{customer.points}</p>
+            <p className="mt-1 text-base sm:text-lg font-bold">{livePoints}</p>
             <p className="text-[11px] text-brand-muted">แต้มสะสม</p>
           </div>
           <div className="rounded-lg bg-brand-bg-light px-1 py-3 min-w-0">
@@ -240,6 +272,17 @@ export default async function AccountPage({
             <p className="text-[11px] text-brand-muted">ยอดซื้อสะสม</p>
           </div>
         </div>
+
+        {expiringSoon > 0 && nextDay && (
+          <p
+            className={`mt-3 text-center text-[11px] ${
+              daysLeft !== null && daysLeft <= 60 ? 'text-amber-300' : 'text-brand-muted'
+            }`}
+          >
+            {expiringSoon} แต้มใช้ได้ถึง {dayTh(nextDay)}
+            {daysLeft !== null && daysLeft <= 60 && ` · เหลืออีก ${Math.max(0, daysLeft)} วัน`}
+          </p>
+        )}
       </div>
 
       <MemberQr customerId={customer.id} name={customer.name} phone={customer.phone} />

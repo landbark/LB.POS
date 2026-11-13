@@ -162,7 +162,10 @@ LANGUAGE plpgsql AS $$
 DECLARE
   c_tables text[] := ARRAY[
     'pets', 'visits', 'appointments', 'clinic_documents', 'transactions',
-    'orders', 'customer_addresses', 'member_link_requests', 'customer_telegram_tokens'
+    'orders', 'customer_addresses', 'member_link_requests', 'customer_telegram_tokens',
+    -- ก้อนแต้มต้องย้ายตามมาด้วย ไม่งั้นแต้มที่รวมเข้ามาจะไม่มีวันหมดอายุผูกอยู่
+    -- (และก้อนเดิมจะหายไปกับลูกค้าที่ถูกลบ เพราะ FK เป็น ON DELETE CASCADE)
+    'point_lots'
   ];
   allowed text[] := ARRAY['name', 'last_name', 'phone', 'address', 'hn'];
   keep customers;

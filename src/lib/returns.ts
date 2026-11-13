@@ -2,7 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { deductStock } from '@/lib/deductStock'
 import { isPlatformChannel } from '@/lib/salesChannel'
 import { isVatApplicable } from '@/lib/vat'
-import { earnedPointsFor } from '@/lib/points'
+import { applyPoints, earnedPointsFor } from '@/lib/points'
 import type { CartItem, PaymentMethod, PointsConfig, RefundMethod, TransactionStatus } from '@/lib/types'
 
 /**
@@ -464,12 +464,9 @@ export async function createReturn(
       .single()
 
     if (customer) {
-      const earnedOnExchange = exchangeTx ? earnedPointsFor(p.exchangeCart, extraPaid, p.pointsConfig) : 0
-      const pointsDelta = quote.pointsRestored + quote.rewardPointsBack - quote.pointsRevoked + earnedOnExchange
       await supabase
         .from('customers')
         .update({
-          points: Math.max(0, customer.points + pointsDelta),
           // ยอดซื้อสะสม: ถอนมูลค่าของที่คืนออก แล้วบวกเงินที่จ่ายเพิ่มในบิลใหม่
           total_spent: Math.max(0, round2(customer.total_spent - quote.returnValue + extraPaid)),
           credit_balance:
@@ -478,6 +475,26 @@ export async function createReturn(
               : customer.credit_balance,
         })
         .eq('id', bill.customer_id)
+
+      // แต้มของบิลเดิม: ถอนที่ได้จากของที่คืน คืนที่จ่ายไปกับของชิ้นนั้น (ทั้งส่วนลดแต้มและของแลก)
+      // คืนเข้าก้อนเดิม วันหมดอายุจึงเดินต่อจากวันที่ซื้อครั้งแรก ไม่ได้เริ่มนับใหม่
+      const restored = quote.pointsRestored + quote.rewardPointsBack
+      if (quote.pointsRevoked > 0 || restored > 0) {
+        await applyPoints(supabase, bill.customer_id, {
+          revoke: quote.pointsRevoked,
+          restore: restored,
+          transactionId: bill.id,
+        })
+      }
+
+      // ของที่ซื้อเพิ่มในบิลแลกเปลี่ยนเป็นการซื้อใหม่ — ออกก้อนใหม่ นับอายุจากวันนี้
+      const earnedOnExchange = exchangeTx ? earnedPointsFor(p.exchangeCart, extraPaid, p.pointsConfig) : 0
+      if (exchangeTx && earnedOnExchange > 0) {
+        await applyPoints(supabase, bill.customer_id, {
+          earn: earnedOnExchange,
+          transactionId: exchangeTx.id,
+        })
+      }
     }
   }
 

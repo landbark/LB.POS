@@ -17,6 +17,7 @@ export default function PointsSection({ config }: { config: PointsConfig | null 
     earn_points: config?.earn_points?.toString() ?? '1',
     redeem_points: config?.redeem_points?.toString() ?? '100',
     redeem_value: config?.redeem_value?.toString() ?? '1',
+    expiry_days: config?.expiry_days?.toString() ?? '365',
   })
 
   function set(key: string, value: string) {
@@ -55,6 +56,7 @@ export default function PointsSection({ config }: { config: PointsConfig | null 
         earn_points: parseInt(form.earn_points),
         redeem_points: parseInt(form.redeem_points),
         redeem_value: parseFloat(form.redeem_value),
+        expiry_days: parseInt(form.expiry_days) || 0,
         updated_at: new Date().toISOString(),
       })
       .eq('id', config.id)
@@ -81,6 +83,10 @@ export default function PointsSection({ config }: { config: PointsConfig | null 
           <>
             ตอนนี้: ซื้อครบ ฿{form.spend_amount || '—'} ได้ {form.earn_points || '—'} แต้ม
             และใช้ {form.redeem_points || '—'} แต้มแทนเงินได้ ฿{form.redeem_value || '—'}
+            {' · '}
+            {parseInt(form.expiry_days) > 0
+              ? `แต้มแต่ละก้อนมีอายุ ${form.expiry_days} วันนับจากวันที่ได้มา`
+              : 'แต้มไม่มีวันหมดอายุ'}
           </>
         ) : (
           'ปิดอยู่ — หน้าขายจะไม่คิดแต้มให้ลูกค้าและใช้แต้มแทนเงินไม่ได้ (แต้มที่ลูกค้าสะสมไว้แล้วยังอยู่ครบ เปิดกลับมาเมื่อไหร่ก็ใช้ได้)'
@@ -100,7 +106,7 @@ export default function PointsSection({ config }: { config: PointsConfig | null 
 
       <form
         onSubmit={handleSubmit}
-        className={`grid grid-cols-2 md:grid-cols-5 gap-4 items-end ${enabled ? '' : 'opacity-50 pointer-events-none'}`}
+        className={`grid grid-cols-2 md:grid-cols-6 gap-4 items-end ${enabled ? '' : 'opacity-50 pointer-events-none'}`}
       >
         <div>
           <label className={labelClass}>ยอดซื้อ (บาท)</label>
@@ -130,6 +136,13 @@ export default function PointsSection({ config }: { config: PointsConfig | null 
             onChange={(e) => set('redeem_value', e.target.value)} className={inputClass}
           />
         </div>
+        <div>
+          <label className={labelClass}>อายุแต้ม (วัน)</label>
+          <input
+            type="number" required min="0" step="1" value={form.expiry_days}
+            onChange={(e) => set('expiry_days', e.target.value)} className={inputClass}
+          />
+        </div>
         <button
           type="submit"
           disabled={loading || !config}
@@ -138,6 +151,13 @@ export default function PointsSection({ config }: { config: PointsConfig | null 
           {loading ? 'กำลังบันทึก...' : 'บันทึก'}
         </button>
       </form>
+
+      {enabled && (
+        <p className="text-xs text-gray-500 mt-3">
+          เปลี่ยนอายุแต้มแล้วมีผลกับแต้มที่ได้หลังจากนี้เท่านั้น — ก้อนที่ลูกค้าถืออยู่ยังใช้วันหมดอายุเดิม ·
+          ใส่ 0 = ไม่มีวันหมดอายุ · ตอนลูกค้าใช้แต้ม ระบบตัดก้อนที่ใกล้หมดอายุก่อนเสมอ
+        </p>
+      )}
     </section>
   )
 }

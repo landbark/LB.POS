@@ -18,6 +18,7 @@ interface CronEnv {
 // ตารางเดียวกับที่ประกาศไว้ใน wrangler.jsonc
 const JOBS: Record<string, string> = {
   '0 1 * * *': '/api/cron/stock-alerts',
+  '30 1 * * *': '/api/cron/expire-points',
   '0 13 * * *': '/api/cron/daily-summary',
 }
 
