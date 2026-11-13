@@ -2,15 +2,68 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { Plus, Edit, Trash2, X, Check } from 'lucide-react'
+import { Plus, Edit, Trash2, X, Check, ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-react'
 import SearchBox from '@/components/SearchBox'
 import toast from 'react-hot-toast'
 import type { Customer } from '@/lib/types'
 import { confirmDialog } from '@/lib/confirm'
+import { SORT_COLUMNS, type SortDir, type SortKey } from './sorting'
 
 const emptyForm = { name: '', last_name: '', phone: '', address: '' }
+
+/**
+ * แถวหัวตารางที่กดเรียงได้ — เขียนคอลัมน์/ทิศลง ?sort= &dir= แล้วให้ server เรียงใหม่ทั้งตาราง
+ * (อยู่นอก CustomersClient เพราะ component ที่สร้างตอน render ทำให้ React remount ทุกรอบ)
+ */
+function SortableHead({ sortKey, sortDir }: { sortKey: SortKey; sortDir: SortDir }) {
+  const params = useSearchParams()
+
+  function header(column: SortKey, align: 'left' | 'right' = 'left') {
+    const active = sortKey === column
+    // กดคอลัมน์ที่เรียงอยู่ = สลับทิศ, กดคอลัมน์ใหม่ = เริ่มจากทิศที่คนส่วนใหญ่อยากเห็น
+    const nextDir = active ? (sortDir === 'asc' ? 'desc' : 'asc') : SORT_COLUMNS[column].defaultDir
+    const next = new URLSearchParams(params)
+    next.set('sort', column)
+    next.set('dir', nextDir)
+
+    const Icon = active ? (sortDir === 'asc' ? ArrowUp : ArrowDown) : ArrowUpDown
+
+    return (
+      <th
+        key={column}
+        className={`${align === 'right' ? 'text-right' : 'text-left'} text-xs font-medium text-gray-500 uppercase px-4 py-3`}
+      >
+        <Link
+          href={`/admin/customers?${next}`}
+          replace
+          scroll={false}
+          className={`group inline-flex items-center gap-1 ${align === 'right' ? 'flex-row-reverse' : ''} ${active ? 'text-gray-900' : 'hover:text-gray-700'}`}
+          title={`เรียงตาม${SORT_COLUMNS[column].label} ${SORT_COLUMNS[column].dirs[nextDir]}`}
+        >
+          {SORT_COLUMNS[column].label}
+          <Icon size={12} className={active ? 'text-blue-600' : 'opacity-0 group-hover:opacity-60'} />
+        </Link>
+      </th>
+    )
+  }
+
+  return (
+    <tr>
+      {header('hn')}
+      {header('full_name')}
+      {header('phone')}
+      {/* ชื่อสัตว์มาจากอีกตาราง (หลายตัวต่อคน) เรียงด้วยไม่ได้ */}
+      <th className="text-left text-xs font-medium text-gray-500 uppercase px-4 py-3">สัตว์เลี้ยง</th>
+      {header('points', 'right')}
+      {header('credit_balance', 'right')}
+      {header('total_spent', 'right')}
+      {header('created_at')}
+      <th className="px-4 py-3"></th>
+    </tr>
+  )
+}
 
 export default function CustomersClient({
   customers,
@@ -19,6 +72,8 @@ export default function CustomersClient({
   note,
   atLimit,
   pageSize,
+  sortKey,
+  sortDir,
 }: {
   customers: Customer[]
   /** customer_id → ชื่อสัตว์เลี้ยง (ทะเบียนคลินิก) */
@@ -30,6 +85,9 @@ export default function CustomersClient({
   /** ผลลัพธ์เต็มหน้า อาจมีมากกว่านี้ */
   atLimit: boolean
   pageSize: number
+  /** คอลัมน์/ทิศทางที่ server เรียงมาให้แล้ว — หัวตารางแค่แสดงสถานะกับทำลิงก์สลับ */
+  sortKey: SortKey
+  sortDir: SortDir
 }) {
   const router = useRouter()
   const [showAdd, setShowAdd] = useState(false)
@@ -155,24 +213,14 @@ export default function CustomersClient({
 
       {atLimit && (
         <p className="text-xs text-gray-500 mb-3">
-          แสดง {pageSize} รายการแรก — พิมพ์ค้นหาเพื่อจำกัดผลลัพธ์
+          แสดง {pageSize} รายการแรกตามลำดับที่เรียงอยู่ — พิมพ์ค้นหาเพื่อจำกัดผลลัพธ์
         </p>
       )}
 
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-x-auto">
         <table className="w-full">
           <thead className="bg-gray-50 border-b border-gray-100">
-            <tr>
-              <th className="text-left text-xs font-medium text-gray-500 uppercase px-4 py-3">HN</th>
-              <th className="text-left text-xs font-medium text-gray-500 uppercase px-4 py-3">ชื่อ</th>
-              <th className="text-left text-xs font-medium text-gray-500 uppercase px-4 py-3">เบอร์โทร</th>
-              <th className="text-left text-xs font-medium text-gray-500 uppercase px-4 py-3">สัตว์เลี้ยง</th>
-              <th className="text-right text-xs font-medium text-gray-500 uppercase px-4 py-3">แต้มสะสม</th>
-              <th className="text-right text-xs font-medium text-gray-500 uppercase px-4 py-3">เครดิต</th>
-              <th className="text-right text-xs font-medium text-gray-500 uppercase px-4 py-3">ยอดซื้อสะสม</th>
-              <th className="text-left text-xs font-medium text-gray-500 uppercase px-4 py-3">สมัครเมื่อ</th>
-              <th className="px-4 py-3"></th>
-            </tr>
+            <SortableHead sortKey={sortKey} sortDir={sortDir} />
           </thead>
           <tbody className="divide-y divide-gray-50">
             {customers.map((c) => (

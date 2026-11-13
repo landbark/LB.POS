@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { mergedFallback } from '@/lib/merge'
 import CustomersClient from './CustomersClient'
 import MemberLinkRequests, { type LinkRequest } from './MemberLinkRequests'
+import { resolveSort } from './sorting'
 
 /** ลูกค้าโตได้ไม่จำกัด — โหลดทีละหน้าแล้วให้ค้นที่ server ไม่ใช่ดึงทั้งตารางไป filter ในเบราว์เซอร์ */
 const PAGE_SIZE = 100
@@ -9,11 +10,12 @@ const PAGE_SIZE = 100
 export default async function CustomersPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string }>
+  searchParams: Promise<{ q?: string; sort?: string; dir?: string }>
 }) {
-  const { q } = await searchParams
+  const { q, sort, dir } = await searchParams
   const supabase = await createClient()
   const term = (q ?? '').trim()
+  const { key: sortKey, dir: sortDir } = resolveSort(sort, dir)
 
   let query = supabase.from('customers').select('*')
   if (term) {
@@ -23,9 +25,12 @@ export default async function CustomersPage({
     query = query.or(`full_name.ilike.${like},phone.ilike.${like},hn.ilike.${like}`)
   }
 
-  const { data: customers } = await query
-    .order('created_at', { ascending: false })
-    .limit(PAGE_SIZE)
+  // nullsFirst: false — ลูกค้าเก่าที่ยังไม่มี HN/เครดิต ให้ไปท้ายตาราง ไม่ใช่ขึ้นมาบนสุด
+  let ordered = query.order(sortKey, { ascending: sortDir === 'asc', nullsFirst: false })
+  // ตัวตัดสินเมื่อค่าเท่ากัน (แต้ม 0 เท่ากันทั้งตาราง) — ไม่งั้นลำดับสลับทุกครั้งที่โหลด
+  if (sortKey !== 'hn') ordered = ordered.order('hn', { ascending: false, nullsFirst: false })
+
+  const { data: customers } = await ordered.limit(PAGE_SIZE)
 
   let rows = customers ?? []
 
@@ -72,6 +77,8 @@ export default async function CustomersPage({
         note={note}
         atLimit={rows.length === PAGE_SIZE}
         pageSize={PAGE_SIZE}
+        sortKey={sortKey}
+        sortDir={sortDir}
       />
     </>
   )
