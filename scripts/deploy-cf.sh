@@ -1,13 +1,16 @@
 #!/usr/bin/env bash
 # Deploy to Cloudflare Workers (pos.landbark.app)
 #
-# Wraps `npm run deploy:worker` so the Cloudflare token is read from the macOS
-# keychain automatically instead of being exported by hand every time.
+# `npm run deploy` and `npm run deploy:worker` both point here, so the Cloudflare
+# token is read from the macOS keychain automatically instead of being exported
+# by hand every time.
 #
 # Two mistakes this exists to prevent:
-#   - forgetting the token export, which makes wrangler fail partway through
-#   - running `npm run deploy`, which dies while populating the R2 cache;
-#     deploy:worker skips that step
+#   - forgetting the token export: wrangler then falls back to the OAuth login on
+#     this Mac (joodfangkhem, the JFK account) and dies with
+#     "Authentication error [code: 10000]" after the whole build has run
+#   - the plain `opennextjs-cloudflare deploy` path, which dies while populating
+#     the R2 cache; this skips that step (it is still there as deploy:cache)
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -24,4 +27,7 @@ if [ -z "${CLOUDFLARE_API_TOKEN:-}" ]; then
 fi
 
 echo "Deploying to Cloudflare Workers (account arm.maniii)..."
-exec npm run deploy:worker
+
+# รันคำสั่งจริงตรงนี้ ไม่เรียก npm run deploy:worker กลับ — สคริปต์นี้คือตัวที่ deploy:worker ชี้มา
+npx opennextjs-cloudflare build
+OPEN_NEXT_DEPLOY=true exec npx wrangler deploy
