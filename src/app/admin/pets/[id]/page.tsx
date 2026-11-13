@@ -9,7 +9,7 @@ import VaccineSection from './VaccineSection'
 import { graceDaysFrom } from '@/lib/vaccines'
 import TransferOwnerButton from './TransferOwnerButton'
 import ClinicDocsSection from '@/components/ClinicDocsSection'
-import PetAlert from '@/components/PetAlert'
+import PetNotesEditor from './PetNotesEditor'
 
 const fmtDate = (d: string) =>
   new Date(d).toLocaleDateString('th-TH', { timeZone: 'Asia/Bangkok', day: 'numeric', month: 'short', year: '2-digit' })
@@ -108,7 +108,8 @@ export default async function PetDetailPage({ params }: { params: Promise<{ id: 
               : 'ยังไม่ทำ'}
           </span>
         </div>
-        <PetAlert pet={p} className="mt-1" />
+        {/* แถบเตือน + ปุ่มแก้ตรงนี้เลย คนที่เพิ่งอ่านแถบคือคนที่อยากแก้ */}
+        <PetNotesEditor pet={p} />
       </div>
 
       {/* เอกสารคลินิก — กรอกในระบบ เซฟติด HN แล้วพิมพ์/บันทึกเป็น PDF */}
