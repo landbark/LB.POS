@@ -8,6 +8,7 @@ import { ArrowLeft, Clock, Plus, Search, Stethoscope, Trash2, X } from 'lucide-r
 import toast from 'react-hot-toast'
 import { SPECIES_LABELS, VISIT_STATUS_LABELS, type Breed, type Pet, type PetSpecies, type Visit, type VisitStatus } from '@/lib/types'
 import { ageAt, petAge } from '@/lib/pets'
+import PetAlert, { PetAlertChip } from '@/components/PetAlert'
 import { visitDiagnosisText } from '@/lib/diagnoses'
 import { useLookup } from '@/lib/use-lookup'
 import { thaiToday, thaiDateIn } from '@/lib/thaiDate'
@@ -41,6 +42,7 @@ const emptyPetForm = {
   sterilized: false,
   sterilized_date: '',
   allergies: '',
+  caution: '',
 }
 
 export default function VisitsClient({
@@ -144,6 +146,7 @@ export default function VisitsClient({
         sterilized: petForm.sterilized,
         sterilized_date: petForm.sterilized ? (petForm.sterilized_date || null) : null,
         allergies: petForm.allergies.trim() || null,
+        caution: petForm.caution.trim() || null,
       })
       .select('*, customers(id, name, phone, hn)')
       .single()
@@ -437,6 +440,8 @@ export default function VisitsClient({
                     </>
                   )}
                   {v.pets && <span className="block text-xs text-gray-400">{SPECIES_LABELS[v.pets.species]}</span>}
+                  {/* ข้อควรระวังต้องเห็นตั้งแต่ในคิว ไม่ใช่ตอนเปิดใบตรวจ */}
+                  {v.pets && <PetAlertChip pet={v.pets} className="mt-1" />}
                 </td>
                 {/* ชื่อ/เลขเจ้าของ ลัดไปหน้าเจ้าของ */}
                 <td className="px-4 py-3 text-sm text-gray-600">
@@ -542,6 +547,8 @@ export default function VisitsClient({
                         {p.customers?.name ?? 'ไม่ระบุเจ้าของ'}
                         {p.customers?.phone && <span className="font-mono text-gray-400"> {p.customers.phone}</span>}
                       </p>
+                      {/* ข้อควรระวังต้องเห็นตั้งแต่ตอนเลือกตัว ไม่ใช่ตอนหมอเปิดฟอร์มตรวจ */}
+                      <PetAlertChip pet={p} className="mt-1" />
                     </button>
                   ))}
                   {petMatches.length === 0 && (
@@ -594,6 +601,12 @@ export default function VisitsClient({
                   <div>
                     <label className={labelClass}>แพ้ยา / แพ้อาหาร</label>
                     <input type="text" value={petForm.allergies} onChange={(e) => setPetForm({ ...petForm, allergies: e.target.value })} className={inputClass} />
+                  </div>
+                  <div className="col-span-2">
+                    <label className={labelClass}>
+                      ข้อควรระวัง <span className="text-amber-600">(ขึ้นเตือนทุกหน้าที่เจอสัตว์ตัวนี้)</span>
+                    </label>
+                    <input type="text" value={petForm.caution} onChange={(e) => setPetForm({ ...petForm, caution: e.target.value })} className={inputClass} placeholder="เช่น ดุ กัด ต้องใส่ตะกร้อ" />
                   </div>
                   <div className="col-span-2 flex flex-wrap items-end gap-4">
                     <label className="flex items-center gap-2 text-sm text-gray-700 pb-2">
@@ -688,6 +701,8 @@ export default function VisitsClient({
                     {selectedPet.customers?.name ?? 'ไม่ระบุเจ้าของ'}
                   </p>
                 </div>
+
+                <PetAlert pet={selectedPet} />
 
                 <div>
                   <label className={labelClass}>น้ำหนักวันนี้ (กก.)</label>

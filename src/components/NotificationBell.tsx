@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import toast from 'react-hot-toast'
-import { Bell, ShoppingBag, Receipt, Ban, RotateCcw, CalendarClock, Check, Link2 } from 'lucide-react'
+import { Bell, ShoppingBag, Receipt, Ban, RotateCcw, CalendarClock, Check, Link2, ClipboardList } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import type { AppNotification, AppNotificationKind } from '@/lib/types'
 
@@ -25,6 +25,7 @@ const ICONS: Record<AppNotificationKind, typeof Bell> = {
   product_return: RotateCcw,
   new_appointment: CalendarClock,
   member_link: Link2,
+  stock_count_edit: ClipboardList,
 }
 
 const TONE: Record<AppNotificationKind, string> = {
@@ -34,6 +35,7 @@ const TONE: Record<AppNotificationKind, string> = {
   product_return: 'bg-teal-100 text-teal-600',
   new_appointment: 'bg-purple-100 text-purple-600',
   member_link: 'bg-amber-100 text-amber-700',
+  stock_count_edit: 'bg-orange-100 text-orange-700',
 }
 
 /** ย้อนหลังกี่วันที่ยังถือว่าน่าสนใจ — ของเก่ากว่านี้มีหน้าของตัวเองให้ดูอยู่แล้ว */

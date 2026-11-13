@@ -3,7 +3,7 @@
 import { useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { ScanLine, ScanSearch, Search, Trash2, Check, X, ChevronDown, ChevronUp, AlertTriangle } from 'lucide-react'
+import { ScanLine, ScanSearch, Search, Trash2, Check, X, ChevronDown, ChevronUp, AlertTriangle, Pencil, History, Clock, RotateCcw } from 'lucide-react'
 import toast from 'react-hot-toast'
 import BarcodeScanner, { type ScanFeedback } from '@/components/BarcodeScanner'
 import ScanList from '@/components/ScanList'
@@ -20,7 +20,13 @@ import {
   type CountableProduct,
   type CountLot,
 } from '@/lib/stockCount'
-import type { ProductUnit, StockCount } from '@/lib/types'
+import {
+  describeEdit,
+  needsApproval,
+  stockDeltaFor,
+  touchesStock,
+} from '@/lib/stockCountEdit'
+import type { ProductUnit, StockCount, StockCountEdit } from '@/lib/types'
 
 interface ItemRow {
   id: string
@@ -39,6 +45,8 @@ interface ItemRow {
 const inputClass = 'border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500'
 const fmtBaht = (n: number) => `${n < 0 ? '-' : ''}฿${Math.abs(n).toLocaleString('th-TH', { maximumFractionDigits: 2 })}`
 const fmtDate = (d: string) => new Date(d).toLocaleDateString('th-TH', { timeZone: 'Asia/Bangkok' })
+const fmtDateTime = (d: string) =>
+  new Date(d).toLocaleString('th-TH', { timeZone: 'Asia/Bangkok', dateStyle: 'short', timeStyle: 'short' })
 
 /** หนึ่งแถว = (สินค้า, lot) — ใช้เป็นคีย์ทั้งตอนหาแถวเดิมและตอนจำยอดที่กำลังบันทึก */
 const keyOf = (productId: string, lotId: string | null) => `${productId}|${lotId ?? ''}`
@@ -61,12 +69,17 @@ export default function CountClient({
   count,
   initialItems,
   products,
+  edits,
   userId,
+  role,
 }: {
   count: StockCount
   initialItems: ItemRow[]
   products: CountableProduct[]
+  /** ประวัติการแก้ + คำขอที่รออนุมัติ (ใหม่สุดอยู่บนสุด) */
+  edits: StockCountEdit[]
   userId: string
+  role: string
 }) {
   const router = useRouter()
   const [rows, setRows] = useState<ItemRow[]>(initialItems)
@@ -82,6 +95,14 @@ export default function CountClient({
   const [note, setNote] = useState('')
   const [posting, setPosting] = useState(false)
   const [showRemaining, setShowRemaining] = useState(false)
+  // แก้หัวข้อรอบ — เปิดได้ทุกสถานะ ไม่ใช่แค่ตอนยังนับอยู่
+  const [editingTitle, setEditingTitle] = useState(false)
+  const [titleName, setTitleName] = useState(count.name ?? '')
+  const [titleNote, setTitleNote] = useState(count.note ?? '')
+  const [savingTitle, setSavingTitle] = useState(false)
+  const [showEdits, setShowEdits] = useState(false)
+  // แถวที่กำลังส่งคำสั่งแก้อยู่ — กันกดซ้ำและไว้โชว์ว่ากำลังบันทึก
+  const [busyItem, setBusyItem] = useState<string | null>(null)
   const qtyRef = useRef<HTMLInputElement>(null)
   const panelRef = useRef<HTMLDivElement>(null)
 
@@ -92,7 +113,22 @@ export default function CountClient({
   // บันทึกทีละคำสั่งเรียงกัน — ยิงรัว ๆ แล้วส่งพร้อมกันจะชน unique (รอบ, สินค้า, lot)
   const chainRef = useRef<Promise<unknown>>(Promise.resolve())
 
+  // ล็อกเฉพาะ "ทางนับ" (ยิงบาร์โค้ด / เพิ่มแถว / ยืนยัน) — การแก้ย้อนหลังมีทางของตัวเอง
   const locked = count.status !== 'counting'
+  const isAdmin = role === 'admin'
+  /** รอบนี้ปรับสต็อกไปแล้ว — แก้จำนวนแปลว่าของในร้านต้องขยับตาม */
+  const stockAtStake = touchesStock(count.status)
+  /** พนักงานที่ไม่ใช่เจ้าของร้านต้องส่งเป็นคำขอ */
+  const mustRequest = needsApproval(count.status, role)
+  const pendingByItem = useMemo(() => {
+    const m = new Map<string, StockCountEdit>()
+    for (const e of edits) {
+      if (e.status === 'pending' && e.field === 'counted_quantity' && e.item_id) m.set(e.item_id, e)
+    }
+    return m
+  }, [edits])
+  const pendingCount = pendingByItem.size
+
   const byId = useMemo(() => new Map(products.map((p) => [p.id, p])), [products])
   const lotById = useMemo(() => {
     const m = new Map<string, CountLot>()
@@ -413,6 +449,136 @@ export default function CountClient({
     writeRows(rowsRef.current.filter((r) => r.id !== row.id))
   }
 
+  /**
+   * ยิงคำสั่งแก้ไปที่เซิร์ฟเวอร์ — ทุกทางที่แก้รอบนับต้องผ่านตรงนี้
+   *
+   * ไม่แก้ตรงผ่าน supabase จากเบราว์เซอร์แม้แต่ชื่อรอบ เพราะล็อก (ใครแก้ เมื่อไหร่)
+   * ต้องลงพร้อมกับการแก้เสมอ — RLS ปิดทางเขียนจากเบราว์เซอร์ไว้ให้บังคับเรื่องนี้แล้ว
+   */
+  async function callEdit(body: Record<string, unknown>) {
+    const res = await fetch('/api/admin/stock-count/edit', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok) throw new Error(data.error ?? 'บันทึกไม่สำเร็จ')
+    return data as Record<string, unknown>
+  }
+
+  async function saveTitle() {
+    setSavingTitle(true)
+    try {
+      await callEdit({ action: 'rename', countId: count.id, name: titleName, note: titleNote })
+      toast.success('แก้หัวข้อรอบแล้ว')
+      setEditingTitle(false)
+      router.refresh()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'แก้ไม่สำเร็จ')
+    } finally {
+      setSavingTitle(false)
+    }
+  }
+
+  /**
+   * แก้จำนวนที่นับได้ของรอบที่ปิดไปแล้ว
+   *
+   * เจ้าของร้าน: ระบบปรับสต็อกตามส่วนต่างที่เปลี่ยนให้เลย (รอบที่ยกเลิกไม่เคยปรับ จึงไม่แตะ)
+   * พนักงาน: ส่งเป็นคำขอ เจ้าของร้านได้แจ้งเตือนแล้วมากดอนุมัติ
+   */
+  async function editClosedQty(row: ItemRow, value: string) {
+    const n = parseInt(value, 10)
+    if (isNaN(n) || n < 0 || n === row.counted_quantity) return
+    const name = byId.get(row.product_id)?.name ?? 'รายการนี้'
+    const delta = stockDeltaFor(row, n)
+    const deltaText = delta > 0 ? `เพิ่มสต็อก ${delta}` : delta < 0 ? `ลดสต็อก ${-delta}` : 'สต็อกไม่ขยับ'
+
+    const { confirmed } = await confirmDialog({
+      message: mustRequest
+        ? `ส่งคำขอแก้ "${name}" จาก ${row.counted_quantity} เป็น ${n}?\n` +
+          `เจ้าของร้านอนุมัติแล้วระบบจะ${deltaText}\nคำขอนี้จะแจ้งเตือนเจ้าของร้านทันที`
+        : stockAtStake
+          ? `แก้ "${name}" จาก ${row.counted_quantity} เป็น ${n}?\n` +
+            `ระบบจะ${deltaText} ให้ทันที และลงประวัติสต็อคไว้\nการแก้นี้จะถูกบันทึกว่าใครแก้เมื่อไหร่`
+          : `แก้ "${name}" จาก ${row.counted_quantity} เป็น ${n}?\n` +
+            'รอบนี้ยกเลิกไปแล้วจึงไม่ได้ปรับสต็อก — แก้แต่ตัวเลขในรอบ',
+    })
+    if (!confirmed) return
+
+    setBusyItem(row.id)
+    try {
+      const data = await callEdit({ action: 'item', itemId: row.id, countedQuantity: n })
+      if (data.pending) {
+        toast.success('ส่งคำขอให้เจ้าของร้านอนุมัติแล้ว')
+      } else {
+        toast.success(`แก้ ${name} แล้ว`)
+        if (typeof data.shortfall === 'number' && data.shortfall > 0) {
+          toast(
+            `ลดได้ไม่ครบ ${data.shortfall} ชิ้น เพราะยอดในระบบเหลือน้อยกว่าส่วนต่าง — ปรับเป็น 0 ให้แล้ว`,
+            { icon: '⚠️', duration: 8000 }
+          )
+        }
+      }
+      router.refresh()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'แก้ไม่สำเร็จ')
+    } finally {
+      setBusyItem(null)
+    }
+  }
+
+  /** หมายเหตุของแถวไม่กระทบสต็อก — แก้ได้เลยทุกคน ไม่ต้องขออนุมัติ */
+  async function editClosedNote(row: ItemRow, value: string) {
+    const next = value.trim() || null
+    if (next === (row.note ?? null)) return
+    setBusyItem(row.id)
+    try {
+      await callEdit({ action: 'item', itemId: row.id, note: next })
+      toast.success('แก้หมายเหตุแล้ว')
+      router.refresh()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'แก้ไม่สำเร็จ')
+    } finally {
+      setBusyItem(null)
+    }
+  }
+
+  async function decide(edit: StockCountEdit, approve: boolean) {
+    const name = edit.products?.name ?? 'รายการนี้'
+    const delta = edit.stock_delta ?? 0
+    const deltaText = delta > 0 ? `เพิ่มสต็อก ${delta}` : delta < 0 ? `ลดสต็อก ${-delta}` : 'ไม่ขยับสต็อก'
+    const { confirmed } = await confirmDialog({
+      message: approve
+        ? `อนุมัติแก้ "${name}" เป็น ${edit.new_value}?\nระบบจะ${deltaText} ให้ทันที`
+        : `ไม่อนุมัติคำขอแก้ "${name}"?`,
+      tone: approve ? undefined : 'danger',
+    })
+    if (!confirmed) return
+
+    setBusyItem(edit.id)
+    try {
+      await callEdit({ action: approve ? 'approve' : 'reject', editId: edit.id })
+      toast.success(approve ? 'อนุมัติและปรับสต็อกแล้ว' : 'ไม่อนุมัติคำขอแล้ว')
+      router.refresh()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'ทำรายการไม่สำเร็จ')
+    } finally {
+      setBusyItem(null)
+    }
+  }
+
+  /** เปิดรอบที่ยกเลิกไว้กลับมานับต่อ — เจ้าของร้านเท่านั้น */
+  async function reopen() {
+    if (!(await confirmDialog({ message: 'เปิดรอบนี้กลับมานับต่อ? ผลที่นับไว้เดิมยังอยู่ครบ' })).confirmed) return
+    try {
+      await callEdit({ action: 'reopen', countId: count.id })
+      toast.success('เปิดรอบกลับมานับต่อแล้ว')
+      router.refresh()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'เปิดรอบไม่สำเร็จ')
+    }
+  }
+
   async function post() {
     const withExpiry = rows.filter((r) => r.expiry_date).length
     const { confirmed } = await confirmDialog({
@@ -454,14 +620,13 @@ export default function CountClient({
 
   async function cancelRound() {
     if (!(await confirmDialog({ message: 'ยกเลิกรอบนับนี้? ผลที่นับไว้จะถูกเก็บไว้แต่จะไม่ปรับสต็อก', tone: 'danger' })).confirmed) return
-    const supabase = createClient()
-    const { error } = await supabase.from('stock_counts').update({ status: 'cancelled' }).eq('id', count.id)
-    if (error) {
-      toast.error('ยกเลิกไม่สำเร็จ: ' + error.message)
-      return
+    try {
+      await callEdit({ action: 'cancel', countId: count.id })
+      toast.success('ยกเลิกรอบนับแล้ว')
+      router.refresh()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'ยกเลิกไม่สำเร็จ')
     }
-    toast.success('ยกเลิกรอบนับแล้ว')
-    router.refresh()
   }
 
   const pickedLots = picked ? lotsWithStock(picked) : []
@@ -473,22 +638,130 @@ export default function CountClient({
   return (
     <div className="max-w-4xl">
       <div className="flex items-start justify-between gap-3 mb-1">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">{count.name || 'นับสต็อก'}</h1>
-          <p className="text-xs text-gray-400 mt-0.5">
-            {count.count_number} · {count.categories?.name ? `เฉพาะหมวด ${count.categories.name}` : 'ทั้งร้าน'}
-          </p>
+        <div className="min-w-0">
+          {editingTitle ? (
+            <div className="space-y-2">
+              <input
+                value={titleName}
+                onChange={(e) => setTitleName(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && saveTitle()}
+                placeholder="ชื่อรอบ เช่น นับอาหารแมว ชั้น A"
+                autoFocus
+                className={`${inputClass} w-full text-lg font-semibold`}
+              />
+              <input
+                value={titleNote}
+                onChange={(e) => setTitleNote(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && saveTitle()}
+                placeholder="หมายเหตุของรอบ (ไม่ใส่ก็ได้)"
+                className={`${inputClass} w-full`}
+              />
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={saveTitle}
+                  disabled={savingTitle}
+                  className="flex items-center gap-1.5 bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white text-sm font-medium px-4 py-2 rounded-lg"
+                >
+                  <Check size={15} /> {savingTitle ? 'บันทึก...' : 'บันทึก'}
+                </button>
+                <button
+                  onClick={() => {
+                    setEditingTitle(false)
+                    setTitleName(count.name ?? '')
+                    setTitleNote(count.note ?? '')
+                  }}
+                  className="flex items-center gap-1.5 border border-gray-300 text-gray-600 text-sm px-4 py-2 rounded-lg"
+                >
+                  <X size={15} /> ยกเลิก
+                </button>
+              </div>
+              <p className="text-xs text-gray-400">แก้ชื่อรอบได้ทุกสถานะ — ระบบบันทึกไว้ว่าใครแก้เมื่อไหร่</p>
+            </div>
+          ) : (
+            <>
+              <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2 flex-wrap">
+                {count.name || 'นับสต็อก'}
+                <button
+                  onClick={() => setEditingTitle(true)}
+                  className="text-gray-300 hover:text-blue-600 p-1"
+                  title="แก้ชื่อรอบ / หมายเหตุ"
+                >
+                  <Pencil size={15} />
+                </button>
+              </h1>
+              <p className="text-xs text-gray-400 mt-0.5">
+                {count.count_number} · {count.categories?.name ? `เฉพาะหมวด ${count.categories.name}` : 'ทั้งร้าน'}
+              </p>
+              {count.note && <p className="text-sm text-gray-500 mt-1">{count.note}</p>}
+            </>
+          )}
         </div>
-        {locked ? (
-          <span className={`text-xs px-2.5 py-1 rounded-full font-medium shrink-0 ${count.status === 'posted' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
-            {count.status === 'posted' ? 'ปรับสต็อกแล้ว' : 'ยกเลิกแล้ว'}
-          </span>
-        ) : (
-          <button onClick={cancelRound} className="text-xs text-gray-400 hover:text-red-500 shrink-0 px-2 py-1">
-            ยกเลิกรอบ
-          </button>
-        )}
+        <div className="flex items-center gap-2 shrink-0">
+          {locked ? (
+            <>
+              <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${count.status === 'posted' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+                {count.status === 'posted' ? 'ปรับสต็อกแล้ว' : 'ยกเลิกแล้ว'}
+              </span>
+              {count.status === 'cancelled' && isAdmin && (
+                <button
+                  onClick={reopen}
+                  className="flex items-center gap-1.5 border border-gray-300 hover:bg-gray-50 text-gray-600 text-xs px-2.5 py-1.5 rounded-lg"
+                >
+                  <RotateCcw size={13} /> เปิดรอบกลับมานับต่อ
+                </button>
+              )}
+            </>
+          ) : (
+            <button onClick={cancelRound} className="text-xs text-gray-400 hover:text-red-500 px-2 py-1">
+              ยกเลิกรอบ
+            </button>
+          )}
+        </div>
       </div>
+
+      {/* คำขอแก้ที่ค้างอยู่ — เจ้าของร้านกดอนุมัติได้จากตรงนี้เลย ไม่ต้องไล่หาในตาราง */}
+      {pendingCount > 0 && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 my-4">
+          <p className="text-sm font-semibold text-amber-900 flex items-center gap-2">
+            <Clock size={15} /> มีคำขอแก้ผลนับรออนุมัติ {pendingCount} รายการ
+          </p>
+          <ul className="mt-2 space-y-2">
+            {[...pendingByItem.values()].map((e) => (
+              <li key={e.id} className="flex flex-wrap items-center justify-between gap-2 text-sm">
+                <span className="text-amber-900">
+                  {e.products?.name ?? 'สินค้า'} — นับได้ {e.old_value} → <strong>{e.new_value}</strong>
+                  <span className="text-amber-700">
+                    {' '}· อนุมัติแล้วสต็อกจะขยับ {(e.stock_delta ?? 0) > 0 ? `+${e.stock_delta}` : (e.stock_delta ?? 0)}
+                  </span>
+                  <span className="block text-xs text-amber-700">
+                    ขอโดย {e.requester?.name ?? '—'} · {fmtDateTime(e.requested_at)}
+                  </span>
+                </span>
+                {isAdmin ? (
+                  <span className="flex items-center gap-2 shrink-0">
+                    <button
+                      onClick={() => decide(e, true)}
+                      disabled={busyItem === e.id}
+                      className="bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white text-xs font-medium px-3 py-1.5 rounded-lg"
+                    >
+                      อนุมัติ
+                    </button>
+                    <button
+                      onClick={() => decide(e, false)}
+                      disabled={busyItem === e.id}
+                      className="border border-amber-300 hover:bg-amber-100 disabled:opacity-50 text-amber-800 text-xs px-3 py-1.5 rounded-lg"
+                    >
+                      ไม่อนุมัติ
+                    </button>
+                  </span>
+                ) : (
+                  <span className="text-xs text-amber-700 shrink-0">รอเจ้าของร้านอนุมัติ</span>
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {!locked && (
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 my-4">
@@ -677,6 +950,18 @@ export default function CountClient({
                       {r.note ? ` · ${r.note}` : ''}
                     </p>
                     {/* กรอกวันหมดอายุจากกล่องตรงนี้ได้ — หลาย lot ต้องนับแยก lot ก่อน ไม่งั้นไม่รู้ว่าของ lot ไหน */}
+                    {/* รอบที่ปิดแล้ว: หมายเหตุแก้ได้เลย ไม่ต้องขออนุมัติ (ไม่กระทบสต็อก) */}
+                    {locked && (
+                      <input
+                        key={`${r.id}-note-${r.note ?? ''}`}
+                        defaultValue={r.note ?? ''}
+                        disabled={busyItem === r.id}
+                        onBlur={(e) => editClosedNote(r, e.target.value)}
+                        onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
+                        placeholder="หมายเหตุ เช่น ของแตก / คีย์ผิด"
+                        className="mt-1 w-full max-w-60 border border-gray-200 rounded-lg px-2 py-0.5 text-xs text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50"
+                      />
+                    )}
                     {!locked && p && (canStampExpiry(p, r.product_lot_id) ? (
                       <label className="mt-1 inline-flex items-center gap-1 text-xs text-gray-400">
                         หมดอายุ
@@ -695,17 +980,21 @@ export default function CountClient({
                   </td>
                   <td className="px-4 py-3 text-sm text-right text-gray-500">{r.system_quantity}</td>
                   <td className="px-4 py-3 text-right">
-                    {locked ? (
-                      <span className="text-sm text-gray-900">{r.counted_quantity}</span>
-                    ) : (
-                      <input
-                        type="number"
-                        min={0}
-                        defaultValue={r.counted_quantity}
-                        onBlur={(e) => editCounted(r, e.target.value)}
-                        onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
-                        className="w-20 border border-gray-200 rounded-lg px-2 py-1 text-sm text-right focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      />
+                    {/* รอบที่ปิดแล้วก็แก้ได้ — เจ้าของร้านแก้ตรง พนักงานส่งเป็นคำขอ */}
+                    <input
+                      type="number"
+                      min={0}
+                      key={`${r.id}-${r.counted_quantity}-${pendingByItem.get(r.id)?.new_value ?? ''}`}
+                      defaultValue={r.counted_quantity}
+                      disabled={busyItem === r.id}
+                      onBlur={(e) => (locked ? editClosedQty(r, e.target.value) : editCounted(r, e.target.value))}
+                      onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
+                      className="w-20 border border-gray-200 rounded-lg px-2 py-1 text-sm text-right focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50"
+                    />
+                    {pendingByItem.has(r.id) && (
+                      <span className="mt-1 block text-[10px] text-amber-700">
+                        ขอแก้เป็น {pendingByItem.get(r.id)?.new_value} · รออนุมัติ
+                      </span>
                     )}
                   </td>
                   <td className={`px-4 py-3 text-sm text-right font-semibold ${diff === 0 ? 'text-gray-400' : diff > 0 ? 'text-green-600' : 'text-red-500'}`}>
@@ -780,9 +1069,69 @@ export default function CountClient({
         </>
       )}
 
+      {/* ประวัติการแก้ — ใครแก้อะไร จากเท่าไหร่เป็นเท่าไหร่ เมื่อไหร่ */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-100 mb-4">
+        <button
+          onClick={() => setShowEdits((v) => !v)}
+          className="w-full flex items-center justify-between px-5 py-3 text-sm text-gray-700"
+        >
+          <span className="flex items-center gap-2">
+            <History size={15} className="text-gray-400" />
+            ประวัติการแก้รอบนี้ {edits.length > 0 ? `(${edits.length})` : ''}
+          </span>
+          {showEdits ? <ChevronUp size={16} className="text-gray-400" /> : <ChevronDown size={16} className="text-gray-400" />}
+        </button>
+        {showEdits && (
+          <ul className="border-t border-gray-100 divide-y divide-gray-50 max-h-96 overflow-y-auto">
+            {edits.length === 0 && (
+              <li className="px-5 py-6 text-center text-sm text-gray-400">ยังไม่มีใครแก้รอบนี้</li>
+            )}
+            {edits.map((e) => (
+              <li key={e.id} className="px-5 py-3">
+                <p className="text-sm text-gray-900">
+                  {describeEdit(e)}
+                  {e.stock_delta != null && e.stock_delta !== 0 && (
+                    <span className={e.stock_delta > 0 ? 'text-green-600' : 'text-red-500'}>
+                      {' '}· สต็อก {e.stock_delta > 0 ? `+${e.stock_delta}` : e.stock_delta}
+                    </span>
+                  )}
+                </p>
+                <p className="text-xs text-gray-400">
+                  {e.requester?.name ?? '—'} · {fmtDateTime(e.requested_at)}
+                  {e.status === 'pending' && <span className="text-amber-600"> · รออนุมัติ</span>}
+                  {e.status === 'approved' && (
+                    <span className="text-green-600">
+                      {' '}· อนุมัติโดย {e.decider?.name ?? '—'}
+                      {e.decided_at ? ` ${fmtDateTime(e.decided_at)}` : ''}
+                    </span>
+                  )}
+                  {e.status === 'rejected' && (
+                    <span className="text-gray-500">
+                      {' '}· ไม่อนุมัติโดย {e.decider?.name ?? '—'}
+                      {e.reject_reason ? ` (${e.reject_reason})` : ''}
+                    </span>
+                  )}
+                </p>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
       {count.status === 'posted' && (
         <p className="text-xs text-gray-400">
           ปรับสต็อกเรียบร้อยแล้ว — ดูรายการย้อนหลังได้ที่ประวัติสต็อคของสินค้าแต่ละตัว (เหตุผล &ldquo;นับสต็อก {count.count_number}&rdquo;)
+          <br />
+          {mustRequest
+            ? 'คีย์ผิดก็แก้ได้ — พิมพ์ยอดใหม่ในช่อง "นับได้" แล้วระบบจะส่งคำขอให้เจ้าของร้านอนุมัติ'
+            : 'คีย์ผิดก็แก้ได้ — พิมพ์ยอดใหม่ในช่อง "นับได้" ระบบจะปรับสต็อกตามส่วนต่างให้เลย'}
+        </p>
+      )}
+
+      {count.status === 'cancelled' && (
+        <p className="text-xs text-gray-400">
+          รอบนี้ยกเลิกไปแล้วจึงไม่ได้ปรับสต็อก — แก้ตัวเลขได้แต่ไม่กระทบของในร้าน
+          {isAdmin ? ' หรือกดเปิดรอบกลับมานับต่อก็ได้' : ''}
         </p>
       )}
 

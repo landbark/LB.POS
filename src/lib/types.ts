@@ -284,6 +284,40 @@ export interface StockCountItem {
   counted_at: string
 }
 
+/** ช่องที่แก้ได้ในรอบนับที่ปิดแล้ว */
+export type StockCountEditField = 'name' | 'note' | 'counted_quantity' | 'item_note' | 'status'
+
+/**
+ * applied  = แก้ไปแล้ว (เจ้าของร้านแก้เอง หรือการแก้ที่ไม่แตะสต็อก)
+ * pending  = พนักงานขอแก้ รอเจ้าของร้านอนุมัติ — ยังไม่แตะข้อมูลอะไร
+ * approved = อนุมัติแล้วและระบบลงมือแก้ให้เรียบร้อย
+ * rejected = ไม่อนุมัติ — เก็บไว้ให้เห็นว่ามีคนเคยขอ
+ */
+export type StockCountEditStatus = 'applied' | 'pending' | 'approved' | 'rejected'
+
+/** ประวัติการแก้รอบนับ + คิวคำขอรออนุมัติ (ตารางเดียวกัน) */
+export interface StockCountEdit {
+  id: string
+  count_id: string
+  /** null = แก้ตัวรอบ (ชื่อ / หมายเหตุ / สถานะ) */
+  item_id: string | null
+  product_id: string | null
+  field: StockCountEditField
+  old_value: string | null
+  new_value: string | null
+  /** ส่วนต่างที่ปรับเข้าสต็อกจริงจากการแก้ครั้งนี้ — null = ไม่แตะสต็อก */
+  stock_delta: number | null
+  status: StockCountEditStatus
+  requested_by: string | null
+  requested_at: string
+  decided_by: string | null
+  decided_at: string | null
+  reject_reason: string | null
+  requester?: { name: string | null } | null
+  decider?: { name: string | null } | null
+  products?: { name: string; unit: string } | null
+}
+
 export interface Customer {
   id: string
   /** ชื่อ (บังคับ) — ใบเสร็จ/ฉลากยา/แจ้งเตือนใช้ช่องนี้ หน้าร้านเรียกกันด้วยชื่อ */
@@ -344,6 +378,11 @@ export interface Pet {
   /** ขึ้นเตือนหัวฟอร์มตรวจรักษา */
   allergies: string | null
   chronic_conditions: string | null
+  /**
+   * ข้อควรระวังอิสระ — ขึ้นเป็นแถบเตือนทุกจุดที่เจอสัตว์ตัวนี้ (ค้นหา / ลงทะเบียน / ตรวจ)
+   * ของที่ไม่ใช่เรื่องยาแต่ต้องรู้ก่อนจับตัว เช่น ดุ-กัด ต้องใส่ตะกร้อ
+   */
+  caution: string | null
   notes: string | null
   photo_url: string | null
   active: boolean
@@ -1065,6 +1104,7 @@ export type AppNotificationKind =
   | 'product_return'
   | 'new_appointment'
   | 'member_link'
+  | 'stock_count_edit'
 
 export interface AppNotification {
   id: string

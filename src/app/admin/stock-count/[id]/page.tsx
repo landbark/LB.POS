@@ -8,20 +8,27 @@ export default async function StockCountDetailPage({ params }: { params: Promise
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
 
-  const { data: count } = await supabase
-    .from('stock_counts')
-    .select('*, categories(name)')
-    .eq('id', id)
-    .maybeSingle()
+  const [{ data: count }, { data: profile }] = await Promise.all([
+    supabase.from('stock_counts').select('*, categories(name)').eq('id', id).maybeSingle(),
+    user
+      ? supabase.from('profiles').select('role').eq('id', user.id).maybeSingle()
+      : Promise.resolve({ data: null }),
+  ])
 
   if (!count) notFound()
 
-  const [{ data: items }, products] = await Promise.all([
+  const [{ data: items }, { data: edits }, products] = await Promise.all([
     supabase
       .from('stock_count_items')
       .select('*, counter:profiles!stock_count_items_counted_by_fkey(name)')
       .eq('count_id', id)
       .order('counted_at', { ascending: false }),
+    // ประวัติการแก้ + คำขอที่รออนุมัติ อยู่ตารางเดียวกัน
+    supabase
+      .from('stock_count_edits')
+      .select('*, products(name, unit), requester:profiles!stock_count_edits_requested_by_fkey(name), decider:profiles!stock_count_edits_decided_by_fkey(name)')
+      .eq('count_id', id)
+      .order('requested_at', { ascending: false }),
     // ร้านมีสินค้าเกิน 1000 ตัว — ต้องไล่ทีละหน้า ไม่งั้นตัวท้าย ๆ ยิงบาร์โค้ดแล้วหาไม่เจอ
     fetchAll((from, to) =>
       supabase
@@ -41,7 +48,9 @@ export default async function StockCountDetailPage({ params }: { params: Promise
       count={count as never}
       initialItems={(items as never[]) ?? []}
       products={products as never[]}
+      edits={(edits as never[]) ?? []}
       userId={user?.id ?? ''}
+      role={profile?.role ?? 'cashier'}
     />
   )
 }

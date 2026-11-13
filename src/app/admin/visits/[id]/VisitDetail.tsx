@@ -4,10 +4,11 @@ import { useState } from 'react'
 import Link from '@/components/ProgressLink'
 import { useProgress } from '@/lib/use-progress'
 import { createClient } from '@/lib/supabase/client'
-import { AlertTriangle, ArrowLeft, CalendarPlus, Check, Eye, Plus, Printer, Save, Send, Stethoscope, Trash2, X, Tag } from 'lucide-react'
+import { ArrowLeft, CalendarPlus, Check, Eye, Plus, Printer, Save, Send, Stethoscope, Trash2, X, Tag } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { SPECIES_LABELS, VISIT_STATUS_LABELS, type ClinicDocument, type Diagnosis, type PetVaccination, type Vaccine, type Visit, type VisitAttachment, type VisitItem } from '@/lib/types'
-import { petAge, petWarnings } from '@/lib/pets'
+import { petAge } from '@/lib/pets'
+import PetAlert from '@/components/PetAlert'
 import { canCancelVisit, isClinicOnly, isVaccine, isVolumeDosed, billedMl } from '@/lib/clinic'
 import { computeNextDue } from '@/lib/vaccines'
 import {
@@ -144,7 +145,6 @@ export default function VisitDetail({
 
   // ส่งไปเก็บเงินแล้วห้ามแก้รายการยา (ตะกร้าฝั่งแคชเชียร์อ่านจากตรงนี้) + ต้องมีสิทธิ์แก้
   const itemsLocked = readOnly || (visit.status !== 'open' && visit.status !== 'waiting')
-  const warnings = pet ? petWarnings(pet) : []
   const total = items.reduce((sum, i) => sum + i.unit_price * i.quantity, 0)
 
   function set(key: keyof typeof form, value: string) {
@@ -949,12 +949,7 @@ export default function VisitDetail({
           </span>
         </div>
 
-        {warnings.length > 0 && (
-          <div className="mt-3 flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-            <AlertTriangle size={16} className="text-amber-600 shrink-0 mt-0.5" />
-            <p className="text-sm text-amber-800">{warnings.join(' · ')}</p>
-          </div>
-        )}
+        {pet && <PetAlert pet={pet} className="mt-3" />}
 
         {/* ลงผลตรวจผิดตัว — ย้ายทั้งใบไปอยู่กับสัตว์ตัวที่ถูก (หมอ/แอดมิน) */}
         {canEdit && (

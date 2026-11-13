@@ -6,10 +6,11 @@ import { useLookup } from '@/lib/use-lookup'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { Plus, Edit, Trash2, X, Check, AlertTriangle } from 'lucide-react'
+import { Plus, Edit, Trash2, X, Check } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { SPECIES_LABELS, type Breed, type Pet, type PetSpecies } from '@/lib/types'
-import { ageAt, petAge } from '@/lib/pets'
+import { ageAt, hasPetWarning, petAge } from '@/lib/pets'
+import { PetAlertChip } from '@/components/PetAlert'
 import BreedSelect from '@/components/BreedSelect'
 import { confirmDialog } from '@/lib/confirm'
 
@@ -28,6 +29,7 @@ const emptyForm = {
   sterilized_date: '',
   allergies: '',
   chronic_conditions: '',
+  caution: '',
   notes: '',
 }
 
@@ -84,6 +86,7 @@ export default function PetsClient({
       sterilized_date: p.sterilized_date ?? '',
       allergies: p.allergies ?? '',
       chronic_conditions: p.chronic_conditions ?? '',
+      caution: p.caution ?? '',
       notes: p.notes ?? '',
     })
   }
@@ -122,6 +125,7 @@ export default function PetsClient({
       sterilized_date: form.sterilized ? (form.sterilized_date || null) : null,
       allergies: form.allergies.trim() || null,
       chronic_conditions: form.chronic_conditions.trim() || null,
+      caution: form.caution.trim() || null,
       notes: form.notes.trim() || null,
     }
 
@@ -245,6 +249,14 @@ export default function PetsClient({
           <input type="text" value={form.microchip} onChange={(e) => set('microchip', e.target.value)} className={inputClass} />
         </div>
 
+        {/* ข้อควรระวังกินสามช่อง — ขึ้นเป็นแถบเตือนทุกจุดที่เจอสัตว์ตัวนี้ ต้องเขียนได้ยาว */}
+        <div className="sm:col-span-3">
+          <label className={labelClass}>
+            ข้อควรระวัง <span className="text-amber-600">(ขึ้นเตือนทุกหน้าที่เจอสัตว์ตัวนี้)</span>
+          </label>
+          <input type="text" value={form.caution} onChange={(e) => set('caution', e.target.value)} className={inputClass} placeholder="เช่น ดุ กัด ต้องใส่ตะกร้อ / อุ้มท้องไม่ได้ / โทรแจ้งเจ้าของก่อนทำอะไร" />
+        </div>
+
         <div>
           <label className={labelClass}>แพ้ยา / แพ้อาหาร</label>
           <input type="text" value={form.allergies} onChange={(e) => set('allergies', e.target.value)} className={inputClass} placeholder="เตือนตอนตรวจรักษา" />
@@ -255,7 +267,7 @@ export default function PetsClient({
         </div>
         <div>
           <label className={labelClass}>หมายเหตุ</label>
-          <input type="text" value={form.notes} onChange={(e) => set('notes', e.target.value)} className={inputClass} />
+          <input type="text" value={form.notes} onChange={(e) => set('notes', e.target.value)} className={inputClass} placeholder="บันทึกทั่วไป ขึ้นให้เห็นแบบไม่ตะโกน" />
         </div>
 
         <div className="sm:col-span-3 flex flex-wrap items-end gap-4">
@@ -371,12 +383,8 @@ export default function PetsClient({
                     {p.customers?.phone && <span className="block text-xs text-gray-400 font-mono">{p.customers.phone}</span>}
                   </td>
                   <td className="px-4 py-3 text-sm">
-                    {(p.allergies || p.chronic_conditions) ? (
-                      <span className="inline-flex items-center gap-1 text-xs text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full">
-                        <AlertTriangle size={12} />
-                        {[p.allergies, p.chronic_conditions].filter(Boolean).join(' · ')}
-                      </span>
-                    ) : <span className="text-gray-300">—</span>}
+                    {hasPetWarning(p) ? <PetAlertChip pet={p} /> : <span className="text-gray-300">—</span>}
+                    {p.notes && <span className="block text-xs text-gray-400 mt-0.5">{p.notes}</span>}
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-2 justify-end">

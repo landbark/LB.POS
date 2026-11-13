@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
-import { ArrowLeft, AlertTriangle, Merge, Stethoscope, Tag } from 'lucide-react'
+import { ArrowLeft, Merge, Stethoscope, Tag } from 'lucide-react'
 import { createClient } from '@/lib/supabase/server'
 import { SPECIES_LABELS, VISIT_STATUS_LABELS, type ClinicDocument, type Pet, type VisitStatus } from '@/lib/types'
 import { ageAt, petAge } from '@/lib/pets'
@@ -9,6 +9,7 @@ import VaccineSection from './VaccineSection'
 import { graceDaysFrom } from '@/lib/vaccines'
 import TransferOwnerButton from './TransferOwnerButton'
 import ClinicDocsSection from '@/components/ClinicDocsSection'
+import PetAlert from '@/components/PetAlert'
 
 const fmtDate = (d: string) =>
   new Date(d).toLocaleDateString('th-TH', { timeZone: 'Asia/Bangkok', day: 'numeric', month: 'short', year: '2-digit' })
@@ -107,15 +108,7 @@ export default async function PetDetailPage({ params }: { params: Promise<{ id: 
               : 'ยังไม่ทำ'}
           </span>
         </div>
-        {(p.allergies || p.chronic_conditions) && (
-          <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mt-1">
-            <AlertTriangle size={15} className="text-amber-600 shrink-0 mt-0.5" />
-            <span className="text-amber-800">
-              {[p.allergies && `แพ้: ${p.allergies}`, p.chronic_conditions && `โรคประจำตัว: ${p.chronic_conditions}`].filter(Boolean).join(' · ')}
-            </span>
-          </div>
-        )}
-        {p.notes && <p className="text-gray-600">หมายเหตุ: {p.notes}</p>}
+        <PetAlert pet={p} className="mt-1" />
       </div>
 
       {/* เอกสารคลินิก — กรอกในระบบ เซฟติด HN แล้วพิมพ์/บันทึกเป็น PDF */}

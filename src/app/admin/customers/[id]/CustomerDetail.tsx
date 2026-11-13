@@ -4,7 +4,8 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { AlertTriangle, ArrowLeft, Check, MapPin, Merge, Pencil, PawPrint, Plus, Receipt, Stethoscope, X } from 'lucide-react'
+import { ArrowLeft, Check, MapPin, Merge, Pencil, PawPrint, Plus, Receipt, Stethoscope, X } from 'lucide-react'
+import { PetAlertChip } from '@/components/PetAlert'
 import toast from 'react-hot-toast'
 import { SPECIES_LABELS, VISIT_STATUS_LABELS, type Breed, type Customer, type Pet, type PetSpecies, type PointLot, type VisitStatus } from '@/lib/types'
 import { ageAt, petAge } from '@/lib/pets'
@@ -43,6 +44,7 @@ const emptyPet = {
   sterilized_date: '',
   allergies: '',
   chronic_conditions: '',
+  caution: '',
 }
 
 export default function CustomerDetail({
@@ -137,6 +139,7 @@ export default function CustomerDetail({
       sterilized_date: form.sterilized ? (form.sterilized_date || null) : null,
       allergies: form.allergies.trim() || null,
       chronic_conditions: form.chronic_conditions.trim() || null,
+      caution: form.caution.trim() || null,
     })
     setSaving(false)
     if (error) {
@@ -313,6 +316,12 @@ export default function CustomerDetail({
                 <label className={labelClass}>แพ้ยา / แพ้อาหาร</label>
                 <input type="text" value={form.allergies} onChange={(e) => set('allergies', e.target.value)} className={inputClass} />
               </div>
+              <div className="sm:col-span-3">
+                <label className={labelClass}>
+                  ข้อควรระวัง <span className="text-amber-600">(ขึ้นเตือนทุกหน้าที่เจอสัตว์ตัวนี้)</span>
+                </label>
+                <input type="text" value={form.caution} onChange={(e) => set('caution', e.target.value)} className={inputClass} placeholder="เช่น ดุ กัด ต้องใส่ตะกร้อ" />
+              </div>
               <div className="sm:col-span-3 flex flex-wrap items-end gap-4">
                 <label className="flex items-center gap-2 text-sm text-gray-700 pb-2">
                   <input type="checkbox" checked={form.sterilized} onChange={(e) => set('sterilized', e.target.checked)} className="w-4 h-4" />
@@ -356,12 +365,8 @@ export default function CustomerDetail({
                   {p.sex && ` · ${p.sex === 'male' ? 'ผู้' : 'เมีย'}`}
                   {petAge(p.birth_date) && ` · ${petAge(p.birth_date)}`}
                 </p>
-                {(p.allergies || p.chronic_conditions) && (
-                  <p className="mt-1.5 inline-flex items-center gap-1 text-xs text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full">
-                    <AlertTriangle size={11} />
-                    {[p.allergies, p.chronic_conditions].filter(Boolean).join(' · ')}
-                  </p>
-                )}
+                <PetAlertChip pet={p} className="mt-1.5" />
+                {p.notes && <span className="block text-xs text-gray-400 mt-1">{p.notes}</span>}
               </Link>
             ))}
           </div>

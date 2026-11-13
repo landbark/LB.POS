@@ -7,7 +7,7 @@ export type MergeKind = 'customer' | 'pet'
 export const CUSTOMER_PICK_FIELDS = ['name', 'last_name', 'phone', 'hn', 'address'] as const
 export const PET_PICK_FIELDS = [
   'name', 'species', 'breed', 'sex', 'birth_date', 'color', 'microchip',
-  'sterilized', 'sterilized_date', 'allergies', 'chronic_conditions', 'notes',
+  'sterilized', 'sterilized_date', 'allergies', 'chronic_conditions', 'caution', 'notes',
 ] as const
 
 /** ตารางที่อ้างถึงลูกค้า / สัตว์ → ป้ายที่พนักงานอ่านเข้าใจ */

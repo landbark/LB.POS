@@ -30,10 +30,24 @@ export function petAge(birthDate: string | null): string | null {
   return ageAt(birthDate, new Date())
 }
 
-/** ข้อมูลที่หมอต้องเห็นก่อนจ่ายยาทุกครั้ง */
-export function petWarnings(pet: Pet): string[] {
+/** สัตว์ตัวนี้เท่าที่แถบเตือนต้องรู้ — ไม่ผูกกับ Pet ทั้งก้อน เพราะบางหน้าดึงมาไม่ครบคอลัมน์ */
+export type PetAlertFields = Pick<Pet, 'caution' | 'allergies' | 'chronic_conditions'> &
+  Partial<Pick<Pet, 'notes'>>
+
+/**
+ * ข้อความที่ต้องขึ้นเตือนก่อนจับตัวสัตว์หรือจ่ายยา — เรียงตามความด่วน
+ *
+ * ข้อควรระวังมาก่อนเสมอ เพราะเป็นเรื่องความปลอดภัยของคนที่ยืนอยู่ตรงนั้น
+ * (ดุ/กัด/ต้องใส่ตะกร้อ) ส่วนแพ้ยากับโรคประจำตัวเป็นเรื่องตอนจ่ายยา
+ */
+export function petWarnings(pet: PetAlertFields): string[] {
   const warnings: string[] = []
+  if (pet.caution?.trim()) warnings.push(`ระวัง: ${pet.caution.trim()}`)
   if (pet.allergies?.trim()) warnings.push(`แพ้: ${pet.allergies.trim()}`)
   if (pet.chronic_conditions?.trim()) warnings.push(`โรคประจำตัว: ${pet.chronic_conditions.trim()}`)
   return warnings
 }
+
+/** มีอะไรต้องเตือนไหม — ใช้ตัดสินว่าจะโผล่แถบเตือนไหม โดยไม่ต้องสร้าง array ทิ้ง */
+export const hasPetWarning = (pet: PetAlertFields): boolean =>
+  !!(pet.caution?.trim() || pet.allergies?.trim() || pet.chronic_conditions?.trim())

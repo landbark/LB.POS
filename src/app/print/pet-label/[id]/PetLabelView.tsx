@@ -32,6 +32,7 @@ function Field({ label, value }: { label: string; value: string }) {
 
 export default function PetLabelView({ pet, store, weight }: { pet: Pet; store: Store | null; weight: number | null }) {
   const warning = [
+    pet.caution?.trim() && `ระวัง: ${pet.caution.trim()}`,
     pet.allergies?.trim() && `แพ้: ${pet.allergies.trim()}`,
     pet.chronic_conditions?.trim() && `โรคประจำตัว: ${pet.chronic_conditions.trim()}`,
   ]

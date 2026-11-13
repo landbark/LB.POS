@@ -7,6 +7,7 @@ import { createClient } from '@/lib/supabase/client'
 import { ChevronLeft, ChevronRight, Plus, X, Phone } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { confirmDialog } from '@/lib/confirm'
+import PetAlert, { PetAlertChip } from '@/components/PetAlert'
 import {
   APPOINTMENT_STATUS_LABELS, APPOINTMENT_TYPE_LABELS, SPECIES_LABELS,
   type Appointment, type AppointmentStatus, type AppointmentType, type Pet,
@@ -383,7 +384,9 @@ export default function AppointmentsClient({
                       <button onClick={() => { setForm({ ...form, pet_id: '' }); setSelectedPet(null); setPetQuery('') }} className="p-2 text-gray-400 hover:text-red-600"><X size={15} /></button>
                     )}
                   </div>
-                ) : (
+                ) : null}
+                {selectedPet && <PetAlert pet={selectedPet} className="mt-2" />}
+                {!pickedPet && (
                   <div className="relative">
                     <input type="text" autoFocus value={petQuery} onChange={(e) => setPetQuery(e.target.value)} placeholder="พิมพ์ HN / ชื่อสัตว์ / เจ้าของ / เบอร์..." className={inputClass} />
                     {!searchingPets && (
@@ -401,6 +404,7 @@ export default function AppointmentsClient({
                           <button key={p.id} onClick={() => { setForm({ ...form, pet_id: p.id }); setSelectedPet(p); setPetQuery('') }} className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50">
                             {p.hn && <span className="text-gray-400 font-mono mr-2">{p.hn}</span>}
                             {p.name} <span className="text-gray-400">· {p.customers?.name ?? 'ไม่ระบุ'}</span>
+                            <PetAlertChip pet={p} className="mt-1" />
                           </button>
                         ))}
                       </div>

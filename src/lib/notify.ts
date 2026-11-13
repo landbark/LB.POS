@@ -373,7 +373,7 @@ export async function sendStockAlerts(
 export type NotifyEvent =
   | 'new_order' | 'payment_slip' | 'new_appointment' | 'shift_close' | 'daily_sales'
   | 'sale' | 'purchase_order' | 'stock_received' | 'receipt_cancelled' | 'product_return'
-  | 'member_link'
+  | 'member_link' | 'stock_count_edit'
 
 const EVENT_COLUMN: Record<NotifyEvent, string> = {
   new_order: 'notify_new_order',
@@ -387,6 +387,7 @@ const EVENT_COLUMN: Record<NotifyEvent, string> = {
   receipt_cancelled: 'notify_receipt_cancelled',
   product_return: 'notify_product_return',
   member_link: 'notify_member_link',
+  stock_count_edit: 'notify_stock_count_edit',
 }
 
 export type RecipientRole = 'owner' | 'staff' | 'vet'
@@ -412,6 +413,8 @@ const EVENT_ROLES: Record<NotifyEvent, readonly RecipientRole[]> = {
   product_return: ['owner'],
   // ลูกค้ามักยืนรออยู่หน้าร้านตอนขอผูก — พนักงานที่อยู่ตรงนั้นต้องเห็นด้วย ไม่ใช่เจ้าของคนเดียว
   member_link: ['owner', 'staff'],
+  // คำขอแก้ผลนับของรอบที่ปรับสต็อกแล้ว — คนที่อนุมัติได้คือเจ้าของร้านคนเดียว
+  stock_count_edit: ['owner'],
 }
 
 /** role ของผู้รับ — รองรับข้อมูลเก่าที่ยังมีแต่ธง is_owner (ก่อนรัน migration) */
@@ -865,4 +868,33 @@ export function buildReturnMessage(r: ReturnInfo): string {
   if (r.by) lines.push(`ทำโดย: ${r.by}`)
   lines.push(`เวลา ${timeThai()} น.`)
   return lines.join('\n') + adminLink('/admin/documents?tab=return')
+}
+
+export interface StockCountEditRequestInfo {
+  countNumber: string
+  countName: string | null
+  productName: string
+  unit: string
+  from: number
+  to: number
+  /** ส่วนต่างที่จะปรับเข้าสต็อกถ้าอนุมัติ (+ เพิ่ม / - ลด) */
+  stockDelta: number
+  by: string | null
+  path: string
+}
+
+/** คำขอแก้ผลนับที่ปรับสต็อกไปแล้ว — ต้องบอกให้ชัดว่าอนุมัติแล้วสต็อกจะขยับเท่าไหร่ */
+export function buildStockCountEditMessage(r: StockCountEditRequestInfo): string {
+  const delta = r.stockDelta > 0 ? `+${r.stockDelta}` : String(r.stockDelta)
+  return [
+    '📝 ขอแก้ผลนับสต็อก (รออนุมัติ)',
+    `รอบ: ${r.countName ? `${r.countName} · ` : ''}${r.countNumber}`,
+    `สินค้า: ${r.productName}`,
+    `นับได้: ${r.from} → ${r.to} ${r.unit}`,
+    `อนุมัติแล้วสต็อกจะขยับ ${delta} ${r.unit}`,
+    r.by ? `ผู้ขอ: ${r.by}` : null,
+    `เวลา ${timeThai()} น.`,
+  ]
+    .filter(Boolean)
+    .join('\n') + adminLink(r.path)
 }

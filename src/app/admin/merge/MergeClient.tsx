@@ -93,6 +93,7 @@ const PET_FIELDS: FieldSpec[] = [
   { key: 'sterilized_date', label: 'วันที่ทำหมัน', show: (r) => thaiDate(r.sterilized_date) },
   { key: 'allergies', label: 'แพ้ยา/อาหาร', show: (r) => text(r.allergies) },
   { key: 'chronic_conditions', label: 'โรคประจำตัว', show: (r) => text(r.chronic_conditions) },
+  { key: 'caution', label: 'ข้อควรระวัง', show: (r) => text(r.caution) },
   { key: 'notes', label: 'หมายเหตุ', show: (r) => text(r.notes) },
 ]
 

@@ -86,6 +86,7 @@ const petInfo = (c: DocContext) => [
 ].filter(Boolean).join(' · ')
 
 const warningsText = (c: DocContext) => [
+  c.pet.caution?.trim() && `ระวัง: ${c.pet.caution.trim()}`,
   c.pet.allergies?.trim() && `แพ้: ${c.pet.allergies.trim()}`,
   c.pet.chronic_conditions?.trim() && `โรคประจำตัว: ${c.pet.chronic_conditions.trim()}`,
 ].filter(Boolean).join(' · ')
