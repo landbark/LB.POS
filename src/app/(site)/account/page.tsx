@@ -316,7 +316,7 @@ export default async function AccountPage({
           </p>
           <div className="mt-4 divide-y divide-brand-muted/20">
             {rewardList.map((r) => {
-              const enough = customer.points >= r.points_cost
+              const enough = livePoints >= r.points_cost
               return (
                 <div key={r.id} className="flex items-start justify-between gap-3 py-3">
                   <div className="min-w-0">
@@ -333,7 +333,7 @@ export default async function AccountPage({
                       {r.points_cost} แต้ม
                     </p>
                     <p className="text-[11px] text-gray-400">
-                      {enough ? 'แลกได้เลย' : `ขออีก ${r.points_cost - customer.points} แต้ม`}
+                      {enough ? 'แลกได้เลย' : `ขออีก ${r.points_cost - livePoints} แต้ม`}
                     </p>
                   </div>
                 </div>
