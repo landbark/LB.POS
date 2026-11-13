@@ -24,6 +24,21 @@ export function visitDiagnosisText(
   return names || note
 }
 
+/** ป้ายแทนผลวินิจฉัย เมื่อหมอติ๊กว่าสุขภาพปกติ */
+export const HEALTHY_LABEL = 'สุขภาพปกติ'
+
+/**
+ * ข้อความสรุปที่โชว์ในรายการประวัติ — ติ๊ก Healthy ถือว่าหมอบันทึกผลแล้ว
+ * ไม่ใช่ "ไม่ได้บันทึกการวินิจฉัย" ถึงจะไม่ได้เลือกชื่อโรคก็ตาม
+ */
+export function visitSummaryText(
+  visit: { healthy?: boolean | null; diagnosis: string | null; visit_diagnoses?: DiagnosisLink[] | null },
+): string {
+  const text = visitDiagnosisText(visit)
+  if (visit.healthy) return text ? `${HEALTHY_LABEL} — ${text}` : HEALTHY_LABEL
+  return text
+}
+
 /** ข้อความมีตัวอักษรไทยไหม — ใช้เดาว่าที่พิมพ์มาควรลงช่องไทยหรืออังกฤษ ตอนเพิ่มโรคใหม่เร็วๆ ในห้องตรวจ */
 export const hasThai = (s: string) => /[฀-๿]/.test(s)
 

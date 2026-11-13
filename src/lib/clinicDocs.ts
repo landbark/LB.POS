@@ -8,7 +8,7 @@
 
 import { SPECIES_LABELS, type Pet, type PetVaccination, type Visit } from './types'
 import { petAge } from './pets'
-import { visitDiagnosisText, type DiagnosisLink } from './diagnoses'
+import { visitSummaryText, type DiagnosisLink } from './diagnoses'
 
 /** แก้เอกสารได้กี่ชั่วโมงหลังออก — DB บังคับด้วย trigger เดียวกัน (ดู supabase-migration-clinic-documents.sql) */
 export const DOC_EDIT_HOURS = 24
@@ -57,6 +57,7 @@ export interface DocHistoryEntry {
   visit_date: string
   diagnosis: string | null
   treatment?: string | null
+  healthy?: boolean | null
   visit_diagnoses?: DiagnosisLink[] | null
 }
 
@@ -91,13 +92,12 @@ const warningsText = (c: DocContext) => [
   c.pet.chronic_conditions?.trim() && `โรคประจำตัว: ${c.pet.chronic_conditions.trim()}`,
 ].filter(Boolean).join(' · ')
 
-const diagnosisText = (c: DocContext) =>
-  c.visit ? [visitDiagnosisText(c.visit), c.visit.diagnosis?.trim()].filter(Boolean).join(' — ') : ''
+const diagnosisText = (c: DocContext) => (c.visit ? visitSummaryText(c.visit) : '')
 
 const historyText = (c: DocContext) =>
   c.history
-    .filter((v) => visitDiagnosisText(v) || v.treatment)
-    .map((v) => `${dateTh(v.visit_date)} — ${[visitDiagnosisText(v), v.treatment].filter(Boolean).join(' / ')}`)
+    .filter((v) => visitSummaryText(v) || v.treatment)
+    .map((v) => `${dateTh(v.visit_date)} — ${[visitSummaryText(v), v.treatment].filter(Boolean).join(' / ')}`)
     .join('\n')
 
 const vaccineText = (c: DocContext) =>

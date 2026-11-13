@@ -62,7 +62,7 @@ export async function loadDocContext(
   const [{ data: history }, { data: vaccinations }, { data: ownerRow }, { data: address }] = await Promise.all([
     supabase
       .from('visits')
-      .select('visit_date, diagnosis, treatment, visit_diagnoses(diagnoses(*))')
+      .select('visit_date, diagnosis, treatment, healthy, visit_diagnoses(diagnoses(*))')
       .eq('pet_id', resolvedPetId)
       .neq('id', visitId ?? '00000000-0000-0000-0000-000000000000')
       .neq('status', 'cancelled')

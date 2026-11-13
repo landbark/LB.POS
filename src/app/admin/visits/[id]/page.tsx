@@ -40,7 +40,7 @@ export default async function VisitPage({ params }: { params: Promise<{ id: stri
     // ประวัติการรักษาครั้งก่อนของสัตว์ตัวนี้
     supabase
       .from('visits')
-      .select('id, visit_number, visit_date, diagnosis, treatment, weight, visit_diagnoses(diagnoses(*))')
+      .select('id, visit_number, visit_date, diagnosis, treatment, weight, healthy, visit_diagnoses(diagnoses(*))')
       .eq('pet_id', visit.pet_id)
       .neq('id', id)
       .order('visit_date', { ascending: false })

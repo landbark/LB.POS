@@ -16,7 +16,7 @@ import {
   TIME_SLOTS, defaultTimes, parseTimes, dosesPerDay, drugForm, type TimeSlot,
 } from '@/lib/sig'
 import DiagnosisSelect from '@/components/DiagnosisSelect'
-import { visitDiagnosisText, type DiagnosisLink } from '@/lib/diagnoses'
+import { visitSummaryText, type DiagnosisLink } from '@/lib/diagnoses'
 import VaccineSection from '@/app/admin/pets/[id]/VaccineSection'
 import VisitAttachments from './VisitAttachments'
 import MoveVisitButton from './MoveVisitButton'
@@ -45,6 +45,7 @@ interface HistoryEntry {
   diagnosis: string | null
   treatment: string | null
   weight?: number | null
+  healthy?: boolean | null
   visit_diagnoses?: DiagnosisLink[] | null
 }
 
@@ -1225,7 +1226,7 @@ export default function VisitDetail({
                 <p className="text-xs text-gray-400 font-mono">
                   {h.visit_number} · {new Date(h.visit_date).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' })}
                 </p>
-                <p className="text-sm text-gray-700">{visitDiagnosisText(h) || h.treatment || 'ไม่ได้บันทึกการวินิจฉัย'}</p>
+                <p className="text-sm text-gray-700">{visitSummaryText(h) || h.treatment || 'ไม่ได้บันทึกการวินิจฉัย'}</p>
               </Link>
             ))}
           </div>
