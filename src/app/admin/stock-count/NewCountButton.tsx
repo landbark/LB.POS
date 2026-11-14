@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Plus, X } from 'lucide-react'
@@ -14,8 +14,13 @@ export default function NewCountButton({ categories }: { categories: { id: strin
   const [name, setName] = useState('')
   const [categoryId, setCategoryId] = useState('')
   const [saving, setSaving] = useState(false)
+  // กันกดซ้ำในเฟรมเดียวกัน — attribute disabled มีผลหลัง render รอบถัดไป
+  // แต่ setSaving ไม่ทันในจังหวะนั้น กดรัว ๆ ทีเดียวจึงเปิดได้สองรอบ
+  const busyRef = useRef(false)
 
   async function create() {
+    if (busyRef.current) return
+    busyRef.current = true
     setSaving(true)
     const supabase = createClient()
     const { data: { user } } = await supabase.auth.getUser()
@@ -32,11 +37,15 @@ export default function NewCountButton({ categories }: { categories: { id: strin
       .select('id')
       .single()
 
-    setSaving(false)
     if (error || !data) {
+      busyRef.current = false
+      setSaving(false)
       toast.error('เปิดรอบนับไม่สำเร็จ: ' + (error?.message ?? ''))
       return
     }
+    // ไม่ปลดล็อกปุ่มตอนสำเร็จ — เปลี่ยนหน้าใช้เวลาอยู่หลายวินาทีบนเน็ตมือถือ
+    // ถ้าปุ่มกลับมากดได้ระหว่างนั้น แต่ละครั้งที่กดคือรอบนับเปล่าอีกรอบ
+    // (ของจริงเคยเปิดค้างไว้ 13 รอบ รอบเดียวมี 9 ใบในนาทีเดียว)
     router.push(`/admin/stock-count/${data.id}`)
   }
 

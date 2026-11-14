@@ -13,9 +13,12 @@ import { findByBarcode } from '@/lib/productUnits'
 import {
   canStampExpiry,
   countUnitChoices,
+  describeVarianceAlert,
+  lookalikesOf,
   lotsWithStock,
   stockOf,
   summarize,
+  varianceAlert,
   varianceOf,
   type CountableProduct,
   type CountLot,
@@ -174,6 +177,39 @@ export default function CountClient({
   const findRow = (productId: string, lot: string | null) =>
     rowsRef.current.find((r) => r.product_id === productId && (r.product_lot_id ?? null) === lot)
 
+  /**
+   * ยอดระบบที่ใช้เป็นฐานเทียบของ (สินค้า, lot)
+   *
+   * ล็อกไว้ตั้งแต่ครั้งแรกที่นับคู่นี้ — นับซ้ำ/แก้ตัวเลขไม่เลื่อนฐานเทียบตาม
+   * (ทั้งกล่องเตือนและตอนบันทึกต้องใช้เลขเดียวกัน ไม่งั้นเตือนด้วยเลขหนึ่งแล้วบันทึกอีกเลข)
+   */
+  const systemFor = (product: CountableProduct, lot: string | null) =>
+    findRow(product.id, lot)?.system_quantity ??
+    (lot ? lotById.get(lot)?.quantity ?? 0 : stockOf(product))
+
+  /**
+   * ถามกลับก่อนบันทึกถ้าผลนับน่าสงสัย — true = ไปต่อได้
+   *
+   * ใช้กับทุกทางที่ "คีย์ยอดรวมทั้งก้อน" (ฟอร์ม, แก้เลขในตาราง, แป้นเลขใต้กล้อง)
+   * ไม่ใช้กับโหมดยิงทีละชิ้น เพราะนั่นบวกทีละ 1 ไม่ได้คีย์เลข — เตือนทุกครั้งที่ยิง
+   * จะทำให้ยิงต่อไม่ได้เลย
+   */
+  async function confirmVariance(product: CountableProduct, lot: string | null, counted: number) {
+    const alert = varianceAlert({ counted_quantity: counted, system_quantity: systemFor(product, lot) })
+    if (!alert) return true
+    const { confirmed } = await confirmDialog({
+      ...describeVarianceAlert(alert, {
+        name: product.name,
+        unit: product.unit,
+        counted,
+        system: systemFor(product, lot),
+        lookalikes: lookalikesOf(product, products).map((p) => p.name),
+      }),
+      tone: 'danger',
+    })
+    return confirmed
+  }
+
   function writeRows(next: ItemRow[]) {
     rowsRef.current = next
     setRows(next)
@@ -205,8 +241,7 @@ export default function CountClient({
     }
 
     const existing = findRow(product.id, lot)
-    // ยอดระบบล็อกไว้ตั้งแต่ครั้งแรกที่นับคู่นี้ — นับซ้ำ/แก้ตัวเลขไม่ควรเลื่อนฐานเทียบตาม
-    const system = existing?.system_quantity ?? (lot ? lotById.get(lot)?.quantity ?? 0 : stockOf(product))
+    const system = systemFor(product, lot)
     const countedAt = new Date().toISOString()
 
     const supabase = createClient()
@@ -335,9 +370,14 @@ export default function CountClient({
     const row = rows.find((r) => keyOf(r.product_id, r.product_lot_id) === key)
     const product = row ? byId.get(row.product_id) : null
     if (!row || !product) return
-    intendedRef.current.set(key, qty)
-    setLastTallyKey(key)
-    void queueSave(product, row.product_lot_id, qty, row.note, row.expiry_date)
+    void (async () => {
+      // ถามก่อนแตะ intendedRef — ถ้าคนนับถอย ยอดที่ "กำลังจะเป็น" ต้องไม่เปลี่ยน
+      // ไม่งั้นยิงชิ้นต่อไปจะบวกต่อจากเลขที่ไม่เคยถูกบันทึก
+      if (!(await confirmVariance(product, row.product_lot_id, qty))) return
+      intendedRef.current.set(key, qty)
+      setLastTallyKey(key)
+      await queueSave(product, row.product_lot_id, qty, row.note, row.expiry_date)
+    })()
   }
 
   function removeTallyRow(key: string) {
@@ -394,11 +434,13 @@ export default function CountClient({
       return
     }
     const choice = countUnitChoices(picked)[unitIdx]
+    const counted = n * (choice?.factor ?? 1)
+    if (!(await confirmVariance(picked, lotId, counted))) return
     const stampable = canStampExpiry(picked, lotId)
     const ok = await queueSave(
       picked,
       lotId,
-      n * (choice?.factor ?? 1),
+      counted,
       note.trim() || null,
       stampable ? expiry || null : null
     )
@@ -411,12 +453,15 @@ export default function CountClient({
     setLotId(null)
   }
 
+  /** คืน false เมื่อไม่ได้บันทึก — คนเรียกต้องคืนเลขเดิมลงช่องกรอก ไม่ให้ค้างเลขที่ไม่ได้ลง */
   async function editCounted(row: ItemRow, value: string) {
     const n = parseInt(value, 10)
-    if (isNaN(n) || n < 0 || n === row.counted_quantity) return
+    if (isNaN(n) || n < 0) return false
+    if (n === row.counted_quantity) return true
     const product = byId.get(row.product_id)
-    if (!product) return
-    await queueSave(product, row.product_lot_id, n, row.note, row.expiry_date)
+    if (!product) return false
+    if (!(await confirmVariance(product, row.product_lot_id, n))) return false
+    return Boolean(await queueSave(product, row.product_lot_id, n, row.note, row.expiry_date))
   }
 
   /**
@@ -987,7 +1032,14 @@ export default function CountClient({
                       key={`${r.id}-${r.counted_quantity}-${pendingByItem.get(r.id)?.new_value ?? ''}`}
                       defaultValue={r.counted_quantity}
                       disabled={busyItem === r.id}
-                      onBlur={(e) => (locked ? editClosedQty(r, e.target.value) : editCounted(r, e.target.value))}
+                      onBlur={(e) => {
+                        // ช่องนี้เป็น defaultValue + key ที่ผูกกับยอดเดิม — ยอดไม่เปลี่ยนก็ไม่ remount
+                        // เลขที่ถูกปฏิเสธจะค้างอยู่ในช่องทั้งที่ตารางยังเป็นยอดเดิม จึงคืนค่าให้เอง
+                        const el = e.currentTarget
+                        const revert = () => { el.value = String(r.counted_quantity) }
+                        if (locked) void editClosedQty(r, el.value).then(revert)
+                        else void editCounted(r, el.value).then((ok) => { if (!ok) revert() })
+                      }}
                       onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
                       className="w-20 border border-gray-200 rounded-lg px-2 py-1 text-sm text-right focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50"
                     />

@@ -245,3 +245,111 @@ export async function applyCountDiff(
 
   return { applied: diff + remaining, shortfall: remaining, stamped }
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// เตือนก่อนบันทึกผลนับ
+//
+// จากการไล่ผลนับจริง 35 รอบ ความผิดพลาดเกือบทั้งหมดเป็นสองแบบ และทั้งสองแบบ
+// "เห็นได้ตอนคีย์" ถ้าระบบยอมถามกลับก่อนบันทึก
+//
+//   1. คีย์ 0 ทั้งที่ระบบมีของอยู่หลายสิบ — ของไม่ได้หมด แต่ไม่ได้อยู่บนชั้น
+//      (อยู่ในลังหลังร้าน / ยังไม่แกะ) กดยืนยันไปแล้วของถูกตัดออกจากสต็อกจริง
+//   2. ยอดไปลงผิดตัว — สินค้า 38% ของร้านมีชื่อ 24 ตัวอักษรแรกเหมือนกันเป๊ะ
+//      (ME-O DELITE WET FOOD NO.… มี 15 ตัว) รหัสที่แยกตัวสินค้าอยู่กลางชื่อ
+//      พอชื่อถูกตัดท้ายในรายการค้นหาก็มองไม่ออกว่าเลือกตัวไหนอยู่
+//
+// ทั้งสองแบบแก้ด้วยกล่องยืนยันที่กาง "ชื่อเต็มไม่ตัด + ยอดนับ + ยอดระบบ +
+// ส่วนต่าง" ให้เห็นก่อน ไม่ใช่การห้าม — คนนับยังยืนยันยอดเดิมได้เสมอ
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** เกณฑ์เตือน — จุดเดียวที่ต้องแก้ถ้าเตือนบ่อยไป/น้อยไป */
+export const VARIANCE_ALERT = {
+  /** คีย์ 0 ขณะระบบมีของตั้งแต่เท่านี้ขึ้นไป = เตือน (1-2 ชิ้นคือขายหมดจริงตามปกติ) */
+  zeroWhenSystemAtLeast: 3,
+  /** ส่วนต่างตั้งแต่เท่านี้ชิ้น = เตือน ไม่ว่ายอดระบบจะเท่าไหร่ */
+  diffUnits: 10,
+  /** หรือส่วนต่างเกินสัดส่วนนี้ของยอดระบบ — จับกรณียอดน้อยแต่ผิดยับ (นับ 8 ระบบมี 27) */
+  diffRatio: 0.5,
+  /** ยอดระบบต่ำกว่านี้ไม่คิดสัดส่วน เพราะ 1 จาก 2 ชิ้นก็ 50% แล้ว */
+  ratioMinSystem: 5,
+} as const
+
+export type VarianceAlertKind = 'counted_zero' | 'big_gap'
+
+export interface VarianceAlert {
+  kind: VarianceAlertKind
+  /** ขาด (-) / เกิน (+) เป็นหน่วยฐาน */
+  diff: number
+}
+
+/**
+ * ผลนับแถวนี้น่าสงสัยพอที่ควรถามกลับก่อนบันทึกไหม (null = บันทึกไปเลย)
+ *
+ * ยอดระบบติดลบ (ขายทั้งที่สต็อกไม่มี) ไม่เตือนแบบ "0 ทั้งที่มีของ" เพราะไม่มีของ
+ * ให้เสีย — ส่วนต่างก้อนใหญ่ของมันไปเข้าเกณฑ์ big_gap ตามปกติ
+ */
+export function varianceAlert(row: CountRow): VarianceAlert | null {
+  const diff = varianceOf(row)
+  if (row.counted_quantity === 0 && row.system_quantity >= VARIANCE_ALERT.zeroWhenSystemAtLeast) {
+    return { kind: 'counted_zero', diff }
+  }
+  if (diff === 0) return null
+
+  const big = Math.abs(diff) >= VARIANCE_ALERT.diffUnits
+  const lopsided =
+    row.system_quantity >= VARIANCE_ALERT.ratioMinSystem &&
+    Math.abs(diff) / row.system_quantity >= VARIANCE_ALERT.diffRatio
+  return big || lopsided ? { kind: 'big_gap', diff } : null
+}
+
+/** ความยาวที่ถือว่า "ชื่อขึ้นต้นเหมือนกันจนมองสลับกันได้" — เท่ากับที่ชื่อถูกตัดบนมือถือ */
+export const LOOKALIKE_PREFIX = 24
+
+/** สินค้าตัวอื่นที่ชื่อขึ้นต้นเหมือนกัน — ไว้เตือนว่าตระกูลนี้สลับตัวกันได้ง่าย */
+export function lookalikesOf(product: { id: string; name: string }, products: { id: string; name: string }[]) {
+  const head = product.name.slice(0, LOOKALIKE_PREFIX).toUpperCase()
+  if (head.length < LOOKALIKE_PREFIX) return []
+  return products.filter((p) => p.id !== product.id && p.name.slice(0, LOOKALIKE_PREFIX).toUpperCase() === head)
+}
+
+/** ข้อความกล่องยืนยัน — คู่กับเกณฑ์ข้างบน จึงอยู่ไฟล์เดียวกัน */
+export function describeVarianceAlert(
+  alert: VarianceAlert,
+  {
+    name,
+    unit,
+    counted,
+    system,
+    lookalikes = [],
+  }: { name: string; unit: string; counted: number; system: number; lookalikes: string[] }
+) {
+  // ชื่อเต็มขึ้นบรรทัดของตัวเอง ไม่ตัดท้าย — ทั้งกล่องนี้มีไว้เพื่อบรรทัดนี้
+  const lines = [name, '']
+
+  if (alert.kind === 'counted_zero') {
+    lines.push(
+      `คีย์ไว้ว่านับได้ 0 ${unit} แต่ระบบบอกว่ามี ${system} ${unit}`,
+      `ยืนยันแล้วของ ${system} ${unit} จะถูกตัดออกจากสต็อก`,
+      '',
+      'ดูในลังหลังร้าน / ของที่ยังไม่แกะก่อนไหม'
+    )
+  } else {
+    const gap = alert.diff > 0 ? `เกิน ${alert.diff}` : `ขาด ${-alert.diff}`
+    lines.push(`นับได้ ${counted} ${unit} · ระบบมี ${system} ${unit} · ${gap} ${unit}`)
+  }
+
+  if (lookalikes.length > 0) {
+    lines.push(
+      '',
+      `มีสินค้าอีก ${lookalikes.length} ตัวที่ชื่อขึ้นต้นเหมือนกัน — เช็กว่าไม่ได้คีย์สลับตัว`,
+      ...lookalikes.slice(0, 2).map((n) => `• ${n}`)
+    )
+  }
+
+  return {
+    title: alert.kind === 'counted_zero' ? 'แน่ใจว่าหมดเกลี้ยง?' : 'ส่วนต่างเยอะผิดปกติ',
+    message: lines.join('\n'),
+    confirmLabel: alert.kind === 'counted_zero' ? 'ยืนยัน นับได้ 0' : 'ยืนยันยอดนี้',
+    cancelLabel: 'ขอดูอีกที',
+  }
+}
