@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { useLookup } from '@/lib/use-lookup'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { ChevronLeft, ChevronRight, Plus, X, Phone } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Plus, X, Phone, RotateCcw } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { confirmDialog } from '@/lib/confirm'
 import PetAlert, { PetAlertChip } from '@/components/PetAlert'
@@ -190,6 +190,7 @@ export default function AppointmentsClient({
     const supabase = createClient()
     const { error } = await supabase.from('appointments').update({ status }).eq('id', a.id)
     if (error) { toast.error('เปลี่ยนสถานะไม่สำเร็จ'); return }
+    toast.success(`เปลี่ยนเป็น "${APPOINTMENT_STATUS_LABELS[status]}" แล้ว`)
     router.refresh()
   }
 
@@ -415,9 +416,19 @@ export default function AppointmentsClient({
                       <button onClick={() => setStatus(a, 'cancelled')} className="text-xs px-2 py-1 rounded border border-gray-200 text-gray-600 hover:bg-gray-50">ยกเลิก</button>
                     </>
                   ) : (
-                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${STATUS_STYLE[a.status]}`}>
-                      {APPOINTMENT_STATUS_LABELS[a.status]}
-                    </span>
+                    <>
+                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${STATUS_STYLE[a.status]}`}>
+                        {APPOINTMENT_STATUS_LABELS[a.status]}
+                      </span>
+                      {/* กดสถานะผิดก็ย้อนกลับได้ ไม่ต้องลบนัดแล้วสร้างใหม่ */}
+                      <button
+                        onClick={() => setStatus(a, 'scheduled')}
+                        title="ย้อนกลับเป็นนัดแล้ว — เวชระเบียนที่เช็คอินไว้จะไม่ถูกลบ"
+                        className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded border border-gray-200 text-gray-500 hover:bg-gray-50 hover:text-gray-700"
+                      >
+                        <RotateCcw size={12} /> ย้อนสถานะ
+                      </button>
+                    </>
                   )}
                 </div>
               </div>
