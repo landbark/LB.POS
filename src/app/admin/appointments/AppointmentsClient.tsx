@@ -31,6 +31,30 @@ const STATUS_STYLE: Record<AppointmentStatus, string> = {
   cancelled: 'bg-gray-100 text-gray-500',
 }
 
+// สถานะในช่องปฏิทิน — ให้เห็นว่ามา/ไม่มา/ยกเลิก ตั้งแต่ในช่องวันที่ ไม่ต้องกดเข้าไปดูทีละวัน
+const STATUS_ORDER: AppointmentStatus[] = ['scheduled', 'done', 'missed', 'cancelled']
+
+const STATUS_DOT: Record<AppointmentStatus, string> = {
+  scheduled: 'bg-blue-500',
+  done: 'bg-green-500',
+  missed: 'bg-red-500',
+  cancelled: 'bg-gray-300',
+}
+
+const STATUS_CELL: Record<AppointmentStatus, string> = {
+  scheduled: 'bg-blue-100 text-blue-800',
+  done: 'bg-green-100 text-green-700',
+  missed: 'bg-red-100 text-red-700',
+  cancelled: 'bg-gray-100 text-gray-400 line-through',
+}
+
+const STATUS_MARK: Record<AppointmentStatus, string> = {
+  scheduled: '\u2022',
+  done: '\u2713',
+  missed: '\u2715',
+  cancelled: '\u2298',
+}
+
 const WEEKDAYS = ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส']
 const localDate = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 const fmtTime = (iso: string) => new Date(iso).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })
@@ -226,6 +250,13 @@ export default function AppointmentsClient({
   })
   const todayKey = localDate(today)
 
+  // สรุปสถานะของเดือนที่กำลังดู ใช้โชว์ที่แถบคำอธิบายสีใต้ปฏิทิน
+  const monthCounts: Record<AppointmentStatus, number> = { scheduled: 0, done: 0, missed: 0, cancelled: 0 }
+  for (const a of appointments) {
+    const d = new Date(a.scheduled_at)
+    if (d.getFullYear() === month.getFullYear() && d.getMonth() === month.getMonth()) monthCounts[a.status]++
+  }
+
   const searchingPets = petQuery.trim().length > 0
   const { results: petHits, loading: petLoading } = useLookup<Pet>('pets', petQuery)
   const petMatches = searchingPets ? petHits : recentPets
@@ -275,30 +306,65 @@ export default function AppointmentsClient({
             {cells.map((d) => {
               const key = localDate(d)
               const inMonth = d.getMonth() === month.getMonth()
-              const items = (byDate[key] ?? []).filter((a) => a.status !== 'cancelled')
+              // โชว์ทุกสถานะรวมนัดที่ยกเลิก (ขีดฆ่าไว้) เรียงตามเวลา
+              const items = (byDate[key] ?? []).slice().sort((a, b) => a.scheduled_at.localeCompare(b.scheduled_at))
+              const counts = STATUS_ORDER
+                .map((s) => [s, items.filter((a) => a.status === s).length] as const)
+                .filter(([, n]) => n > 0)
               const isSelected = key === selectedDate
               return (
                 <button
                   key={key}
                   onClick={() => setSelectedDate(key)}
-                  className={`min-h-14 rounded-lg p-1 text-left border transition-colors ${
+                  title={counts.map(([s, n]) => `${APPOINTMENT_STATUS_LABELS[s]} ${n}`).join(' · ') || undefined}
+                  className={`min-h-20 rounded-lg p-1 text-left border align-top transition-colors ${
                     isSelected ? 'border-blue-500 bg-blue-50' : 'border-transparent hover:bg-gray-50'
                   } ${inMonth ? '' : 'opacity-40'}`}
                 >
-                  <span className={`text-xs ${key === todayKey ? 'font-bold text-blue-600' : 'text-gray-700'}`}>
-                    {d.getDate()}
-                  </span>
+                  <div className="flex items-start justify-between gap-0.5">
+                    <span className={`text-xs ${key === todayKey ? 'font-bold text-blue-600' : 'text-gray-700'}`}>
+                      {d.getDate()}
+                    </span>
+                    {counts.length > 0 && (
+                      <span className="flex flex-wrap justify-end gap-x-1 gap-y-0.5 pt-0.5">
+                        {counts.map(([s, n]) => (
+                          <span
+                            key={s}
+                            className="inline-flex items-center gap-0.5 text-[9px] font-semibold leading-none text-gray-500"
+                          >
+                            <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT[s]}`} />
+                            {n}
+                          </span>
+                        ))}
+                      </span>
+                    )}
+                  </div>
                   <div className="mt-0.5 space-y-0.5">
-                    {items.slice(0, 2).map((a) => (
-                      <div key={a.id} className={`text-[10px] px-1 py-0.5 rounded truncate ${TYPE_STYLE[a.type]}`}>
-                        {a.pets?.name ?? '—'}
+                    {items.slice(0, 3).map((a) => (
+                      <div
+                        key={a.id}
+                        className={`flex items-center gap-0.5 text-[10px] px-1 py-0.5 rounded ${STATUS_CELL[a.status]}`}
+                      >
+                        <span className="shrink-0 font-bold leading-none no-underline">{STATUS_MARK[a.status]}</span>
+                        <span className="truncate">{a.pets?.name ?? '—'}</span>
                       </div>
                     ))}
-                    {items.length > 2 && <div className="text-[10px] text-gray-400 px-1">+{items.length - 2}</div>}
+                    {items.length > 3 && <div className="text-[10px] text-gray-400 px-1">+{items.length - 3}</div>}
                   </div>
                 </button>
               )
             })}
+          </div>
+
+          {/* คำอธิบายสี + สรุปของเดือนที่กำลังดู */}
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-2 pt-2 border-t border-gray-100">
+            {STATUS_ORDER.map((s) => (
+              <span key={s} className="inline-flex items-center gap-1 text-[11px] text-gray-500">
+                <span className={`w-2 h-2 rounded-full ${STATUS_DOT[s]}`} />
+                {APPOINTMENT_STATUS_LABELS[s]}
+                <span className="font-semibold text-gray-700">{monthCounts[s]}</span>
+              </span>
+            ))}
           </div>
         </div>
 
