@@ -55,6 +55,7 @@ export async function POST(request: NextRequest) {
       toOwner: mismatch.toOwner,
       pending: mismatch.pending,
       pendingBills: mismatch.pendingBills,
+      pendingParts: mismatch.pendingParts ?? [],
       expected: mismatch.expected,
       counted: mismatch.counted,
       diff: mismatch.diff,

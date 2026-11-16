@@ -39,9 +39,14 @@ const check = (ok: boolean, label: string, detail = '') => {
 
 const madeShifts: string[] = []
 const madeTx: string[] = []
+const madeMoves: string[] = []
+const madeReturns: string[] = []
 
 async function cleanup() {
   for (const id of madeShifts) await supabase.from('shifts').delete().eq('id', id)
+  for (const id of madeMoves) await supabase.from('cash_movements').delete().eq('id', id)
+  // ใบคืนต้องลบก่อนบิล — transaction_id เป็น ON DELETE RESTRICT
+  for (const id of madeReturns) await supabase.from('returns').delete().eq('id', id)
   for (const id of madeTx) await supabase.from('transactions').delete().eq('id', id)
 }
 
@@ -72,19 +77,38 @@ async function main() {
     .eq('status', 'cancelled').eq('refund_method', 'cash').eq('sales_channel', 'store')
     .gte('cancelled_at', from)
   const refunds = (refundRaw ?? []).reduce((s, t) => s + Number(t.total), 0)
+  // อีกสองทางที่เงินในเก๊ะขยับได้ตอนไม่มีกะ — ใบคืนที่จ่ายเงินสด และเงินเข้า-ออกเก๊ะที่ยังไม่ผูกกะ
+  const { data: retRaw } = await supabase
+    .from('returns').select('refund_amount')
+    .eq('refund_method', 'cash').gt('refund_amount', 0).gte('created_at', from)
+  const returnRefunds = (retRaw ?? []).reduce((s, r) => s + Number(r.refund_amount), 0)
+  const { data: moveRaw } = await supabase
+    .from('cash_movements').select('direction, amount').is('shift_id', null).gte('created_at', from)
+  const movesIn = (moveRaw ?? []).filter((m) => m.direction === 'in').reduce((s, m) => s + Number(m.amount), 0)
+  const movesOut = (moveRaw ?? []).filter((m) => m.direction === 'out').reduce((s, m) => s + Number(m.amount), 0)
+  const expectedNet = cash - refunds - returnRefunds + movesIn - movesOut
   console.log(
     `ช่วงที่ไม่มีกะ: ${from} → now · บิลหน้าร้าน ${live.length} ใบ · ` +
-    `เงินสดรับ ฿${cash.toFixed(2)} · คืนเงินสด ฿${refunds.toFixed(2)}`,
+    `เงินสดรับ ฿${cash.toFixed(2)} · คืนเงินสด ฿${refunds.toFixed(2)} · ` +
+    `คืนจากใบคืน ฿${returnRefunds.toFixed(2)} · เข้าเก๊ะ ฿${movesIn.toFixed(2)} · ออกจากเก๊ะ ฿${movesOut.toFixed(2)}`,
   )
 
-  if (cash > 0 || refunds > 0) {
+  if (cash > 0 || refunds > 0 || returnRefunds > 0 || (moveRaw ?? []).length > 0) {
     check(orphan !== null, 'มีเงินสดขยับนอกกะ → คืนค่า orphan')
     check(orphan?.cash === cash, 'ยอดเงินสดตรงกับที่รวมจากบิลดิบ', `฿${orphan?.cash?.toFixed(2)} vs ฿${cash.toFixed(2)}`)
     check(orphan?.refunds === refunds, 'ยอดคืนเงินสดตรงกับบิลที่ยกเลิกในช่วงนั้น', `฿${orphan?.refunds?.toFixed(2)}`)
-    check(orphan?.net === cash - refunds, 'net = เงินสดที่อยู่ในเก๊ะจริงจากช่วงนี้', `฿${orphan?.net?.toFixed(2)}`)
+    check(orphan?.returnRefunds === returnRefunds, 'ยอดคืนเงินสดจากใบคืนในช่วงนั้นตรงกับตาราง returns', `฿${orphan?.returnRefunds?.toFixed(2)}`)
+    check(
+      orphan?.movementsIn === movesIn && orphan?.movementsOut === movesOut,
+      'ยอดเงินเข้า-ออกเก๊ะที่ยังไม่ผูกกะตรงกับตาราง cash_movements',
+      `เข้า ฿${orphan?.movementsIn} · ออก ฿${orphan?.movementsOut}`,
+    )
+    check(orphan?.net === expectedNet, 'net = เงินสดที่อยู่ในเก๊ะจริงจากช่วงนี้ (ครบทั้งสี่ทาง)', `฿${orphan?.net?.toFixed(2)}`)
     check(orphan?.bills === live.length, 'นับจำนวนบิลถูก (ไม่นับบิลที่ยกเลิก)', `${orphan?.bills} vs ${live.length}`)
     check(orphan?.afterClose === !!lastClosed?.closed_at, 'รู้ว่าเป็นบิล "หลังปิดกะ" หรือ "ก่อนเปิดกะวันนี้"')
-    if (bills.length > 0) check(orphan?.firstAt === bills[0].created_at, 'firstAt = เวลาบิลแรกของช่วง')
+    if (bills.length > 0 && (moveRaw ?? []).length === 0) {
+      check(orphan?.firstAt === bills[0].created_at, 'firstAt = เวลาบิลแรกของช่วง')
+    }
   } else {
     check(orphan === null, 'ไม่มีเงินสดขยับนอกกะ → คืน null (ไม่รบกวนคนเปิดกะ)')
   }
@@ -337,7 +361,8 @@ async function main() {
     const night: OrphanSales = {
       firstAt: new Date(Date.now() - 3_600_000).toISOString(),
       lastAt: new Date(Date.now() - 3_000_000).toISOString(),
-      bills: 1, cash: 200, refunds: 0, net: 200,
+      bills: 1, cash: 200, refunds: 0, returnRefunds: 0,
+      movementsIn: 0, movementsOut: 0, movementIds: [], net: 200,
       since: carry!.closedAt, afterClose: true, hours: 1,
     }
     const night1 = await openShift(
@@ -374,6 +399,81 @@ async function main() {
     )
     await supabase.from('shifts').delete().eq('id', nightRow!.id)
     madeShifts.length = 0
+
+    // --- 9ค) เงินในเก๊ะขยับทางอื่นหลังปิดกะ: ใบคืนที่จ่ายเงินสด + เงินหยิบออกจากเก๊ะตอนไม่มีกะ
+    // ทั้งสองทางนี้เคยไม่ถูกนับเลย เช้ามาจึงขึ้นว่า "เงินขาด" เท่ายอดนั้น ทั้งที่มีคนลงบันทึกไว้แล้ว
+    const netBefore = await findOrphanSales(db)
+    const { data: move, error: moveErr } = await supabase
+      .from('cash_movements')
+      .insert({ shift_id: null, direction: 'out', amount: 30, reason: 'ทดสอบ verify-shift-open', created_by: userId })
+      .select('id')
+      .single()
+    if (moveErr) {
+      console.log(`⚠️  ลงเงินออกจากเก๊ะตอนไม่มีกะไม่ได้ (${moveErr.message}) — ยังไม่ได้รัน migration cash-movements-no-shift\n`)
+    } else {
+      madeMoves.push(move.id)
+      const { data: ret, error: retErr } = await supabase
+        .from('returns')
+        .insert({
+          return_number: `ZZRT-${Date.now()}`,
+          transaction_id: tx.id,
+          return_value: 7, refund_amount: 7, refund_method: 'cash',
+          reason: 'ทดสอบ verify-shift-open',
+          created_by: userId,
+        })
+        .select('id')
+        .single()
+      if (retErr) throw retErr
+      madeReturns.push(ret.id)
+
+      const withBoth = await findOrphanSales(db)
+      check(withBoth?.movementsOut === 30, 'นับเงินที่หยิบออกจากเก๊ะตอนไม่มีกะเปิด', `฿${withBoth?.movementsOut}`)
+      check(withBoth?.returnRefunds === 7, 'นับเงินสดที่คืนลูกค้าจากใบคืนหลังปิดกะ', `฿${withBoth?.returnRefunds}`)
+      check(
+        withBoth?.net === (netBefore?.net ?? 0) - 37,
+        'เงินสดสุทธิในเก๊ะลดลงตามทั้งสองทาง (−฿7 ใบคืน −฿30 หยิบออก)',
+        `${netBefore?.net} → ${withBoth?.net}`,
+      )
+      check(
+        withBoth!.movementIds.includes(move.id),
+        'ส่ง id ของรายการเงินเข้า-ออกเก๊ะมาด้วย เพื่อผูกเข้ากะตอนเปิด',
+      )
+
+      // เปิดกะแบบรวมเข้ากะ → รายการต้องถูกผูกเข้ากะใหม่ ไม่งั้นตอนปิดกะเย็นนี้ยอดเพี้ยนเท่ายอดนั้น
+      const linked = await openShift(
+        { openingCash: 1_000, openedBy: userId, openedByName: 'สคริปต์ทดสอบ', orphan: withBoth, pullIn: true },
+        db,
+      )
+      check(!linked.error, 'เปิดกะพร้อมรวมเงินเข้า-ออกเก๊ะได้', linked.error ?? '')
+      if (linked.shiftId) madeShifts.push(linked.shiftId)
+      const { data: movedRow } = await supabase
+        .from('cash_movements').select('shift_id').eq('id', move.id).maybeSingle()
+      check(
+        movedRow?.shift_id === linked.shiftId,
+        'รายการเงินออกจากเก๊ะถูกผูกเข้ากะที่เพิ่งเปิด',
+        `${movedRow?.shift_id} vs ${linked.shiftId}`,
+      )
+      const { data: linkedRow } = await supabase
+        .from('shifts').select('opening_cash, notes').eq('id', linked.shiftId!).maybeSingle()
+      check(
+        Number(linkedRow?.opening_cash) === 1_000 - withBoth!.net,
+        'ยอดตั้งต้น = ที่นับได้ − เงินสุทธิของช่วงที่ไม่มีกะ (นับซ้ำไม่ได้)',
+        `฿${linkedRow?.opening_cash}`,
+      )
+      check(
+        (linkedRow?.notes ?? '').includes('หยิบออกจากเก๊ะ ฿30.00')
+          && (linkedRow?.notes ?? '').includes('คืนเงินสดจากใบคืน ฿7.00'),
+        'audit line บอกทั้งเงินที่หยิบออกและเงินที่คืนจากใบคืน',
+        linkedRow?.notes ?? '',
+      )
+      await supabase.from('shifts').delete().eq('id', linked.shiftId!)
+      madeShifts.length = 0
+      // เอารายการทดสอบออกก่อนเข้าเทสต์ถัดไป ไม่ให้ไปปนกับยอดของ section 10
+      await supabase.from('returns').delete().eq('id', ret.id)
+      madeReturns.length = 0
+      await supabase.from('cash_movements').delete().eq('id', move.id)
+      madeMoves.length = 0
+    }
     await openShift({ openingCash: 715, openedBy: userId, openedByName: 'สคริปต์ทดสอบ', carry, carryReason: 'เมื่อคืนนับเหรียญขาด', openingDenoms: hasOpenDenoms ? morning : null }, db)
     ;({ data: sameRow } = await supabase.from('shifts').select('*').is('closed_at', null).maybeSingle())
     if (sameRow) madeShifts.push(sameRow.id)

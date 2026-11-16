@@ -160,11 +160,24 @@ export default function ShiftClient({
     // มีกะเปิดอยู่ = ไม่มีบิลค้างนอกกะให้โชว์ (การ์ดนี้ขึ้นเฉพาะตอนไม่มีกะเปิด)
     if (openShift) return
     let cancelled = false
-    findOrphanSales().then((found) => {
-      if (!cancelled) setPendingSales(found)
+    // เงินเข้า-ออกเก๊ะที่ลงไว้ตอนไม่มีกะ (shift_id ว่าง) — ตัดที่เวลาปิดกะล่าสุดเหมือน findOrphanSales
+    // ของเก่ากว่านั้นเคยถูกคิดเป็นเงินตั้งต้นของกะที่ผ่านมาแล้ว เอามาโชว์ซ้ำจะเข้าใจผิดว่ายังค้าง
+    const since = history.find((h) => h.closed_at)?.closed_at
+    const loadPending = createClient()
+      .from('cash_movements')
+      .select('*, profiles(name)')
+      .is('shift_id', null)
+      .order('created_at')
+    Promise.all([
+      findOrphanSales(),
+      since ? loadPending.gte('created_at', since) : loadPending,
+    ]).then(([found, { data: moves }]) => {
+      if (cancelled) return
+      setPendingSales(found)
+      setMovements((moves as unknown as CashMovement[]) ?? [])
     })
     return () => { cancelled = true }
-  }, [openShift, reloadKey])
+  }, [openShift, reloadKey, history])
 
   const stampNow = () =>
     new Date().toLocaleString('th-TH', {
@@ -368,8 +381,14 @@ export default function ShiftClient({
         .map((d) => ({ ...d, need: (floatTargetDenoms[d.value] ?? 0) - (carryBefore[d.value] ?? 0) }))
     : []
 
+  /**
+   * บันทึกเงินเข้า-ออกเก๊ะ — ลงได้ทั้งตอนมีกะเปิดและตอนไม่มี
+   *
+   * ตอนไม่มีกะเปิด `shift_id` เป็น null ไว้ก่อน แล้วตอนเปิดกะเช้าถัดไปจะถูกผูกเข้ากะนั้นพร้อมหัก
+   * ออกจากยอดตั้งต้นให้ (ดู lib/shiftOpen) — เดิมคอลัมน์นี้เป็น NOT NULL พนักงานที่หยิบเงินไป
+   * ซื้อของตอนปิดร้านจึงไม่มีช่องให้ลง เงินก้อนนั้นโผล่เป็น "เงินขาด" เช้าวันรุ่งขึ้นแทน
+   */
   async function addMovement() {
-    if (!openShift) return
     const amount = parseFloat(moveAmount)
     if (isNaN(amount) || amount <= 0) {
       toast.error('ใส่จำนวนเงินมากกว่า 0')
@@ -380,7 +399,7 @@ export default function ShiftClient({
     const { data, error } = await supabase
       .from('cash_movements')
       .insert({
-        shift_id: openShift.id,
+        shift_id: openShift?.id ?? null,
         direction: moveDir,
         amount,
         reason: moveReason.trim() || null,
@@ -396,7 +415,11 @@ export default function ShiftClient({
     setMovements((prev) => [...prev, data as unknown as CashMovement])
     setMoveAmount('')
     setMoveReason('')
-    toast.success(moveDir === 'in' ? 'บันทึกเงินเข้าเก๊ะแล้ว' : 'บันทึกเงินออกจากเก๊ะแล้ว')
+    toast.success(
+      openShift
+        ? moveDir === 'in' ? 'บันทึกเงินเข้าเก๊ะแล้ว' : 'บันทึกเงินออกจากเก๊ะแล้ว'
+        : 'บันทึกไว้แล้ว — เช้าเปิดกะระบบจะหักให้เอง',
+    )
   }
 
   async function removeMovement(m: CashMovement) {
@@ -782,6 +805,87 @@ export default function ShiftClient({
 
   const inputClass = 'w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500'
 
+  /**
+   * กล่องเงินเข้า-ออกเก๊ะ — ใช้ทั้งในกะที่เปิดอยู่ และในการ์ดตอนยังไม่มีกะเปิด
+   * ตอนไม่มีกะเปิด รายการถูกบันทึกแบบยังไม่ผูกกะ แล้วไปผูกตอนเปิดกะเช้าถัดไป
+   */
+  const cashMovementsBox = (
+    <div className="border border-gray-200 rounded-lg p-3 mb-4">
+      <p className="text-xs font-medium text-gray-600 mb-2">
+        {openShift ? 'เงินเข้า-ออกเก๊ะระหว่างกะ' : 'เงินเข้า-ออกเก๊ะตอนไม่มีกะเปิด'}
+      </p>
+
+      {movements.length > 0 && (
+        <ul className="divide-y divide-gray-50 mb-2.5">
+          {movements.map((m) => (
+            <li key={m.id} className="flex items-center gap-2 py-1.5 text-sm">
+              <span className={`shrink-0 text-xs px-1.5 py-0.5 rounded font-medium ${
+                m.direction === 'in' ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'
+              }`}>
+                {m.direction === 'in' ? 'เติมเข้า' : 'หยิบออก'}
+              </span>
+              <span className="font-medium text-gray-900 tabular-nums">
+                {m.direction === 'in' ? '+' : '-'}฿{money(Number(m.amount))}
+              </span>
+              <span className="text-gray-500 truncate flex-1 min-w-0">{m.reason ?? '—'}</span>
+              <span className="text-xs text-gray-400 shrink-0">{fmtTime(m.created_at)}</span>
+              <button
+                onClick={() => removeMovement(m)}
+                className="shrink-0 text-gray-300 hover:text-red-500 text-xs"
+                title="ลบรายการนี้"
+              >
+                ลบ
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="flex bg-gray-100 rounded-lg p-0.5 shrink-0">
+          {([['out', 'หยิบออก'], ['in', 'เติมเข้า']] as const).map(([dir, label]) => (
+            <button
+              key={dir}
+              onClick={() => setMoveDir(dir)}
+              className={`px-2.5 py-1 rounded-md text-xs font-medium ${
+                moveDir === dir ? (dir === 'in' ? 'bg-emerald-600 text-white' : 'bg-amber-600 text-white') : 'text-gray-500'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        <input
+          type="number" min="0" step="0.01"
+          value={moveAmount}
+          onChange={(e) => setMoveAmount(e.target.value)}
+          placeholder="จำนวนเงิน"
+          className="w-28 border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+        />
+        <input
+          type="text"
+          value={moveReason}
+          onChange={(e) => setMoveReason(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter' && !moveBusy) addMovement() }}
+          placeholder={moveDir === 'in' ? 'เช่น เอาเงินทอนมาเติม' : 'เช่น เจ้าของมารับ / จ่ายค่าส่งของ'}
+          className="flex-1 min-w-44 border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+        />
+        <button
+          onClick={addMovement}
+          disabled={moveBusy}
+          className="bg-gray-900 hover:bg-gray-800 disabled:opacity-50 text-white text-sm font-medium px-3 py-1.5 rounded-lg"
+        >
+          บันทึก
+        </button>
+      </div>
+      <p className="text-xs text-gray-400 mt-1.5">
+        {openShift
+        ? 'บันทึกไว้แล้วยอด “เงินสดที่ควรมีในลิ้นชัก” จะขยับตาม ตอนปิดกะจะได้ไม่ขึ้นว่าขาด/เกินทั้งที่ไม่มีอะไรหาย'
+        : 'ปิดกะไปแล้วแต่ต้องหยิบเงินออกจากเก๊ะ (หรือเอามาเติม) — ลงไว้ตรงนี้เลย เช้าเปิดกะระบบจะผูกเข้ากะใหม่แล้วหักออกจากยอดตั้งต้นให้เอง ไม่โผล่เป็นเงินขาด'}
+      </p>
+    </div>
+  )
+
   return (
     <div>
       <h1 className="text-2xl font-bold text-gray-900 mb-1">ปิดกะ / นับเงินสด</h1>
@@ -800,14 +904,23 @@ export default function ShiftClient({
             {!openShift && pendingSales && (
               <div className="mb-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900 space-y-1">
                 <p className="font-semibold">
-                  {pendingSales.afterClose ? 'มีบิลที่ขายหลังปิดกะ' : 'มีบิลที่ขายตอนยังไม่เปิดกะ'}{' '}
-                  {pendingSales.bills} ใบ
+                  {pendingSales.bills === 0 && pendingSales.cash === 0 ? (
+                    <>มีเงินเข้า-ออกเก๊ะที่ยังไม่เข้ากะ {pendingSales.movementIds.length} รายการ</>
+                  ) : (
+                    <>
+                      {pendingSales.afterClose ? 'มีบิลที่ขายหลังปิดกะ' : 'มีบิลที่ขายตอนยังไม่เปิดกะ'}{' '}
+                      {pendingSales.bills} ใบ
+                    </>
+                  )}
                 </p>
                 <p>
                   {fmtDate(pendingSales.firstAt)}
                   {pendingSales.lastAt !== pendingSales.firstAt && <> - {fmtTime(pendingSales.lastAt)}</>} ·
                   เงินสด ฿{money(pendingSales.cash)}
                   {pendingSales.refunds > 0 && <> − คืนเงินสด ฿{money(pendingSales.refunds)}</>}
+                  {pendingSales.returnRefunds > 0 && <> − คืนเงินสดจากใบคืน ฿{money(pendingSales.returnRefunds)}</>}
+                  {pendingSales.movementsIn > 0 && <> + เติมเข้าเก๊ะ ฿{money(pendingSales.movementsIn)}</>}
+                  {pendingSales.movementsOut > 0 && <> − หยิบออกจากเก๊ะ ฿{money(pendingSales.movementsOut)}</>}
                 </p>
                 <p className="text-amber-800">
                   เงิน ฿{money(pendingSales.net)} ก้อนนี้ควรอยู่ในเก๊ะ — กดเปิดกะแล้วระบบยกบิลมารวมกะใหม่
@@ -821,6 +934,18 @@ export default function ShiftClient({
             >
               <Wallet size={15} /> เปิดกะ
             </button>
+          </div>
+
+          {/* ปิดกะไปแล้วแต่เงินในเก๊ะยังขยับ — ต้องมีช่องให้ลง ไม่ใช่ปล่อยให้โผล่เป็นเงินขาดเช้าวันรุ่งขึ้น */}
+          <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 w-full max-w-sm">
+            <div className="flex items-center gap-2 mb-1">
+              <ArrowRightLeft size={18} className="text-gray-400" />
+              <h2 className="font-semibold text-gray-900">เงินเข้า-ออกเก๊ะ</h2>
+            </div>
+            <p className="text-xs text-gray-500 mb-3">
+              ปิดกะไปแล้วแต่ยังต้องหยิบเงินออกจากเก๊ะหรือเอามาเติม — ลงไว้ตรงนี้ได้เลย ไม่ต้องรอเปิดกะ
+            </p>
+            {cashMovementsBox}
           </div>
 
           {canEditClosed && lastClosed && carryBefore && (
@@ -1036,77 +1161,7 @@ export default function ShiftClient({
             )}
           </div>
 
-          {/* เงินเข้า-ออกเก๊ะระหว่างกะ — ไม่ใช่การขาย แต่มีผลกับเงินที่ควรมี */}
-          <div className="border border-gray-200 rounded-lg p-3 mb-4">
-            <p className="text-xs font-medium text-gray-600 mb-2">เงินเข้า-ออกเก๊ะระหว่างกะ</p>
-
-            {movements.length > 0 && (
-              <ul className="divide-y divide-gray-50 mb-2.5">
-                {movements.map((m) => (
-                  <li key={m.id} className="flex items-center gap-2 py-1.5 text-sm">
-                    <span className={`shrink-0 text-xs px-1.5 py-0.5 rounded font-medium ${
-                      m.direction === 'in' ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'
-                    }`}>
-                      {m.direction === 'in' ? 'เติมเข้า' : 'หยิบออก'}
-                    </span>
-                    <span className="font-medium text-gray-900 tabular-nums">
-                      {m.direction === 'in' ? '+' : '-'}฿{money(Number(m.amount))}
-                    </span>
-                    <span className="text-gray-500 truncate flex-1 min-w-0">{m.reason ?? '—'}</span>
-                    <span className="text-xs text-gray-400 shrink-0">{fmtTime(m.created_at)}</span>
-                    <button
-                      onClick={() => removeMovement(m)}
-                      className="shrink-0 text-gray-300 hover:text-red-500 text-xs"
-                      title="ลบรายการนี้"
-                    >
-                      ลบ
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
-
-            <div className="flex flex-wrap items-center gap-2">
-              <div className="flex bg-gray-100 rounded-lg p-0.5 shrink-0">
-                {([['out', 'หยิบออก'], ['in', 'เติมเข้า']] as const).map(([dir, label]) => (
-                  <button
-                    key={dir}
-                    onClick={() => setMoveDir(dir)}
-                    className={`px-2.5 py-1 rounded-md text-xs font-medium ${
-                      moveDir === dir ? (dir === 'in' ? 'bg-emerald-600 text-white' : 'bg-amber-600 text-white') : 'text-gray-500'
-                    }`}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
-              <input
-                type="number" min="0" step="0.01"
-                value={moveAmount}
-                onChange={(e) => setMoveAmount(e.target.value)}
-                placeholder="จำนวนเงิน"
-                className="w-28 border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-              <input
-                type="text"
-                value={moveReason}
-                onChange={(e) => setMoveReason(e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Enter' && !moveBusy) addMovement() }}
-                placeholder={moveDir === 'in' ? 'เช่น เอาเงินทอนมาเติม' : 'เช่น เจ้าของมารับ / จ่ายค่าส่งของ'}
-                className="flex-1 min-w-44 border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-              <button
-                onClick={addMovement}
-                disabled={moveBusy}
-                className="bg-gray-900 hover:bg-gray-800 disabled:opacity-50 text-white text-sm font-medium px-3 py-1.5 rounded-lg"
-              >
-                บันทึก
-              </button>
-            </div>
-            <p className="text-xs text-gray-400 mt-1.5">
-              บันทึกไว้แล้วยอด &ldquo;เงินสดที่ควรมีในลิ้นชัก&rdquo; จะขยับตาม ตอนปิดกะจะได้ไม่ขึ้นว่าขาด/เกินทั้งที่ไม่มีอะไรหาย
-            </p>
-          </div>
+          {cashMovementsBox}
 
           <label className="block text-xs font-medium text-gray-600 mb-2">นับเงินสดจริง (ใส่จำนวนใบ/เหรียญ)</label>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1.5 mb-3">

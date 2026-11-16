@@ -329,7 +329,13 @@ export default function OpenShiftModal({
                   className="mt-0.5 w-4 h-4 shrink-0 accent-amber-600"
                 />
                 <span>
-                  {orphan.afterClose ? (
+                  {orphan.bills === 0 && orphan.cash === 0 ? (
+                    <>
+                      <b>รวมเงินเข้า-ออกเก๊ะที่ลงไว้ตอนไม่มีกะ</b> — {orphan.movementIds.length} รายการ
+                      ({fmtWhen(orphan.firstAt)}
+                      {orphan.lastAt !== orphan.firstAt && <>-{fmtTime(orphan.lastAt)}</>})
+                    </>
+                  ) : orphan.afterClose ? (
                     <>
                       <b>ยกบิลที่ขายหลังปิดกะมารวมกะนี้</b> — หลังปิดกะ {fmtWhen(orphan.since)} มีขายอีก{' '}
                       {orphan.bills} ใบ ({fmtWhen(orphan.firstAt)}
@@ -340,21 +346,25 @@ export default function OpenShiftModal({
                       <b>รวมบิลที่ขายไปก่อนเปิดกะ</b> — วันนี้มีบิลหน้าร้าน {orphan.bills} ใบ ที่ขายตอนไม่มีกะเปิด
                     </>
                   )}
-                  {' '}เงินสด ฿{money(orphan.cash)}
+                  {orphan.cash > 0 && <> เงินสด ฿{money(orphan.cash)}</>}
                   {orphan.refunds > 0 && <> − คืนเงินสด ฿{money(orphan.refunds)}</>}
+                  {orphan.returnRefunds > 0 && <> − คืนเงินสดจากใบคืน ฿{money(orphan.returnRefunds)}</>}
+                  {orphan.movementsIn > 0 && <> + เติมเข้าเก๊ะ ฿{money(orphan.movementsIn)}</>}
+                  {orphan.movementsOut > 0 && <> − หยิบออกจากเก๊ะ ฿{money(orphan.movementsOut)}</>}
                 </span>
               </label>
               <p className="text-xs text-amber-800">
                 {pullIn ? (
                   <>
-                    ยอดขายก้อนนี้จะมาอยู่ในกะนี้ (กะเริ่มนับตั้งแต่ <b>{fmtWhen(orphan.firstAt)}</b>) ·
-                    เงินสด ฿{money(pending)} อยู่ในเก๊ะที่นับอยู่นี่แล้ว <b>ระบบหักออกจากยอดตั้งต้นให้เอง</b>{' '}
+                    ยอดขายก้อนนี้จะมาอยู่ในกะนี้ (กะเริ่มนับตั้งแต่ <b>{fmtWhen(orphan.firstAt)}</b>)
+                    {orphan.movementIds.length > 0 && <> · เงินเข้า-ออกเก๊ะ {orphan.movementIds.length} รายการผูกเข้ากะนี้ด้วย</>} ·
+                    เงินสดสุทธิ ฿{money(pending)} อยู่ในเก๊ะที่นับอยู่นี่แล้ว <b>ระบบหักออกจากยอดตั้งต้นให้เอง</b>{' '}
                     (ตั้งต้น ฿{money(openingStored)}) ตอนปิดกะเย็นนี้ยอดจะตรงกับเงินในเก๊ะ
                   </>
                 ) : (
                   <>
                     ไม่ติ๊ก = ยอดขายก้อนนี้ไม่อยู่ในกะไหนเลย (ยังอยู่ในสรุปยอดขายรายวันตามปกติ) ·
-                    เงินสด ฿{money(pending)} จะถูกนับเป็นเงินตั้งต้นของกะนี้แทน
+                    เงินสดสุทธิ ฿{money(pending)} จะถูกนับเป็นเงินตั้งต้นของกะนี้แทน
                   </>
                 )}
               </p>

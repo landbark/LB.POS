@@ -33,7 +33,7 @@ const fmtWhen = (iso: string) => {
 }
 
 export interface OrphanSales {
-  /** เวลาบิลแรกของช่วงที่ไม่มีกะ — ใช้เป็น `opened_at` ถ้าเลือกรวมเข้ากะ */
+  /** เวลาที่เงินสดเริ่มขยับในช่วงที่ไม่มีกะ (บิลแรก หรือรายการเงินเข้า-ออกเก๊ะแรก) — ใช้เป็น `opened_at` ถ้าเลือกรวมเข้ากะ */
   firstAt: string
   /** เวลาบิลสุดท้าย — โชว์ช่วงเวลาให้คนเปิดกะเห็นว่าขายกันตอนไหน */
   lastAt: string
@@ -41,9 +41,17 @@ export interface OrphanSales {
   bills: number
   /** เงินสดที่รับไว้ทั้งช่วง — รวมบิลที่ยกเลิกทีหลังด้วย เงินเข้าเก๊ะไปแล้วตอนขาย */
   cash: number
-  /** เงินสดที่คืนลูกค้าในช่วงนั้น — ออกจากเก๊ะไปแล้ว */
+  /** เงินสดที่คืนลูกค้าจากบิลที่ยกเลิกในช่วงนั้น — ออกจากเก๊ะไปแล้ว */
   refunds: number
-  /** เงินสดสุทธิที่ตอนนี้อยู่ในเก๊ะเพราะช่วงนี้ = cash − refunds (ติดลบได้ถ้าคืนมากกว่าขาย) */
+  /** เงินสดที่คืนลูกค้าจากใบคืน/เปลี่ยนสินค้าในช่วงนั้น — ออกจากเก๊ะไปแล้วเหมือนกัน */
+  returnRefunds: number
+  /** เงินที่เติมเข้าเก๊ะตอนไม่มีกะเปิด (cash_movements ที่ยังไม่ผูกกะ) */
+  movementsIn: number
+  /** เงินที่หยิบออกจากเก๊ะตอนไม่มีกะเปิด */
+  movementsOut: number
+  /** id ของรายการเงินเข้า-ออกเก๊ะที่ยังไม่ผูกกะ — ผูกเข้ากะใหม่ตอนเปิดกะถ้าเลือกรวม */
+  movementIds: string[]
+  /** เงินสดสุทธิที่ตอนนี้อยู่ในเก๊ะเพราะช่วงนี้ = ขาย − คืน − คืนจากใบคืน + เติมเข้า − หยิบออก (ติดลบได้) */
   net: number
   /** จุดเริ่มของช่วง = เวลาปิดกะที่แล้ว หรือต้นวันไทยถ้ายังไม่เคยปิดกะ */
   since: string
@@ -54,8 +62,12 @@ export interface OrphanSales {
 }
 
 /**
- * บิลขายหน้าร้านที่ยังไม่อยู่ในกะไหนเลย — ขายหลังปิดกะเมื่อคืน หรือขายไปแล้วตอนยังไม่เปิดกะวันนี้
+ * เงินสดที่ขยับตอนไม่มีกะเปิด — ขายหลังปิดกะเมื่อคืน หรือขายไปแล้วตอนยังไม่เปิดกะวันนี้
  * ไม่มีเงินสดขยับเลยคืน null
+ *
+ * นับ 4 ทางที่เงินในเก๊ะขยับได้ตอนไม่มีกะ: ขายเงินสด · คืนเงินสดจากบิลที่ยกเลิก ·
+ * คืนเงินสดจากใบคืน/เปลี่ยนสินค้า · เงินเข้า-ออกเก๊ะที่ยังไม่ผูกกะ (พนักงานหยิบไปซื้อของตอนปิดร้าน)
+ * สองทางหลังเพิ่งเพิ่มเข้ามา — ก่อนหน้านี้ไม่ถูกนับ เช้ามาจึงขึ้นว่า "เงินขาด" ทั้งที่มีคนลงบันทึกไว้แล้ว
  *
  * ช่วงที่นับเริ่มจาก "เวลาที่กะล่าสุดปิด" ข้ามคืนได้ — ร้านปิดสี่ทุ่มแล้วลูกค้ามาเพิ่มอีกบิล
  * บิลนั้นอยู่คนละวันไทยกับเช้าวันรุ่งขึ้น เดิมตัดที่ต้นวันจึงตกขอบ ไม่มีใครเห็น เงินอยู่ในเก๊ะ
@@ -78,7 +90,7 @@ export async function findOrphanSales(supabase: Db = createClient()): Promise<Or
   const since = (last?.closed_at as string | undefined) ?? startISO
   const afterClose = !!last?.closed_at
 
-  const [{ data, error }, { data: refundRows }] = await Promise.all([
+  const [{ data, error }, { data: refundRows }, { data: returnRows }, { data: moveRows }] = await Promise.all([
     supabase
       .from('transactions')
       .select('created_at, status, total, payment_method, transaction_payments(method, amount)')
@@ -93,27 +105,63 @@ export async function findOrphanSales(supabase: Db = createClient()): Promise<Or
       .eq('refund_method', 'cash')
       .eq('sales_channel', 'store')
       .gte('cancelled_at', since),
+    // ใบคืน/เปลี่ยนสินค้าที่จ่ายเงินสดคืนลูกค้าหลังปิดกะ — เงินออกจากเก๊ะเหมือนกัน (ดู lib/returns)
+    supabase
+      .from('returns')
+      .select('refund_amount')
+      .eq('refund_method', 'cash')
+      .gt('refund_amount', 0)
+      .gte('created_at', since),
+    // เงินเข้า-ออกเก๊ะที่ลงไว้ตอนไม่มีกะเปิด (shift_id ว่าง) — หยิบไปซื้อของตอนปิดร้านก็ลงได้แล้ว
+    supabase
+      .from('cash_movements')
+      .select('id, direction, amount, created_at')
+      .is('shift_id', null)
+      .gte('created_at', since)
+      .order('created_at'),
   ])
   if (error) return null
 
   const rows = (data ?? []) as unknown as (ShiftBill & { created_at: string })[]
   const refunds = (refundRows ?? []).reduce((s, t) => s + Number(t.total), 0)
-  if (rows.length === 0 && refunds <= 0) return null
+  const returnRefunds = (returnRows ?? []).reduce((s, r) => s + Number(r.refund_amount), 0)
+  const moves = (moveRows ?? []) as { id: string; direction: string; amount: number; created_at: string }[]
+  const movementsIn = moves.filter((m) => m.direction === 'in').reduce((s, m) => s + Number(m.amount), 0)
+  const movementsOut = moves.filter((m) => m.direction === 'out').reduce((s, m) => s + Number(m.amount), 0)
   const split = splitShiftBills(rows)
   const cash = (split.byMethod.cash ?? 0) + split.cashFromCancelled
-  if (cash <= 0 && refunds <= 0) return null
-  const firstAt = rows[0]?.created_at ?? since
+  // ไม่มีเงินสดขยับเลยสักทาง = ไม่มีอะไรให้คนเปิดกะตัดสินใจ
+  if (cash <= 0 && refunds <= 0 && returnRefunds <= 0 && moves.length === 0) return null
+  // ช่วงเริ่มที่ "เงินขยับครั้งแรก" ไม่ใช่บิลแรกอย่างเดียว — คืนที่หยิบเงินออกก่อนจะมีบิลก็มี
+  const stamps = [rows[0]?.created_at, moves[0]?.created_at].filter(Boolean) as string[]
+  const firstAt = stamps.length ? stamps.reduce((a, b) => (a < b ? a : b)) : since
+  const lastStamps = [rows[rows.length - 1]?.created_at, moves[moves.length - 1]?.created_at].filter(Boolean) as string[]
   return {
     firstAt,
-    lastAt: rows[rows.length - 1]?.created_at ?? firstAt,
+    lastAt: lastStamps.length ? lastStamps.reduce((a, b) => (a > b ? a : b)) : firstAt,
     bills: split.bills,
     cash,
     refunds,
-    net: cash - refunds,
+    returnRefunds,
+    movementsIn,
+    movementsOut,
+    movementIds: moves.map((m) => m.id),
+    net: cash - refunds - returnRefunds + movementsIn - movementsOut,
     since,
     afterClose,
     hours: (Date.now() - new Date(firstAt).getTime()) / 3_600_000,
   }
+}
+
+/** ที่มาของเงินสดที่ขยับหลังปิดกะ แยกทาง — ติดลบ = ออกจากเก๊ะ (ใช้ในข้อความแจ้งเตือนเปิดกะ) */
+export function pendingParts(o: OrphanSales): { label: string; amount: number }[] {
+  return [
+    { label: 'ขายเงินสด', amount: o.cash },
+    { label: 'คืนเงินสดบิลที่ยกเลิก', amount: -o.refunds },
+    { label: 'คืนเงินสดจากใบคืน', amount: -o.returnRefunds },
+    { label: 'เติมเข้าเก๊ะ', amount: o.movementsIn },
+    { label: 'หยิบออกจากเก๊ะ', amount: -o.movementsOut },
+  ].filter((x) => x.amount !== 0)
 }
 
 /** ข้อความ audit ที่เขียนลง `shifts.notes` ตอนย้อนเวลาเปิดกะ (รูปแบบเดียวกับการแก้ยอดย้อนหลัง) */
@@ -126,10 +174,16 @@ export function orphanNote(
     timeZone: 'Asia/Bangkok', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit',
   })
   const pulledIn = opts.pulledIn ?? true
+  const span = `${fmtWhen(orphan.firstAt)}-${fmtTime(orphan.lastAt)}`
+  const moves = orphan.movementIds.length
   const what =
-    `บิลหน้าร้าน ${orphan.bills} ใบ ${fmtWhen(orphan.firstAt)}-${fmtTime(orphan.lastAt)} ` +
-    `เงินสด ฿${money(orphan.cash)}` +
-    (orphan.refunds > 0 ? ` − คืนเงินสด ฿${money(orphan.refunds)}` : '')
+    (orphan.bills > 0 || orphan.cash > 0
+      ? `บิลหน้าร้าน ${orphan.bills} ใบ ${span} เงินสด ฿${money(orphan.cash)}`
+      : `เงินเข้า-ออกเก๊ะ ${moves} รายการ ${span}`) +
+    (orphan.refunds > 0 ? ` − คืนเงินสด ฿${money(orphan.refunds)}` : '') +
+    (orphan.returnRefunds > 0 ? ` − คืนเงินสดจากใบคืน ฿${money(orphan.returnRefunds)}` : '') +
+    (orphan.movementsIn > 0 ? ` + เติมเข้าเก๊ะ ฿${money(orphan.movementsIn)}` : '') +
+    (orphan.movementsOut > 0 ? ` − หยิบออกจากเก๊ะ ฿${money(orphan.movementsOut)}` : '')
   if (!pulledIn) {
     return (
       `[บิลที่ยังไม่เข้ากะ ${stamp} โดย ${byName || 'พนักงาน'}] ไม่รวมเข้ากะนี้ · ${what} · ` +
@@ -266,10 +320,12 @@ export interface ShiftOpenMismatch {
   carryCounted: number
   /** ที่แยกให้เจ้าของตอนปิด (ลบ = เจ้าของเติมเงินทอนเข้าเก๊ะ) */
   toOwner: number
-  /** เงินสดสุทธิจากบิลที่ขายหลังปิดกะ · 0 = คืนนั้นไม่มีใครมาซื้อ */
+  /** เงินสดสุทธิที่ขยับหลังปิดกะ · 0 = คืนนั้นเงินในเก๊ะไม่ขยับเลย */
   pending: number
   /** จำนวนบิลที่ขายหลังปิดกะ */
   pendingBills: number
+  /** ที่มาของ `pending` แยกทาง (ขาย / คืนเงิน / เงินเข้า-ออกเก๊ะ) — ติดลบ = ออกจากเก๊ะ */
+  pendingParts: { label: string; amount: number }[]
   /** ควรมีในเก๊ะเช้านี้ = ยกมา + ขายหลังปิดกะ */
   expected: number
   /** ที่นับได้จริงเช้านี้ */
@@ -347,6 +403,25 @@ export async function openShift(
   if (error) return { error: error.code === '23505' ? 'มีกะที่เปิดอยู่แล้ว' : 'เปิดกะไม่สำเร็จ: ' + error.message }
 
   const shiftId = (data as { id?: string } | null)?.id
+
+  // ผูกรายการเงินเข้า-ออกเก๊ะที่ลงไว้ตอนไม่มีกะเข้ากะนี้ — ต้องทำคู่กับการหักเงินก้อนนั้นออกจาก
+  // ยอดตั้งต้น ไม่ผูกแล้วตอนปิดกะเย็นนี้จะขึ้นว่าเงินขาด/เกินเท่ายอดนั้น ทั้งที่มีคนลงบันทึกไว้แล้ว
+  // (ไม่รวมเข้ากะ = ปล่อย shift_id ว่างไว้ เงินก้อนนั้นอยู่ในยอดตั้งต้นแทน ไม่ต้องนับอีกตอนปิด)
+  if (shiftId && pullIn && orphan && orphan.movementIds.length > 0) {
+    const { error: linkError } = await supabase
+      .from('cash_movements')
+      .update({ shift_id: shiftId })
+      .in('id', orphan.movementIds)
+    if (linkError) {
+      const warn =
+        `[ผูกเงินเข้า-ออกเก๊ะเข้ากะนี้ไม่สำเร็จ] ${orphan.movementIds.length} รายการ ` +
+        `(เติมเข้า ฿${money(orphan.movementsIn)} · หยิบออก ฿${money(orphan.movementsOut)}) ` +
+        `ยังไม่ผูกกะ — ตอนปิดกะยอดจะเพี้ยนเท่ายอดนี้ ให้เจ้าของแก้ยอดตั้งต้นหรือผูกรายการให้ตรง`
+      notes.push(warn)
+      await supabase.from('shifts').update({ notes: notes.join('\n') }).eq('id', shiftId)
+    }
+  }
+
   if (!opts.carry) return { shiftId }
   const expected = opts.carry.amount + pending
   const diff = opts.openingCash - expected
@@ -360,6 +435,7 @@ export async function openShift(
       toOwner: opts.carry.toOwner,
       pending,
       pendingBills: orphan?.bills ?? 0,
+      pendingParts: orphan ? pendingParts(orphan) : [],
       expected,
       counted: opts.openingCash,
       diff,

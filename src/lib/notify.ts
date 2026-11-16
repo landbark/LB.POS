@@ -608,9 +608,11 @@ export interface ShiftOpenInfo {
   carryClosedAt: string
   carryCounted: number
   toOwner: number
-  /** เงินสดสุทธิจากบิลที่ขายหลังปิดกะ */
+  /** เงินสดสุทธิที่ขยับหลังปิดกะ */
   pending: number
   pendingBills: number
+  /** ที่มาของ pending แยกทาง — ติดลบ = ออกจากเก๊ะ */
+  pendingParts?: { label: string; amount: number }[]
   expected: number
   counted: number
   /** counted − expected · บวก = เกิน, ลบ = ขาด */
@@ -637,8 +639,16 @@ export function buildShiftOpenMessage(s: ShiftOpenInfo): string {
     `  · ปิดกะ ${short(s.carryClosedAt)} นับได้ ${baht(s.carryCounted)}` +
       (s.toOwner > 0 ? ` − แยกให้เจ้าของ ${baht(s.toOwner)}` : '') +
       (s.toOwner < 0 ? ` + เจ้าของเติมเข้า ${baht(-s.toOwner)}` : ''),
-    ...(s.pending !== 0
-      ? [`บิลที่ขายหลังปิดกะ: ${baht(s.pending)}${s.pendingBills ? ` (${s.pendingBills} บิล)` : ''}`]
+    ...(s.pending !== 0 || (s.pendingParts?.length ?? 0) > 0
+      ? [
+          `เงินสดที่ขยับหลังปิดกะ: ${baht(s.pending)}`,
+          // แยกทางให้เห็น — "ขาด ฿25" ที่มีเงินหยิบออก ฿25 บันทึกไว้แล้วคือเรื่องคนละเรื่องกับเงินหาย
+          ...(s.pendingParts ?? []).map(
+            (x) =>
+              `  · ${x.label} ${x.amount < 0 ? '−' : ''}${baht(Math.abs(x.amount))}` +
+              (x.label === 'ขายเงินสด' && s.pendingBills ? ` (${s.pendingBills} บิล)` : ''),
+          ),
+        ]
       : []),
     `เงินที่ควรมีเช้านี้: ${baht(s.expected)}`,
     `นับได้จริง: ${baht(s.counted)}`,
