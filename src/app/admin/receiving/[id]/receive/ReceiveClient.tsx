@@ -17,7 +17,7 @@ interface ReceiveItem {
   unit_name: string | null
   quantity: number
   unit_cost: number
-  products: { name: string; sku: string | null; unit: string } | null
+  products: { name: string; sku: string | null; unit: string; cost: number | null; avg_cost: number | null } | null
 }
 
 interface ReceivePurchase {
@@ -44,9 +44,46 @@ interface RowState {
   orderedQty: number
   receivedQty: string
   unitCost: string
+  /** ทุนล่าสุดต่อหน่วยฐานก่อนรับใบนี้ — ไว้เทียบว่าราคาขึ้นหรือลง */
+  prevCost: number | null
+  /** ทุนเฉลี่ยของสต็อคที่ยังเหลือ ก่อนรับใบนี้ */
+  prevAvgCost: number | null
   lotNumber: string
   supplierLot: string
   expiryDate: string
+}
+
+/** ทุนต่อหน่วยฐานจากแถวหนึ่ง — สั่งเป็นลังต้องหารจำนวนต่อลังก่อน */
+function baseCostOf(r: Pick<RowState, 'unitCost' | 'factor'>): number | null {
+  const c = parseFloat(r.unitCost)
+  if (!isFinite(c) || c <= 0) return null
+  return Math.round((c / (r.factor || 1)) * 100) / 100
+}
+
+const money = (n: number) => n.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+
+/**
+ * ใต้ช่องทุน — บอกว่าตัวเลขที่พิมพ์จะกลายเป็นทุนต่อหน่วยฐานเท่าไหร่ และเทียบกับ
+ * ทุนล่าสุด/ทุนเฉลี่ยเดิม พนักงานจะได้เห็นว่าราคาขึ้นหรือลงก่อนกดยืนยัน
+ */
+function CostHint({ row }: { row: RowState }) {
+  const base = baseCostOf(row)
+  if (base == null) return null
+  const diff = row.prevCost != null ? base - row.prevCost : null
+  return (
+    <div className="mt-0.5 pl-1 text-[11px] leading-tight text-gray-400">
+      {row.factor > 1 && <p>= ฿{money(base)}/{row.unit}</p>}
+      <p>
+        {row.prevCost != null ? <>เดิม {money(row.prevCost)}</> : <>ยังไม่เคยมีทุน</>}
+        {diff != null && Math.abs(diff) >= 0.01 && (
+          <span className={diff > 0 ? 'text-amber-600' : 'text-green-600'}>
+            {' '}{diff > 0 ? '↑' : '↓'}{money(Math.abs(diff))}
+          </span>
+        )}
+      </p>
+      {row.prevAvgCost != null && <p>เฉลี่ย {money(row.prevAvgCost)}</p>}
+    </div>
+  )
 }
 
 // LOT ระบบ: LOT + วันที่(2) เดือน(2) ปีค.ศ.(4) ของวันที่รับสินค้า
@@ -84,6 +121,8 @@ export default function ReceiveClient({
       orderedQty: it.quantity,
       receivedQty: it.quantity.toString(),
       unitCost: it.unit_cost.toString(),
+      prevCost: it.products?.cost ?? null,
+      prevAvgCost: it.products?.avg_cost ?? null,
       lotNumber: defaultLot(),
       supplierLot: '',
       expiryDate: '',
@@ -109,6 +148,8 @@ export default function ReceiveClient({
       orderedQty: 0,
       receivedQty: '',
       unitCost: '',
+      prevCost: null,
+      prevAvgCost: null,
       lotNumber: defaultLot(),
       supplierLot: '',
       expiryDate: '',
@@ -127,6 +168,8 @@ export default function ReceiveClient({
       factor: 1,
       unitLabel: p?.unit ?? '',
       unitCost: next[i].unitCost || (p?.cost != null ? String(p.cost) : ''),
+      prevCost: p?.cost ?? null,
+      prevAvgCost: p?.avg_cost ?? null,
     }
     setRows(next)
   }
@@ -226,6 +269,8 @@ export default function ReceiveClient({
               expiry_date: r.expiryDate || null,
               quantity: qty,
               initial_quantity: qty,
+              // ทุนติดไปกับล็อต ระบบจะได้เฉลี่ยจากของที่เหลือจริงให้เอง
+              unit_cost: baseCostOf(r),
             }
           })
         )
@@ -262,6 +307,24 @@ export default function ReceiveClient({
           expiry_date: r.expiryDate || null,
         })
         .eq('id', r.itemId)
+    }
+
+    // ทุนล่าสุดในหน้าสินค้า = ราคาที่เพิ่งรับมาจริง (ตัวที่พนักงานพิมพ์ในช่องทุน/หน่วย)
+    // ใบสั่งซื้อใบหน้าจะได้ดึงราคานี้ไปตั้งต้น ไม่ใช่ราคางวดเก่าค้างปี
+    // ส่วนทุนเฉลี่ย ฐานข้อมูลคิดให้เองจากล็อตที่เหลือ ไม่ต้องยุ่งตรงนี้
+    for (const r of toReceive) {
+      const base = baseCostOf(r)
+      if (!r.productId || base == null) continue
+      await supabase.from('products').update({ cost: base }).eq('id', r.productId)
+
+      // หน่วยลังที่ "ตั้งทุนไว้เอง" ต้องอัปเดตด้วย ไม่งั้นมันทับค่าที่คูณจากทุนฐาน
+      // หน่วยที่ปล่อยว่างไว้ไม่ต้องแตะ — มันคูณจากทุนฐานให้อยู่แล้ว
+      if (r.unitId) {
+        const unit = products.find((p) => p.id === r.productId)?.product_units?.find((u) => u.id === r.unitId)
+        if (unit?.cost != null) {
+          await supabase.from('product_units').update({ cost: parseFloat(r.unitCost) || 0 }).eq('id', r.unitId)
+        }
+      }
     }
 
     const { error: pErr } = await supabase
@@ -307,7 +370,7 @@ export default function ReceiveClient({
 
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
         <p className="text-sm text-gray-500 mb-3">
-          ถ้าของมาไม่ครบ แก้ช่อง &quot;รับจริง&quot; ให้ตรงกับที่ได้รับ · ของไม่มาเลยกดถังขยะถอดออกได้ · ของมาเกินใบกด &quot;เพิ่มรายการที่ไม่ได้สั่ง&quot; (ใบสั่งซื้อจะปิดทันทีหลังยืนยัน)
+          ถ้าของมาไม่ครบ แก้ช่อง &quot;รับจริง&quot; ให้ตรงกับที่ได้รับ · ของไม่มาเลยกดถังขยะถอดออกได้ · ของมาเกินใบกด &quot;เพิ่มรายการที่ไม่ได้สั่ง&quot; (ใบสั่งซื้อจะปิดทันทีหลังยืนยัน) · ทุนที่กรอกตรงนี้จะกลายเป็นทุนล่าสุดของสินค้า แก้ให้ตรงบิลก่อนกดยืนยัน
         </p>
 
         <div className="overflow-x-auto">
@@ -319,7 +382,7 @@ export default function ReceiveClient({
                 <th className="text-left font-medium pb-2 pr-2 min-w-40">สินค้า</th>
                 <th className="text-right font-medium pb-2 pr-2 min-w-20 whitespace-nowrap">สั่ง</th>
                 <th className="text-left font-medium pb-2 pr-2 min-w-44 whitespace-nowrap">รับจริง</th>
-                <th className="text-left font-medium pb-2 pr-2 w-28">ทุน/หน่วย</th>
+                <th className="text-left font-medium pb-2 pr-2 w-36">ทุน/หน่วย</th>
                 <th className="text-left font-medium pb-2 pr-2 w-32">LOT (ระบบ)</th>
                 <th className="text-left font-medium pb-2 pr-2 w-32">LOT บริษัท</th>
                 <th className="text-left font-medium pb-2 pr-2 w-36">วันหมดอายุ</th>
@@ -370,12 +433,13 @@ export default function ReceiveClient({
                         </p>
                       )}
                     </td>
-                    <td className="pr-2 py-1.5">
+                    <td className="pr-2 py-1.5 align-top">
                       <input
                         type="number" min="0" step="0.01" value={r.unitCost}
                         onChange={(e) => setRow(i, 'unitCost', e.target.value)}
                         className={inputClass}
                       />
+                      <CostHint row={r} />
                     </td>
                     <td className="pr-2 py-1.5">
                       <input type="text" value={r.lotNumber} onChange={(e) => setRow(i, 'lotNumber', e.target.value)} className={inputClass} />

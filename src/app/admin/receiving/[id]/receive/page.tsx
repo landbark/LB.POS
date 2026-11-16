@@ -11,14 +11,14 @@ export default async function ReceivePage({ params }: { params: Promise<{ id: st
   const [{ data: purchase }, products] = await Promise.all([
     supabase
       .from('purchases')
-      .select('*, suppliers(name), purchase_items(*, products(name, sku, unit))')
+      .select('*, suppliers(name), purchase_items(*, products(name, sku, unit, cost, avg_cost))')
       .eq('id', id)
       .single(),
     // ไว้ให้ช่องเลือกสินค้าของแถวที่เพิ่มตอนรับของ (ของมาเกินใบสั่งซื้อ)
     fetchAll((from, to) =>
       supabase
         .from('products')
-        .select('id, name, sku, barcode, unit, cost, supplier_id, product_lots(quantity), product_units!product_units_product_id_fkey(id, product_id, unit_name, factor, sku, barcode, price, cost, sellable_pos, sellable_online, purchasable, sort_order, active, created_at)')
+        .select('id, name, sku, barcode, unit, cost, avg_cost, supplier_id, product_lots(quantity), product_units!product_units_product_id_fkey(id, product_id, unit_name, factor, sku, barcode, price, cost, sellable_pos, sellable_online, purchasable, sort_order, active, created_at)')
         .eq('active', true)
         .order('name')
         .order('id')

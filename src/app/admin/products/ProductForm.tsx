@@ -387,7 +387,7 @@ export default function ProductForm({ categories, units, suppliers, product }: P
             />
           </div>
           <div>
-            <label className={labelClass}>ราคาทุน (บาท)</label>
+            <label className={labelClass}>ราคาทุนล่าสุด (บาท)</label>
             <input
               type="number"
               min="0"
@@ -397,6 +397,12 @@ export default function ProductForm({ categories, units, suppliers, product }: P
               className={inputClass}
               placeholder="0.00"
             />
+            {/* ทุนเฉลี่ยคิดจากล็อตที่ยังมีของ ฐานข้อมูลอัปเดตให้เอง แก้มือไม่ได้ */}
+            <p className="mt-1 text-xs text-gray-400">
+              {product?.avg_cost != null
+                ? <>ทุนเฉลี่ยของสต็อคที่เหลือ ฿{product.avg_cost.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</>
+                : <>ยังไม่มีทุนเฉลี่ย — จะคิดให้หลังรับของเข้าครั้งแรก</>}
+            </p>
           </div>
         </div>
 

@@ -86,7 +86,10 @@ export interface Product {
   price: number
   /** ราคาขายตอนออกบูธ — null = ใช้ราคาปกติ (ชุดเดียวใช้ได้ทุกงาน) */
   booth_price: number | null
+  /** ทุนล่าสุดต่อหน่วยฐาน — หน้ารับสินค้าเขียนทับทุกครั้งที่รับของ */
   cost: number | null
+  /** ทุนเฉลี่ยถ่วงน้ำหนักของสต็อคที่เหลือ — ฐานข้อมูลคิดให้เอง ห้ามแก้มือ */
+  avg_cost: number | null
   unit: string
   min_stock: number
   /** null = ใช้ตามหมวดหมู่, true/false = ตั้งแยกเฉพาะสินค้าตัวนี้ */
@@ -244,6 +247,8 @@ export interface ProductLot {
   expiry_date: string | null
   quantity: number
   initial_quantity: number
+  /** ทุนต่อหน่วยฐานของล็อตนี้ — ตัวตั้งของทุนเฉลี่ย */
+  unit_cost: number | null
   created_at: string
 }
 

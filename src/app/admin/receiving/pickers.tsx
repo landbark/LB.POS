@@ -15,7 +15,10 @@ export interface ProductOption {
   sku: string | null
   barcode: string | null
   unit: string
+  /** ทุนล่าสุดต่อหน่วยฐาน — ตัวที่ใช้ตั้งต้นเวลาทำใบสั่งซื้อ */
   cost: number | null
+  /** ทุนเฉลี่ยของสต็อคที่เหลือ — ไว้ดูเทียบเฉยๆ ไม่ได้เอาไปตั้งราคาสั่ง */
+  avg_cost?: number | null
   supplier_id: string | null
   product_lots?: { quantity: number }[]
   /** หน่วยใหญ่ที่สั่งได้ (ลัง/กล่อง) — สั่งเป็นลังแต่สต็อคเข้าเป็นหน่วยย่อย */
