@@ -371,7 +371,7 @@ export async function sendStockAlerts(
 // ---- แจ้งเตือนทันเหตุการณ์ (ออเดอร์ใหม่ / สลิป / ปิดกะ / สรุปยอดวัน) ----
 
 export type NotifyEvent =
-  | 'new_order' | 'payment_slip' | 'new_appointment' | 'shift_close' | 'daily_sales'
+  | 'new_order' | 'payment_slip' | 'new_appointment' | 'shift_close' | 'shift_open' | 'daily_sales'
   | 'sale' | 'purchase_order' | 'stock_received' | 'receipt_cancelled' | 'product_return'
   | 'member_link' | 'stock_count_edit'
 
@@ -380,6 +380,7 @@ const EVENT_COLUMN: Record<NotifyEvent, string> = {
   payment_slip: 'notify_payment_slip',
   new_appointment: 'notify_new_appointment',
   shift_close: 'notify_shift_close',
+  shift_open: 'notify_shift_open',
   daily_sales: 'notify_daily_sales',
   sale: 'notify_sale',
   purchase_order: 'notify_purchase_order',
@@ -404,6 +405,8 @@ const EVENT_ROLES: Record<NotifyEvent, readonly RecipientRole[]> = {
   payment_slip: ['owner', 'staff'],
   new_appointment: ['owner', 'staff', 'vet'],
   shift_close: ['owner'],
+  // เงินในเก๊ะเช้านี้ไม่ตรงกับที่กะเมื่อวานเหลือไว้ — เรื่องเงินหาย ส่งเจ้าของคนเดียว
+  shift_open: ['owner'],
   daily_sales: ['owner'],
   sale: ['owner'],
   purchase_order: ['owner', 'staff'],
@@ -596,6 +599,61 @@ export function buildShiftCloseMessage(s: ShiftCloseInfo): string {
     ...(s.cashToOwner < 0 ? [`👜 เจ้าของเติมเงินทอนเข้าเก๊ะ: ${baht(-s.cashToOwner)}`] : []),
     ...(s.notes ? ['', `📝 ${s.notes}`] : []),
   ].join('\n') + adminLink('/admin/daily')
+}
+
+export interface ShiftOpenInfo {
+  openedBy: string | null
+  /** เงินที่กะที่แล้วเหลือไว้ */
+  carry: number
+  carryClosedAt: string
+  carryCounted: number
+  toOwner: number
+  /** เงินสดสุทธิจากบิลที่ขายหลังปิดกะ */
+  pending: number
+  pendingBills: number
+  expected: number
+  counted: number
+  /** counted − expected · บวก = เกิน, ลบ = ขาด */
+  diff: number
+  denomDiffs: { label: string; was: number; now: number }[]
+  reason: string
+}
+
+/**
+ * เงินในเก๊ะเช้านี้ไม่ตรงกับที่กะเมื่อวานเหลือไว้
+ *
+ * ต้องเด้งเช้าวันนั้นเลย เพราะคนที่ปิดกะเมื่อคืนยังจำได้ว่าทอนใครไปเท่าไหร่ แลกแบงค์กับใคร
+ * ถามตอนสิ้นเดือนไม่มีใครตอบได้ และตอนปิดกะเย็นนี้ยอดจะขึ้นว่าตรงพอดี เพราะส่วนต่างถูกซึม
+ * เข้าไปในยอดตั้งต้นแล้ว — ไม่เด้งตอนนี้ก็ไม่มีจังหวะอื่นให้รู้อีก
+ */
+export function buildShiftOpenMessage(s: ShiftOpenInfo): string {
+  const short = (iso: string) =>
+    new Date(iso).toLocaleTimeString('th-TH', { timeZone: 'Asia/Bangkok', hour: '2-digit', minute: '2-digit' })
+  return [
+    `${s.diff < 0 ? '🔴' : '🔵'} เปิดกะแล้ว — เงินในเก๊ะไม่ตรง ${timeThai()} น.`,
+    `ผู้เปิดกะ: ${s.openedBy ?? '—'}`,
+    '',
+    `ยกมาจากกะที่แล้ว: ${baht(s.carry)}`,
+    `  · ปิดกะ ${short(s.carryClosedAt)} นับได้ ${baht(s.carryCounted)}` +
+      (s.toOwner > 0 ? ` − แยกให้เจ้าของ ${baht(s.toOwner)}` : '') +
+      (s.toOwner < 0 ? ` + เจ้าของเติมเข้า ${baht(-s.toOwner)}` : ''),
+    ...(s.pending !== 0
+      ? [`บิลที่ขายหลังปิดกะ: ${baht(s.pending)}${s.pendingBills ? ` (${s.pendingBills} บิล)` : ''}`]
+      : []),
+    `เงินที่ควรมีเช้านี้: ${baht(s.expected)}`,
+    `นับได้จริง: ${baht(s.counted)}`,
+    s.diff < 0 ? `🔴 ขาด ${baht(-s.diff)}` : `🔵 เกิน ${baht(s.diff)}`,
+    ...(s.denomDiffs.length
+      ? [
+          '',
+          `กองที่ไม่ตรงกับใบนับเมื่อคืน: ${s.denomDiffs.map((d) => `${d.label} ${d.was}→${d.now}`).join(' · ')}`,
+          ...(s.pending !== 0
+            ? ['  (บางกองขยับเพราะบิลที่ขายหลังปิดกะด้วย ไม่ใช่ขาดทั้งหมด)']
+            : []),
+        ]
+      : []),
+    ...(s.reason ? ['', `📝 ${s.reason}`] : []),
+  ].join('\n') + adminLink('/admin/shift')
 }
 
 /** สรุปยอดขายของวัน (เวลาไทย) สำหรับ cron รอบเย็น */

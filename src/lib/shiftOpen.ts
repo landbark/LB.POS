@@ -251,6 +251,39 @@ export function carryNote(
 }
 
 /**
+ * ส่วนต่างที่เจอตอนเปิดกะ — ส่งต่อให้ `/api/notify/shift-opened` เด้งเข้า Telegram เจ้าของ
+ *
+ * ก้อนนี้เคยถูกเขียนลง `shifts.notes` อย่างเดียว ไม่มีใครรู้จนกว่าจะเปิดหลังร้านไปอ่าน และตอนปิดกะ
+ * เย็นนั้นยอดจะขึ้นว่าตรงพอดี เพราะส่วนต่างถูกซึมเข้าไปในยอดตั้งต้นแล้ว — เงินขาดเล็ก ๆ จึงหาย
+ * เงียบวันต่อวัน (16 พ.ย. 2026 ขาด ฿25 · 2 พ.ย. ขาด ฿2 · 14 พ.ย. เกิน ฿10 รู้ตัวตอนย้อนดูทีหลัง)
+ */
+export interface ShiftOpenMismatch {
+  /** เงินที่กะที่แล้วเหลือไว้ให้เช้านี้ */
+  carry: number
+  /** เวลาที่กะที่แล้วปิด */
+  carryClosedAt: string
+  /** ยอดที่นับได้ตอนปิดกะที่แล้ว */
+  carryCounted: number
+  /** ที่แยกให้เจ้าของตอนปิด (ลบ = เจ้าของเติมเงินทอนเข้าเก๊ะ) */
+  toOwner: number
+  /** เงินสดสุทธิจากบิลที่ขายหลังปิดกะ · 0 = คืนนั้นไม่มีใครมาซื้อ */
+  pending: number
+  /** จำนวนบิลที่ขายหลังปิดกะ */
+  pendingBills: number
+  /** ควรมีในเก๊ะเช้านี้ = ยกมา + ขายหลังปิดกะ */
+  expected: number
+  /** ที่นับได้จริงเช้านี้ */
+  counted: number
+  /** counted − expected · บวก = เกิน, ลบ = ขาด */
+  diff: number
+  /** กองที่ไม่ตรงกับใบนับเมื่อคืน (ว่างถ้าเปิดกะแบบใส่ยอดรวม) */
+  denomDiffs: { label: string; was: number; now: number }[]
+  /** เหตุผลที่คนเปิดกะกรอกไว้ */
+  reason: string
+  openedByName: string
+}
+
+/**
  * เปิดกะใหม่ — `openingCash` คือยอดที่ "นับได้จริงในเก๊ะ" ตอนเปิด
  * คืน error เป็นข้อความไทยพร้อมโชว์ ไม่โยน throw
  *
@@ -278,7 +311,7 @@ export async function openShift(
     openingDenoms?: Record<number, number> | null
   },
   supabase: Db = createClient(),
-): Promise<{ error?: string }> {
+): Promise<{ error?: string; shiftId?: string; mismatch?: ShiftOpenMismatch }> {
   const orphan = opts.orphan ?? null
   const pullIn = orphan ? opts.pullIn ?? true : false
   const pending = orphan ? orphan.net : 0
@@ -302,13 +335,40 @@ export async function openShift(
     ))
   }
   if (notes.length) row.notes = notes.join('\n')
-  let { error } = await supabase.from('shifts').insert(row)
+  // ขอ id กลับมาด้วย — คนเรียกเอาไปยิง /api/notify/shift-opened ต่อเมื่อเงินไม่ตรง
+  const insert = () => supabase.from('shifts').insert(row).select('id').single()
+  let { data, error } = await insert()
   // ยังไม่ได้รัน migration ใบนับเปิดกะ — เปิดกะต้องไม่พังเพราะคอลัมน์เสริมที่ยังไม่มี
   // (deploy ขึ้นก่อนรัน SQL แล้วเช้ามาเปิดกะไม่ได้ = ขายไม่ได้ทั้งวัน)
   if (error && row.opening_denominations && error.message.includes('opening_denominations')) {
     delete row.opening_denominations
-    ;({ error } = await supabase.from('shifts').insert(row))
+    ;({ data, error } = await insert())
   }
   if (error) return { error: error.code === '23505' ? 'มีกะที่เปิดอยู่แล้ว' : 'เปิดกะไม่สำเร็จ: ' + error.message }
-  return {}
+
+  const shiftId = (data as { id?: string } | null)?.id
+  if (!opts.carry) return { shiftId }
+  const expected = opts.carry.amount + pending
+  const diff = opts.openingCash - expected
+  if (diff === 0) return { shiftId }
+  return {
+    shiftId,
+    mismatch: {
+      carry: opts.carry.amount,
+      carryClosedAt: opts.carry.closedAt,
+      carryCounted: opts.carry.counted,
+      toOwner: opts.carry.toOwner,
+      pending,
+      pendingBills: orphan?.bills ?? 0,
+      expected,
+      counted: opts.openingCash,
+      diff,
+      // มีบิลหลังปิดกะ = กองเงินถูกรื้อไปแล้ว ไล่ทีละกองไม่ได้ว่าใบไหนมาจากบิลไหน แต่ยังเป็น
+      // เบาะแสที่ดีที่สุดว่าขาดกองไหน (฿25 ของ 16 พ.ย. 2026 = แบงค์ยี่สิบ 1 ใบ + เหรียญบาท 5 เหรียญ)
+      // — ข้อความที่ส่งออกไปกำกับไว้แล้วว่าส่วนหนึ่งขยับเพราะบิลพวกนั้น
+      denomDiffs: denomDiffs(opts.carry, opts.openingDenoms ?? null).map(({ label, was, now }) => ({ label, was, now })),
+      reason: opts.carryReason?.trim() ?? '',
+      openedByName: opts.openedByName ?? '',
+    },
+  }
 }

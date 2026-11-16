@@ -272,6 +272,8 @@ async function main() {
     let { data: sameRow } = await supabase.from('shifts').select('*').is('closed_at', null).maybeSingle()
     if (sameRow) madeShifts.push(sameRow.id)
     check(sameRow?.notes == null, 'นับได้ตรงยอดยกมา → ไม่เขียน notes')
+    check(same.shiftId === sameRow?.id, 'คืน id ของกะที่เพิ่งเปิดมาด้วย (ไว้ยิงแจ้งเตือน)', same.shiftId ?? '—')
+    check(same.mismatch === undefined, 'นับได้ตรงยอดยกมา → ไม่ส่งแจ้งเตือนเงินไม่ตรง')
     await supabase.from('shifts').delete().eq('id', sameRow!.id)
 
     // นับได้เกินยอดยกมา 15 (เคสจริง 2026-10-28) → ต้องเขียนไว้ ไม่ให้หายเงียบ
@@ -301,6 +303,23 @@ async function main() {
       sameRow?.notes === carryNote(carry!, 715, 'สคริปต์ทดสอบ', 'เมื่อคืนนับเหรียญขาด', hasOpenDenoms ? morning : null),
       'audit line ตรงกับ carryNote()',
     )
+    check(
+      off.mismatch?.diff === 15 && off.mismatch?.expected === 700 && off.mismatch?.counted === 715,
+      'คืน mismatch ให้คนเรียกไปแจ้งเตือน — เกิน ฿15 จากที่ควรมี ฿700',
+      JSON.stringify(off.mismatch),
+    )
+    check(
+      off.mismatch?.pending === 0 && off.mismatch?.carry === 700 && off.mismatch?.reason === 'เมื่อคืนนับเหรียญขาด',
+      'mismatch พาที่มาของตัวเลขไปด้วย (ยกมา · บิลหลังปิดกะ · เหตุผลที่กรอก)',
+      JSON.stringify(off.mismatch),
+    )
+    if (hasOpenDenoms) {
+      check(
+        !!off.mismatch?.denomDiffs.some((x) => x.label === 'เหรียญสิบ' && x.was === 8 && x.now === 9),
+        'mismatch บอกกองที่ไม่ตรงไปด้วย — ข้อความใน Telegram จะชี้ได้ว่าขาดกองไหน',
+        JSON.stringify(off.mismatch?.denomDiffs),
+      )
+    }
     if (hasOpenDenoms) {
       check((sameRow?.notes ?? '').includes('เหรียญสิบ 8→9'), 'audit line บอกกองที่ไม่ตรงไว้ด้วย', sameRow?.notes ?? '')
       check(
@@ -333,11 +352,12 @@ async function main() {
       'นับได้ ฿900 = ยกมา ฿700 + ขายหลังปิดกะ ฿200 → ไม่ขึ้นว่าเงินเกิน',
       nightRow?.notes ?? '',
     )
+    check(night1.mismatch === undefined, 'คืนนั้นลูกค้ามาเพิ่มแล้วเงินครบ → ไม่เด้งกวนเจ้าของ')
 
     // เงินหายจริง ฿50 ระหว่างคืนยังต้องจับได้ ไม่ถูกบิลหลังปิดกะกลบ
     await supabase.from('shifts').delete().eq('id', nightRow!.id)
     madeShifts.length = 0
-    await openShift(
+    const lost = await openShift(
       { openingCash: 850, openedBy: userId, openedByName: 'สคริปต์ทดสอบ', orphan: night, carry }, db,
     )
     ;({ data: nightRow } = await supabase.from('shifts').select('*').is('closed_at', null).maybeSingle())
@@ -346,6 +366,11 @@ async function main() {
       (nightRow?.notes ?? '').includes('ขาด ฿50.00') && (nightRow?.notes ?? '').includes('ควรมี ฿900.00'),
       'นับได้ ฿850 → ยังจับได้ว่าขาด ฿50 จากที่ควรมี ฿900',
       nightRow?.notes ?? '',
+    )
+    check(
+      lost.mismatch?.diff === -50 && lost.mismatch?.pending === 200 && lost.mismatch?.pendingBills === 1,
+      'ส่ง mismatch ขาด ฿50 ให้แจ้งเตือน พร้อมบอกว่ามีบิลหลังปิดกะ ฿200 อยู่ในนั้น',
+      JSON.stringify(lost.mismatch),
     )
     await supabase.from('shifts').delete().eq('id', nightRow!.id)
     madeShifts.length = 0

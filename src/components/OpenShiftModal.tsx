@@ -115,7 +115,7 @@ export default function OpenShiftModal({
       return
     }
     setBusy(true)
-    const { error } = await openShift({
+    const { error, shiftId, mismatch } = await openShift({
       openingCash: amount,
       openedBy: userId,
       openedByName: userName,
@@ -129,6 +129,15 @@ export default function OpenShiftModal({
     if (error) {
       toast.error(error)
       return
+    }
+    // เงินในเก๊ะไม่ตรงกับที่กะเมื่อวานเหลือไว้ — เด้งบอกเจ้าของเดี๋ยวนี้ ไม่ใช่ปล่อยไว้ใน notes
+    // ให้ไปเจอตอนย้อนดูทีหลัง (ล้มเหลวก็ไม่เป็นไร กะเปิดไปแล้ว ส่วนต่างบันทึกลงกะแล้ว)
+    if (shiftId && mismatch) {
+      fetch('/api/notify/shift-opened', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ shiftId, mismatch }),
+      }).catch(() => {})
     }
     toast.success(
       carryDiff !== 0

@@ -18,6 +18,7 @@ interface NotifySettings {
   notify_payment_slip?: boolean
   notify_new_appointment?: boolean
   notify_shift_close?: boolean
+  notify_shift_open?: boolean
   notify_daily_sales?: boolean
   notify_sale?: boolean
   notify_purchase_order?: boolean
@@ -38,6 +39,7 @@ const EVENTS = [
   { key: 'notify_new_appointment', label: 'มีการจองนัดใหม่', hint: 'ทันทีที่บันทึกนัดจากหน้านัดหมายหรือหน้า OPD' },
   { key: 'notify_member_link', label: 'ขอผูกบัญชีสมาชิก', hint: 'ลูกค้าล็อกอิน LINE แล้วกรอกเบอร์ที่เป็นสมาชิกอยู่แล้ว — รอยืนยันตัวตนก่อนจะเห็นแต้ม' },
   { key: 'notify_shift_close', label: 'ปิดกะ / นับเงิน', hint: 'สรุปยอดขายในกะ + เงินขาดเกิน', ownerOnly: true },
+  { key: 'notify_shift_open', label: 'เปิดกะแล้วเงินในเก๊ะไม่ตรง', hint: 'เช้ามานับเงินได้ไม่เท่าที่กะเมื่อวานเหลือไว้ (รวมบิลที่ขายหลังปิดกะแล้ว) — เด้งเฉพาะตอนไม่ตรง', ownerOnly: true },
   { key: 'notify_daily_sales', label: 'สรุปยอดขายรายวัน', hint: 'ส่งทุกเย็น 20:00 น. (เฉพาะวันที่มีการขาย)', ownerOnly: true },
   { key: 'notify_sale', label: 'ทุกครั้งที่ขายของ', hint: 'เด้งทุกบิลที่ปิดการขาย — ร้านขายวันละหลายสิบบิลจะเด้งบ่อยมาก', ownerOnly: true },
   { key: 'notify_purchase_order', label: 'สร้างใบสั่งซื้อ', hint: 'มีคนบันทึกใบสั่งซื้อใหม่ส่งซัพพลายเออร์' },
