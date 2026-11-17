@@ -48,6 +48,25 @@ async function cleanup() {
   // ใบคืนต้องลบก่อนบิล — transaction_id เป็น ON DELETE RESTRICT
   for (const id of madeReturns) await supabase.from('returns').delete().eq('id', id)
   for (const id of madeTx) await supabase.from('transactions').delete().eq('id', id)
+  // เคลียร์รายการที่จดไว้ให้เองเลย ของในนั้นถูกลบไปหมดแล้ว
+  madeShifts.length = 0
+  madeMoves.length = 0
+  madeReturns.length = 0
+  madeTx.length = 0
+}
+
+/**
+ * ลบกะทดสอบหนึ่งกะแล้วเอาออกจากรายการที่จดไว้ — ต้องลบ "เฉพาะกะนั้น" ออกจากรายการ
+ *
+ * เดิมเทสต์ที่ลบกะของตัวเองกลางทางเขียน `madeShifts.length = 0` ทิ้งทั้งรายการ กะปิดแล้ว
+ * ของ section 9 ที่ถูกจดไว้ก่อนหน้าจึงหลุดจากรายการไปด้วย cleanup() ท้ายสคริปต์เลยไม่ลบมัน
+ * ทุกครั้งที่รันจะเหลือกะทดสอบปิดแล้ว (ตั้งต้น ฿100 นับได้ ฿1,000) ค้างไว้ในประวัติกะหนึ่งกะ
+ * และกะนั้นคือ "กะที่ปิดล่าสุด" ที่ findCarryOver มองเห็น เช้ามาเปิดกะจะยกมา ฿700 ผิด ๆ
+ */
+async function dropShift(id: string) {
+  await supabase.from('shifts').delete().eq('id', id)
+  const at = madeShifts.indexOf(id)
+  if (at >= 0) madeShifts.splice(at, 1)
 }
 
 async function main() {
@@ -126,6 +145,32 @@ async function main() {
     const { data: who } = await supabase.from('profiles').select('id, name').limit(1).single()
     const userId = who!.id as string
 
+    /**
+     * บิลเงินสดทดสอบที่ขายตอนไม่มีกะเปิด — คืนแถวมาด้วยเพื่อเอา id/created_at ไปเทียบ
+     *
+     * ทุก section สร้างบิลของตัวเอง ไม่ยืม id ของ section ก่อนหน้า เพราะระหว่างทางมี cleanup()
+     * คั่นอยู่หลายจุด · 9ค เคยยืม id บิลของ 5 ที่ cleanup() ลบไปแล้ว ใบคืนจึงลงไม่ได้
+     * ("returns_transaction_id_fkey") สคริปต์ตายคาที่ ทั้งที่ของที่จะเทสต์ยังไม่ได้เทสต์เลย
+     */
+    const makeTestBill = async (tag: string, total = 1) => {
+      const { data, error } = await supabase
+        .from('transactions')
+        .insert({
+          transaction_number: `ZZTEST-${Date.now()}-${tag}`,
+          cashier_id: userId,
+          subtotal: total, total,
+          payment_method: 'cash',
+          sales_channel: 'store',
+          created_at: new Date(Date.now() - 60_000).toISOString(),
+          notes: 'ข้อมูลทดสอบ verify-shift-open (ลบทิ้งทันที)',
+        })
+        .select('id, created_at, status')
+        .single()
+      if (error) throw error
+      madeTx.push(data.id)
+      return data!
+    }
+
     // --- 3) เปิดกะปกติ = opened_at เป็นเวลาปัจจุบัน ไม่เขียน notes
     const before = Date.now()
     const plain = await openShift({ openingCash: 123.45, openedBy: userId }, db)
@@ -141,25 +186,9 @@ async function main() {
     check(dup.error === 'มีกะที่เปิดอยู่แล้ว', 'เปิดกะซ้อนถูกบล็อก', dup.error ?? '(ไม่มี error)')
 
     await cleanup()
-    madeShifts.length = 0
 
     // --- 5) บิลเงินสดทดสอบที่ขายตอนไม่มีกะเปิด → findOrphanSales ต้องเจอ
-    const soldAt = new Date(Date.now() - 60_000).toISOString()
-    const { data: tx, error: txErr } = await supabase
-      .from('transactions')
-      .insert({
-        transaction_number: `ZZTEST-${Date.now()}`,
-        cashier_id: userId,
-        subtotal: 1, total: 1,
-        payment_method: 'cash',
-        sales_channel: 'store',
-        created_at: soldAt,
-        notes: 'ข้อมูลทดสอบ verify-shift-open (ลบทิ้งทันที)',
-      })
-      .select('id, created_at, status')
-      .single()
-    if (txErr) throw txErr
-    madeTx.push(tx.id)
+    const tx = await makeTestBill('a')
     check(tx.status === 'completed', 'บิลทดสอบเป็นสถานะ completed', tx.status)
 
     const found = await findOrphanSales(db)
@@ -195,8 +224,7 @@ async function main() {
     check((row?.notes ?? '').includes('= ฿499.00'), 'audit line โชว์วิธีคิดยอดตั้งต้นไว้ด้วย')
 
     // --- 6ข) ไม่ติ๊กรวม = ยอดตั้งต้นคงเดิมทั้งก้อน แต่ต้องจดไว้ว่าเงินก้อนนี้มาจากไหน
-    await supabase.from('shifts').delete().eq('id', row!.id)
-    madeShifts.length = 0
+    await dropShift(row!.id)
     const noPull = await openShift(
       { openingCash: 500, openedBy: userId, openedByName: 'สคริปต์ทดสอบ', orphan: fake, pullIn: false },
       db,
@@ -211,8 +239,7 @@ async function main() {
     )
     check((row?.notes ?? '').startsWith('[บิลที่ยังไม่เข้ากะ'), 'ยังจด audit ไว้ว่าเงินก้อนนี้อยู่ในยอดตั้งต้น', row?.notes ?? '')
 
-    await supabase.from('shifts').delete().eq('id', row!.id)
-    madeShifts.length = 0
+    await dropShift(row!.id)
     const back2 = await openShift(
       { openingCash: 500, openedBy: userId, openedByName: 'สคริปต์ทดสอบ', orphan: fake },
       db,
@@ -235,18 +262,7 @@ async function main() {
 
     // --- 8) ถ้าไม่ติ๊กรวมบิล บิลเดิมจะตกนอกกะ (ยืนยันว่าปัญหามีจริง ไม่ได้แก้ของที่ไม่พัง)
     await cleanup()
-    madeShifts.length = 0
-    const { data: tx2 } = await supabase
-      .from('transactions')
-      .insert({
-        transaction_number: `ZZTEST-${Date.now()}-b`,
-        cashier_id: userId, subtotal: 1, total: 1,
-        payment_method: 'cash', sales_channel: 'store',
-        created_at: new Date(Date.now() - 60_000).toISOString(),
-        notes: 'ข้อมูลทดสอบ verify-shift-open (ลบทิ้งทันที)',
-      })
-      .select('id, created_at').single()
-    madeTx.push(tx2!.id)
+    const tx2 = await makeTestBill('b')
     const plain2 = await openShift({ openingCash: 500, openedBy: userId }, db)
     check(!plain2.error, 'เปิดกะแบบไม่รวมบิลได้', plain2.error ?? '')
     const { data: row2 } = await supabase.from('shifts').select('*').is('closed_at', null).maybeSingle()
@@ -257,7 +273,6 @@ async function main() {
     check(!(after ?? []).some((t) => t.id === tx2!.id), 'ไม่ติ๊ก = บิลนั้นตกนอกกะจริง (ปิดกะจะขึ้นเงินเกิน ฿1.00)')
 
     await cleanup()
-    madeShifts.length = 0
 
     // --- 9) ยอดยกมาจากกะที่แล้ว = ที่นับได้ตอนปิด − ที่แยกให้เจ้าของ และส่วนต่างต้องถูกจดไว้
     // กะทดสอบนี้ปิดแล้ว (closed_at = เมื่อกี้) จึงกลายเป็นกะล่าสุดที่ findCarryOver มองเห็น
@@ -298,7 +313,7 @@ async function main() {
     check(sameRow?.notes == null, 'นับได้ตรงยอดยกมา → ไม่เขียน notes')
     check(same.shiftId === sameRow?.id, 'คืน id ของกะที่เพิ่งเปิดมาด้วย (ไว้ยิงแจ้งเตือน)', same.shiftId ?? '—')
     check(same.mismatch === undefined, 'นับได้ตรงยอดยกมา → ไม่ส่งแจ้งเตือนเงินไม่ตรง')
-    await supabase.from('shifts').delete().eq('id', sameRow!.id)
+    await dropShift(sameRow!.id)
 
     // นับได้เกินยอดยกมา 15 (เคสจริง 2026-10-28) → ต้องเขียนไว้ ไม่ให้หายเงียบ
     // เช้านี้นับแยกใบได้ เหรียญสิบ 9 (เมื่อคืน 8) · เหรียญห้า 5 (เมื่อคืน 4) = เกิน ฿15
@@ -356,8 +371,7 @@ async function main() {
     // --- 9ข) เช้ามานับได้ "ยกมา + บิลหลังปิดกะ" ต้องไม่ขึ้นว่าเงินเกิน
     // เคสจริง: ปิดกะสี่ทุ่มเหลือ ฿700 แล้วลูกค้ามาซื้ออีก ฿200 เงินในเก๊ะเช้านี้ ฿900
     // ยอดที่ควรมี = ยกมา + ขายหลังปิดกะ ไม่บวกเข้าไปจะขึ้นว่า "เกิน ฿200" ทุกคืนที่มีลูกค้ามาเพิ่ม
-    await supabase.from('shifts').delete().eq('id', sameRow!.id)
-    madeShifts.length = 0
+    await dropShift(sameRow!.id)
     const night: OrphanSales = {
       firstAt: new Date(Date.now() - 3_600_000).toISOString(),
       lastAt: new Date(Date.now() - 3_000_000).toISOString(),
@@ -380,8 +394,7 @@ async function main() {
     check(night1.mismatch === undefined, 'คืนนั้นลูกค้ามาเพิ่มแล้วเงินครบ → ไม่เด้งกวนเจ้าของ')
 
     // เงินหายจริง ฿50 ระหว่างคืนยังต้องจับได้ ไม่ถูกบิลหลังปิดกะกลบ
-    await supabase.from('shifts').delete().eq('id', nightRow!.id)
-    madeShifts.length = 0
+    await dropShift(nightRow!.id)
     const lost = await openShift(
       { openingCash: 850, openedBy: userId, openedByName: 'สคริปต์ทดสอบ', orphan: night, carry }, db,
     )
@@ -397,11 +410,13 @@ async function main() {
       'ส่ง mismatch ขาด ฿50 ให้แจ้งเตือน พร้อมบอกว่ามีบิลหลังปิดกะ ฿200 อยู่ในนั้น',
       JSON.stringify(lost.mismatch),
     )
-    await supabase.from('shifts').delete().eq('id', nightRow!.id)
-    madeShifts.length = 0
+    await dropShift(nightRow!.id)
 
     // --- 9ค) เงินในเก๊ะขยับทางอื่นหลังปิดกะ: ใบคืนที่จ่ายเงินสด + เงินหยิบออกจากเก๊ะตอนไม่มีกะ
     // ทั้งสองทางนี้เคยไม่ถูกนับเลย เช้ามาจึงขึ้นว่า "เงินขาด" เท่ายอดนั้น ทั้งที่มีคนลงบันทึกไว้แล้ว
+    // ใบคืนต้องผูกกับบิลที่ยังอยู่จริง — ออกบิลใหม่ให้ section นี้ ก่อนวัด netBefore
+    // จะได้อยู่ในยอดตั้งต้นทั้งสองฝั่ง ส่วนต่าง −฿37 ที่เทสต์วัดจึงไม่ขยับ
+    const refundTx = await makeTestBill('c')
     const netBefore = await findOrphanSales(db)
     const { data: move, error: moveErr } = await supabase
       .from('cash_movements')
@@ -416,7 +431,7 @@ async function main() {
         .from('returns')
         .insert({
           return_number: `ZZRT-${Date.now()}`,
-          transaction_id: tx.id,
+          transaction_id: refundTx.id,
           return_value: 7, refund_amount: 7, refund_method: 'cash',
           reason: 'ทดสอบ verify-shift-open',
           created_by: userId,
@@ -466,8 +481,7 @@ async function main() {
         'audit line บอกทั้งเงินที่หยิบออกและเงินที่คืนจากใบคืน',
         linkedRow?.notes ?? '',
       )
-      await supabase.from('shifts').delete().eq('id', linked.shiftId!)
-      madeShifts.length = 0
+      await dropShift(linked.shiftId!)
       // เอารายการทดสอบออกก่อนเข้าเทสต์ถัดไป ไม่ให้ไปปนกับยอดของ section 10
       await supabase.from('returns').delete().eq('id', ret.id)
       madeReturns.length = 0
@@ -505,7 +519,7 @@ async function main() {
 
     // คอลัมน์ยังไม่มี (deploy ขึ้นก่อนรัน SQL) ก็ต้องเปิดกะได้ ไม่งั้นเช้ามาขายไม่ได้ทั้งวัน
     if (!hasOpenDenoms) {
-      await supabase.from('shifts').delete().eq('id', sameRow!.id)
+      await dropShift(sameRow!.id)
       const fallback = await openShift({ openingCash: 715, openedBy: userId, carry, openingDenoms: morning }, db)
       const { data: fbRow } = await supabase.from('shifts').select('*').is('closed_at', null).maybeSingle()
       if (fbRow) madeShifts.push(fbRow.id)
@@ -514,14 +528,13 @@ async function main() {
     }
 
     // เปิดกะแบบใส่ยอดรวมอย่างเดียวยังทำได้ ไม่บังคับให้นับแยก
-    await supabase.from('shifts').delete().eq('id', sameRow!.id)
+    await dropShift(sameRow!.id)
     await openShift({ openingCash: 700, openedBy: userId, carry }, db)
     const { data: plainRow } = await supabase.from('shifts').select('*').is('closed_at', null).maybeSingle()
     if (plainRow) madeShifts.push(plainRow.id)
     check(plainRow?.opening_denominations == null, 'ไม่นับแยกก็เปิดกะได้ ไม่เขียน opening_denominations')
 
     await cleanup()
-    madeShifts.length = 0
     const { data: leftOpen } = await supabase.from('shifts').select('id').is('closed_at', null).maybeSingle()
     check(leftOpen == null, 'ลบกะทดสอบหมดแล้ว ไม่มีกะค้าง')
   }
