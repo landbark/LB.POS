@@ -1,6 +1,12 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  experimental: {
+    // เตือนตอน build ว่ามี Next เวอร์ชันที่ปิดช่องโหว่ออกมาแล้ว (เฉพาะเรื่องความปลอดภัย
+    // ไม่เตือนเรื่องเวอร์ชันใหม่ทั่วไป) — 16.4.2 เคยติดช่องโหว่แล้วไม่มีใครรู้จนขึ้นตอน build
+    // ร้านนี้ deploy เองด้วยมือ ไม่มี bot คอยอัปให้ บรรทัดนี้คือตัวเดียวที่จะมาบอก
+    agentUpgrade: 'security',
+  },
   // standalone = ก้อนเล็กที่สุดที่รันเองได้ ไม่ต้องมี node_modules ทั้งกอง — ใช้ตอน build เป็น Docker image
   // เปิดเฉพาะตอน build ใน Docker (ดู Dockerfile) ไม่งั้นปล่อยให้ Vercel build แบบเดิม
   // ระหว่างย้ายร้านยังขายของผ่าน Vercel อยู่ ห้ามให้ไฟล์นี้ไปเปลี่ยนพฤติกรรมฝั่งนั้น
