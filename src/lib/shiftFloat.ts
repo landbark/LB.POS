@@ -49,8 +49,8 @@ export interface FloatPlan {
   over: number
   /** นับได้น้อยกว่าเป้าเท่าไหร่ — เงินทอนไม่พอ ต้องเติมก่อนเปิดกะหน้า · 0 = ไม่ขาด */
   short: number
-  /** กองที่เหลือไม่ถึงเป้า ต้องแลกมาเติมก่อนเปิดร้าน (เฉพาะแบบกำหนดรายชนิด) */
-  shortages: { value: number; need: number }[]
+  /** กองที่เหลือไม่ถึงเป้าและหาใบเล็กมาอุดไม่ได้ ต้องแลกมาเติมก่อนเปิดร้าน (เฉพาะแบบกำหนดรายชนิด) */
+  shortages: { value: number; need: number; missing: number }[]
   /** มูลค่าของชนิดที่เก็บไว้ทั้งหมด — ส่วนนี้ลอยไปตามที่รับมาจากลูกค้า ไม่นับเป็นเกินเป้า */
   kept: number
   /** จำนวนที่จะเหลือในลิ้นชักหลังแยกออก แยกตามชนิด */
@@ -113,11 +113,8 @@ export function planByDenom(
   const keep = Object.fromEntries(
     Object.entries(counts).map(([v, q]) => [Number(v), (q || 0) - (take[Number(v)] ?? 0)]),
   )
-  const shortages = Object.keys(target)
-    .map(Number)
-    .filter((d) => !keepAll.includes(d) && (target[d] ?? 0) - (counts[d] ?? 0) > 0)
-    .sort((a, b) => b - a)
-    .map((d) => ({ value: d, need: (target[d] ?? 0) - (counts[d] ?? 0) }))
+  // กองที่ขาดจริง — กองที่มีใบเล็กเกินพออุดให้แล้วไม่นับว่าขาด (ดู coverFloat)
+  const shortages = coverFloat(keep, target, keepAll).shortages
   // ชนิดที่เก็บไว้ทั้งหมดลอยไปตามที่รับมาจากลูกค้า — บวกเข้าไปในเป้า ไม่งั้นจะขึ้นว่าเกินทุกวัน
   const kept = keepAll.reduce((sum, d) => sum + d * (counts[d] ?? 0), 0)
   const expected = sumOf(target) + kept
@@ -174,6 +171,105 @@ export function ownerSide(
     else add[d.value] = -diff
   }
   return { take, add, net, signed }
+}
+
+// ── ใบเล็กแทนใบใหญ่ได้ ใบใหญ่แทนใบเล็กไม่ได้ ───────────────────────────────────────────
+// ชุดเงินทอนตั้งไว้ว่าต้องมีห้าร้อย 2 ใบ แต่บางคืนห้าร้อยไม่พอ ใส่แบงค์ร้อยเพิ่ม 10 ใบแทน
+// เงินทอนชุดนั้นทอนได้ละเอียดกว่าเดิมด้วยซ้ำ แต่ระบบเทียบทีละกองเลยขึ้นแดงว่า "ขาดแบงค์ห้าร้อย 2"
+// ทุกคืน (17 พ.ย. 69 เจ้าของว่า "บางทีแบงค์ห้าร้อยมันไม่พอ ใช้แบงค์ร้อยแทน ... ขาดแบงค์ 500 ไรงี้")
+//
+// เทียบแบบไล่จากใบเล็กขึ้นไปแทน: ส่วนที่เกินของกองเล็กยกไปอุดกองใหญ่ที่ขาดได้ ไม่ย้อนทาง
+// ร้อยเกิน ฿1,000 อุดห้าร้อยที่ขาด ฿1,000 ได้ · ห้าร้อยเกิน ฿1,000 อุดยี่สิบที่ขาดไม่ได้
+// (แตกไม่ได้ ต้องวิ่งไปแลกกลางวันอยู่ดี) กองที่ขาดจริงจึงยังขึ้นเตือนเหมือนเดิม
+//
+// แบงค์กับเหรียญไม่ยกข้ามกัน — เหรียญเกิน ฿1,000 ไม่นับว่าอุดแบงค์ร้อยที่ขาดไป 1 ใบ
+// (ทอนร้อยเป็นเหรียญบาทร้อยเหรียญไม่มีใครทำ) และแบงค์ก็แตกเป็นเหรียญเองไม่ได้
+
+/** ผลเทียบเงินในเก๊ะกับชุดที่ตั้งไว้ · want/have เป็นจำนวนใบ · missing/substituted เป็นบาท */
+export interface FloatCover {
+  /** ครบชุดไหม เมื่อนับการใช้ใบเล็กแทนใบใหญ่แล้ว */
+  ok: boolean
+  /** ขาดรวมกี่บาท = เงินที่ต้องแลกมาเติมจริง ๆ · 0 = ครบ */
+  missing: number
+  piles: Record<number, { want: number; have: number; missing: number; substituted: number }>
+  /** กองที่ยังขาดจริง เรียงใบใหญ่ก่อน · need = คิดเป็นใบของกองนั้นกี่ใบ */
+  shortages: { value: number; need: number; missing: number }[]
+  /** เงินที่เกินชุดและยกไปอุดกองไหนไม่ได้แล้ว */
+  extra: number
+}
+
+/** ไล่จากใบเล็กขึ้นใบใหญ่ แยกแบงค์กับเหรียญคนละชั้น ส่วนเกินของกองเล็กยกขึ้นไปอุดกองใหญ่ */
+export function coverFloat(
+  counts: Record<number, number>,
+  target: Record<number, number>,
+  keepAll: number[] = [],
+): FloatCover {
+  const piles: FloatCover['piles'] = {}
+  let missing = 0
+  let extra = 0
+  for (const tier of [BANKNOTES, COINS]) {
+    let spare = 0
+    for (const d of [...tier].sort((a, b) => a.value - b.value)) {
+      if (keepAll.includes(d.value)) continue
+      const have = counts[d.value] ?? 0
+      const want = target[d.value] ?? 0
+      const gap = (want - have) * d.value
+      if (gap <= 0) {
+        spare += -gap
+        piles[d.value] = { want, have, missing: 0, substituted: 0 }
+        continue
+      }
+      const substituted = Math.min(spare, gap)
+      spare -= substituted
+      missing += gap - substituted
+      piles[d.value] = { want, have, missing: gap - substituted, substituted }
+    }
+    extra += spare
+  }
+  const shortages = Object.keys(piles)
+    .map(Number)
+    .filter((d) => piles[d].missing > 0)
+    .sort((a, b) => b - a)
+    .map((d) => ({ value: d, missing: piles[d].missing, need: Math.ceil(piles[d].missing / d) }))
+  return { ok: missing === 0, missing, piles, shortages, extra }
+}
+
+/**
+ * จัดชุดเงินทอนจากเงินที่มีในเก๊ะจริง — ตามชุดที่ตั้งไว้ก่อน กองที่ไม่พอก็เติมด้วยแบงค์อื่นให้ครบยอด
+ *
+ * คืนที่ห้าร้อยไม่พอ (เป้า 2 ใบ มี 0) จะได้ชุดที่เป็นแบงค์ร้อยเพิ่ม 10 ใบแทน ยอดยังเท่าเดิม ฿4,000
+ * ไม่ต้องนั่งคิดเองว่าต้องเอาอะไรใส่แทนกี่ใบ
+ *
+ * เติมด้วยแบงค์ที่อยู่ในชุดเท่านั้น (ไล่ใบใหญ่ลงมา) — แบงค์พันไม่อยู่ในชุด จะไม่ถูกยัดลงเก๊ะ
+ * นั่นคือเงินที่ต้องออกไปหาเจ้าของ · เหรียญก็ไม่เอามาถมแทนแบงค์ ได้เท่าที่มีก็เท่านั้น
+ * กองที่ยังขาดอยู่ให้ coverFloat เตือนต่อ
+ */
+export function buildFloat(
+  counts: Record<number, number>,
+  target: Record<number, number>,
+  keepAll: number[] = [],
+): Record<number, number> {
+  const keep: Record<number, number> = {}
+  for (const d of DENOMS) {
+    keep[d.value] = keepAll.includes(d.value)
+      ? (counts[d.value] ?? 0)
+      : Math.min(counts[d.value] ?? 0, target[d.value] ?? 0)
+  }
+  const wanted = DENOMS.filter((d) => !keepAll.includes(d.value))
+    .reduce((sum, d) => sum + d.value * (target[d.value] ?? 0), 0)
+  let gap = wanted - DENOMS.filter((d) => !keepAll.includes(d.value))
+    .reduce((sum, d) => sum + d.value * keep[d.value], 0)
+  for (const d of BANKNOTES) {
+    if (gap <= 0) break
+    if (keepAll.includes(d.value) || !(target[d.value] ?? 0)) continue
+    let spare = (counts[d.value] ?? 0) - keep[d.value]
+    while (spare > 0 && gap >= d.value) {
+      keep[d.value]++
+      spare--
+      gap -= d.value
+    }
+  }
+  return keep
 }
 
 /**

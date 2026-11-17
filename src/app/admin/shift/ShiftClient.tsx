@@ -5,7 +5,7 @@ import { flushSync } from 'react-dom'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { checkChannels, expectedCash as computeExpectedCash, splitShiftBills, type ShiftBill } from '@/lib/shiftCash'
-import { BANKNOTES, COINS, DENOMS, ownerSide, planByDenom, planOwnerTake, planSwap } from '@/lib/shiftFloat'
+import { BANKNOTES, COINS, DENOMS, buildFloat, coverFloat, ownerSide, planByDenom, planOwnerTake, planSwap } from '@/lib/shiftFloat'
 import { DEFAULT_TRANSFER_ACCOUNTS, PAYMENT_DOT, PAYMENT_LABEL, sumBankMethods } from '@/lib/payments'
 import { CHANNEL_GROUPS } from '@/lib/salesChannel'
 import type { PaymentMethod, SalesChannel } from '@/lib/types'
@@ -312,10 +312,10 @@ export default function ShiftClient({
   )
   const takeable = BANKNOTES.map((d) => d.value)
   const keepAll = floatKeep ?? []
-  // วิธีหลัก — โยกทั้งชุด: รวบของเก่าออกมาทั้งกอง วางชุดที่เจ้าของนับไว้ล่วงหน้าลงไป
-  // เงินสุทธิเท่ากับวิธีคืนส่วนเกินเป๊ะ ๆ แต่ที่เก๊ะไม่ต้องนับทีละกอง (ดู lib/shiftFloat → planSwap)
-  const swapPlan = hasCount && floatTargetDenoms
-    ? planSwap(countedDenoms, floatTargetDenoms, keepAll)
+  // ชุดใหม่ที่จะวางลงเก๊ะคืนนี้ — จัดจากเงินที่มีในเก๊ะจริง ห้าร้อยไม่พอก็ใส่ร้อยแทนให้เอง
+  // ไม่ใช่ชุดตามหน้าตั้งค่าตรง ๆ ไม่งั้นคืนที่ไม่มีห้าร้อยจะขึ้นแดงว่าขาดทั้งที่ยอดครบ
+  const builtSet = hasCount && floatTargetDenoms
+    ? buildFloat(countedDenoms, floatTargetDenoms, keepAll)
     : null
   // วิธีสำรอง — คืนเฉพาะส่วนเกินรายกอง ใช้คืนที่ไม่ได้เตรียมชุดใหม่ไว้
   const floatPlan = !hasCount
@@ -330,8 +330,8 @@ export default function ShiftClient({
     : floatTarget
   // เหลือไว้เท่าไหร่ถ้าไม่แตะอะไรเลย — ร้านที่ตั้งชุดรายชนิดไว้คือชุดใหม่ที่โยกลงไป + กองที่คาไว้
   // ร้านที่ตั้งแค่ยอดรวมใช้ค่าที่ไล่หยิบใบใหญ่ลงมา ร้านที่ไม่ได้ตั้งอะไรเลยก็เหลือไว้ทั้งเก๊ะ
-  const keepDefault: Record<number, number> = swapPlan
-    ? swapPlan.keep
+  const keepDefault: Record<number, number> = builtSet
+    ? builtSet
     : floatPlan
       ? floatPlan.keep
       : countedDenoms
@@ -340,11 +340,24 @@ export default function ShiftClient({
     : keepDefault
   const keepValue = (v: number) =>
     keepEdit ? (keepEdit[v] ?? '') : keepDefault[v] ? String(keepDefault[v]) : ''
-  // ที่เหลือไว้ยังเท่ากับ "ชุดใหม่ + กองที่คาไว้" อยู่ไหม — แก้มือจนไม่ตรงแล้วคำสั่งโยกชุดใช้ไม่ได้อีก
-  const sameAs = (a: Record<number, number>, b: Record<number, number>) =>
-    DENOMS.every((d) => (a[d.value] ?? 0) === (b[d.value] ?? 0))
-  const swapping = swapPlan != null && sameAs(keepCounts, swapPlan.keep)
+  // ที่เหลือไว้เข้าข่าย "โยกทั้งชุด" ไหม — ต้องครบสามข้อ ไม่งั้นคำสั่งโยกชุดจะโกหกคนที่เก๊ะ
+  //   1. กองที่เก็บไว้ทั้งหมด (ห้าสิบ) ยังคาอยู่ครบตามที่นับได้ ไม่ได้ถูกรวบออกไปด้วย
+  //   2. ยอดชุดที่วางลงไปเท่าชุดที่ตั้งไว้พอดี — เหลือไว้ทั้งเก๊ะไม่ใช่การโยกชุด
+  //   3. ครบทุกกองเมื่อนับการใช้ใบเล็กแทนใบใหญ่แล้ว (ร้อยแทนห้าร้อยได้ ห้าร้อยแทนยี่สิบไม่ได้)
+  const keepCover = floatTargetDenoms ? coverFloat(keepCounts, floatTargetDenoms, keepAll) : null
+  const putValue = DENOMS.filter((d) => !keepAll.includes(d.value))
+    .reduce((sum, d) => sum + d.value * (keepCounts[d.value] ?? 0), 0)
+  const setValue = floatTargetDenoms
+    ? DENOMS.filter((d) => !keepAll.includes(d.value))
+        .reduce((sum, d) => sum + d.value * (floatTargetDenoms[d.value] ?? 0), 0)
+    : null
+  const swapping =
+    hasCount && floatTargetDenoms != null && keepCover != null &&
+    keepAll.every((d) => (keepCounts[d] ?? 0) === (countedDenoms[d] ?? 0)) &&
+    putValue === setValue && keepCover.ok
   const keepRowsShown = !swapping || showKeepRows
+  // คำสั่งที่เก๊ะคิดจากชุดที่จะวางลงไปจริง (ที่กรอกค้างอยู่) ไม่ใช่ชุดตามหน้าตั้งค่า
+  const swapPlan = swapping ? planSwap(countedDenoms, keepCounts, keepAll) : null
 
   // แตะช่องแรกแล้วต้องยึดทั้งชุดไว้ ไม่งั้นช่องที่เหลือจะเลื่อนตามค่าตั้งต้นที่ขยับทุกครั้งที่นับเพิ่ม
   const editKeep = (v: number, raw: string) =>
@@ -361,13 +374,8 @@ export default function ShiftClient({
   // ขาแล้วให้เจ้าของเติมเหรียญได้ ขาเกินก็ส่งเหรียญออกไปให้เจ้าของได้เหมือนกัน
   // อยากเก็บเหรียญไว้ทั้งกองจริง ๆ ให้ติ๊ก "เก็บไว้ทั้งหมด" ในหน้าตั้งค่า — ชนิดนั้นเหลือตามที่นับได้เสมอ
   const applyFloatSet = () => {
-    if (!floatTargetDenoms) return
-    setKeepEdit(Object.fromEntries(DENOMS.map((d) => {
-      const qty = keepAll.includes(d.value)
-        ? (countedDenoms[d.value] ?? 0)
-        : (floatTargetDenoms[d.value] ?? 0)
-      return [d.value, qty ? String(qty) : '']
-    })))
+    if (!builtSet) return
+    setKeepEdit(Object.fromEntries(DENOMS.map((d) => [d.value, builtSet[d.value] ? String(builtSet[d.value]) : ''])))
   }
   // ให้เจ้าของ = ที่นับได้ − ที่เหลือไว้ · ติดลบ = วันที่เงินทอนขาดแล้วเจ้าของเอามาเติม
   const owner = ownerSide(countedDenoms, keepCounts)
@@ -383,6 +391,11 @@ export default function ShiftClient({
   const adjustTotal = DENOMS.reduce((sum, d) => sum + d.value * adjustQty(d.value), 0)
   const adjustDiff = adjustTotal - (carryOf(lastClosed) ?? 0)
   const keptLabels = DENOMS.filter((d) => keepAll.includes(d.value)).map((d) => d.label).join('/')
+  // กองที่ชุดคืนนี้ไม่พอแล้วใช้ใบเล็กแทน — บอกไว้ในการ์ด ไม่งั้นเจ้าของนับชุดแล้วสงสัยว่าทำไมไม่ตรงที่ตั้งไว้
+  const subbedLabels = DENOMS
+    .filter((d) => (keepCover?.piles[d.value]?.substituted ?? 0) > 0)
+    .map((d) => d.label)
+    .join('/')
   // "พัน 3 · ร้อย 34 · ยี่สิบ 26" — ใบพิมพ์ไม่มีที่พอให้กางเป็นตาราง เอาเฉพาะกองที่มีของ
   const denomLine = (c: Record<number, number>) =>
     DENOMS.filter((d) => c[d.value]).map((d) => `${d.label.replace(/^(แบงค์|เหรียญ)/, '')} ${c[d.value]}`).join(' · ')
@@ -394,10 +407,17 @@ export default function ShiftClient({
       ? null
       : openShift.opening_cash - (floatTotal + keepAll.reduce((s, d) => s + d * (openingDenoms?.[d] ?? 0), 0))
   // กองที่เงินทอนในเก๊ะยังไม่ครบชุด — ตัวที่เจ้าของต้องไปแลกมาเติม
-  const carryShortages = floatTargetDenoms && carryBefore
-    ? DENOMS.filter((d) => !keepAll.includes(d.value) && (floatTargetDenoms[d.value] ?? 0) > (carryBefore[d.value] ?? 0))
-        .map((d) => ({ ...d, need: (floatTargetDenoms[d.value] ?? 0) - (carryBefore[d.value] ?? 0) }))
+  // กองที่มีใบเล็กเกินพออุดให้แล้วไม่นับว่าขาด (ร้อย 28 ใบแทนห้าร้อย 2 ใบ = ครบ)
+  const carryCover = floatTargetDenoms && carryBefore
+    ? coverFloat(carryBefore, floatTargetDenoms, keepAll)
+    : null
+  const carryShortages = carryCover
+    ? carryCover.shortages.map((sh) => ({ ...sh, label: DENOMS.find((d) => d.value === sh.value)?.label ?? String(sh.value) }))
     : []
+  // ใบนับที่กำลังแก้ในการ์ดนั้น — เทียบแบบเดียวกัน ไม่งั้นแก้เป็นร้อยแทนห้าร้อยแล้วยังขึ้นแดง
+  const adjustCover = adjust && floatTargetDenoms
+    ? coverFloat(Object.fromEntries(DENOMS.map((d) => [d.value, adjustQty(d.value)])), floatTargetDenoms, keepAll)
+    : null
 
   /**
    * บันทึกเงินเข้า-ออกเก๊ะ — ลงได้ทั้งตอนมีกะเปิดและตอนไม่มี
@@ -989,7 +1009,7 @@ export default function ShiftClient({
                     {floatTargetDenoms && (
                       <p className={`text-xs font-medium ${carryShortages.length ? 'text-red-600' : 'text-green-600'}`}>
                         {carryShortages.length
-                          ? `ยังขาด: ${carryShortages.map((sh) => `${sh.label} อีก ${sh.need}`).join(' · ')}`
+                          ? `ยังขาด: ${carryShortages.map((sh) => `${sh.label} อีก ${sh.need} (฿${money(sh.missing)})`).join(' · ')}`
                           : 'ครบตามชุดเงินทอนที่ตั้งไว้'}
                       </p>
                     )}
@@ -1010,6 +1030,7 @@ export default function ShiftClient({
                       const qty = parseInt(adjust[d.value] || '0', 10) || 0
                       const was = carryBefore[d.value] ?? 0
                       const want = floatTargetDenoms?.[d.value] ?? 0
+                      const short = adjustCover?.piles[d.value]?.missing ?? 0
                       return (
                         <div key={d.value} className="flex items-center gap-2">
                           <span className="text-sm text-gray-600 w-[5.5rem] shrink-0">{d.label}</span>
@@ -1018,13 +1039,17 @@ export default function ShiftClient({
                             value={adjust[d.value] ?? ''}
                             onChange={(e) => setAdjust((c) => ({ ...c!, [d.value]: e.target.value }))}
                             className={`w-16 border rounded-lg px-2 py-1.5 text-sm text-right focus:outline-none focus:ring-2 ${
-                              want > qty ? 'border-red-300 focus:ring-red-400' : 'border-gray-300 focus:ring-[#C4865A]'
+                              short > 0 ? 'border-red-300 focus:ring-red-400' : 'border-gray-300 focus:ring-[#C4865A]'
                             }`}
                             placeholder="0"
                           />
                           <span className="text-xs text-gray-400 flex-1 tabular-nums">
                             {qty !== was ? `เดิม ${was}` : ''}
-                            {want > 0 && <span className={want > qty ? ' text-red-500 font-medium' : ''}> · ต้องการ {want}</span>}
+                            {want > 0 && (
+                              <span className={short > 0 ? ' text-red-500 font-medium' : ''}>
+                                {' · '}ต้องการ {want}{short > 0 ? ` ขาด ฿${money(short)}` : ''}
+                              </span>
+                            )}
                           </span>
                         </div>
                       )
@@ -1353,6 +1378,11 @@ export default function ShiftClient({
                     2. วางชุดใหม่ที่เตรียมไว้ลงเก๊ะ ฿{money(swapPlan.putTotal)}
                   </p>
                   <p className="text-xs text-gray-500">{denomLine(swapPlan.put) || '—'}</p>
+                  {subbedLabels && (
+                    <p className="text-xs text-gray-500">
+                      คืนนี้{subbedLabels}ในเก๊ะไม่พอตามชุดที่ตั้งไว้ — จัดเป็นใบเล็กแทนให้แล้ว ยอดเท่าเดิม
+                    </p>
+                  )}
                 </div>
                 {swapPlan.stayTotal > 0 && (
                   <p className="text-xs text-gray-500">
@@ -1391,7 +1421,10 @@ export default function ShiftClient({
                   const keep = keepCounts[d.value]
                   const diff = (countedDenoms[d.value] ?? 0) - keep
                   const want = floatTargetDenoms?.[d.value] ?? 0
-                  const lacking = want > keep && !keepAll.includes(d.value)
+                  // กองนี้ขาดจริงไหม — ใบเล็กที่เกินมาอุดให้ได้ก็ไม่ใช่กองที่ขาด (ดู coverFloat)
+                  const pile = keepCover?.piles[d.value]
+                  const lacking = (pile?.missing ?? 0) > 0
+                  const substituted = (pile?.substituted ?? 0) > 0 && !lacking
                   return (
                     <div key={d.value} className="flex items-center gap-2">
                       <span className="text-sm text-gray-600 w-[5.5rem] shrink-0">{d.label}</span>
@@ -1417,7 +1450,8 @@ export default function ShiftClient({
                           <>
                             {diff > 0 && <span className="text-gray-500">ให้เจ้าของ {diff}</span>}
                             {diff < 0 && <span className="text-blue-600 font-medium">เจ้าของเติม {-diff}</span>}
-                            {lacking && <span className="text-red-500 font-medium">{diff !== 0 ? ' · ' : ''}ต้องการ {want}</span>}
+                            {lacking && <span className="text-red-500 font-medium">{diff !== 0 ? ' · ' : ''}ขาด ฿{money(pile!.missing)}</span>}
+                            {substituted && <span className="text-gray-400">{diff !== 0 ? ' · ' : ''}ใช้ใบเล็กแทน (เป้า {want})</span>}
                           </>
                         )}
                       </span>
@@ -1428,12 +1462,12 @@ export default function ShiftClient({
             ))}
           </div>
           )}
-          {floatPlan && !swapping && floatPlan.shortages.length > 0 && (
+          {keepCover && keepCover.shortages.length > 0 && (
             <p className="text-xs font-medium text-red-600 mb-3">
               ต้องแลกมาเติมก่อนเปิดร้าน:{' '}
-              {floatPlan.shortages.map((sh) => {
+              {keepCover.shortages.map((sh) => {
                 const label = DENOMS.find((d) => d.value === sh.value)?.label ?? sh.value
-                return `${label} อีก ${sh.need}`
+                return `${label} อีก ${sh.need} (฿${money(sh.missing)})`
               }).join(' · ')}
             </p>
           )}

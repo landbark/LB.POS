@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { X, Wallet, AlertTriangle, ArrowRightLeft } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { createClient } from '@/lib/supabase/client'
-import { BANKNOTES, COINS, DENOMS } from '@/lib/shiftFloat'
+import { BANKNOTES, COINS, DENOMS, coverFloat } from '@/lib/shiftFloat'
 import { denomDiffs, findCarryOver, findOrphanSales, openShift, type CarryOver, type OrphanSales } from '@/lib/shiftOpen'
 
 const money = (n: number) => n.toLocaleString('th-TH', { minimumFractionDigits: 2 })
@@ -96,9 +96,14 @@ export default function OpenShiftModal({
   const openingStored = pullIn && orphan ? typed - pending : typed
   const diffs = byDenom && carry ? denomDiffs(carry, countedDenoms) : []
   // กองที่เงินทอนไม่พอตั้งแต่ก่อนเปิดร้าน — ตัวที่เคยทำให้ต้องวิ่งหาเงินทอนตอนบ่าย
-  const shortages = byDenom && floatDenoms
-    ? DENOMS.filter((d) => !floatKeep.includes(d.value) && (floatDenoms[d.value] ?? 0) > qtyOf(d.value))
-        .map((d) => ({ ...d, need: (floatDenoms[d.value] ?? 0) - qtyOf(d.value) }))
+  // กองที่มีใบเล็กเกินพออุดให้แล้วไม่นับว่าขาด — คืนที่ห้าร้อยไม่พอแล้วใช้ร้อยแทน เงินทอนครบอยู่
+  // (เดิมเทียบทีละกองตรง ๆ เช้าไหนเก๊ะมีร้อย 28 ใบแทนห้าร้อย 2 ใบ ก็ขึ้นกล่องแดงว่าเงินทอนไม่พอ)
+  const cover = byDenom && floatDenoms ? coverFloat(countedDenoms, floatDenoms, floatKeep) : null
+  const shortages = cover
+    ? cover.shortages.map((sh) => ({
+        ...sh,
+        label: DENOMS.find((d) => d.value === sh.value)?.label ?? String(sh.value),
+      }))
     : []
 
   // ชนิดที่เก็บไว้ทั้งหมดลอยไปตามที่รับมาจากลูกค้า — บวกตามที่กะที่แล้วเหลือไว้ ไม่งั้นขึ้นว่าไม่ตรงทุกวัน
@@ -182,7 +187,6 @@ export default function OpenShiftModal({
                     <div key={gi} className="space-y-1.5">
                       {group.map((d) => {
                         const qty = qtyOf(d.value)
-                        const want = floatKeep.includes(d.value) ? 0 : floatDenoms?.[d.value] ?? 0
                         return (
                           <div key={d.value} className="flex items-center gap-2">
                             <span className="text-sm text-gray-600 w-[5.5rem] shrink-0">{d.label}</span>
@@ -191,7 +195,9 @@ export default function OpenShiftModal({
                               value={counts[d.value] ?? ''}
                               onChange={(e) => setCounts((c) => ({ ...c, [d.value]: e.target.value }))}
                               className={`w-16 border rounded-lg px-2 py-1.5 text-sm text-right focus:outline-none focus:ring-2 ${
-                                want > qty ? 'border-red-300 focus:ring-red-400' : 'border-gray-300 focus:ring-[#C4865A]'
+                                (cover?.piles[d.value]?.missing ?? 0) > 0
+                                  ? 'border-red-300 focus:ring-red-400'
+                                  : 'border-gray-300 focus:ring-[#C4865A]'
                               }`}
                               placeholder="0"
                             />
@@ -229,7 +235,7 @@ export default function OpenShiftModal({
               <div className="mt-1 space-y-0.5">
                 {shortages.map((sh) => (
                   <p key={sh.value} className="text-xs text-red-700">
-                    {sh.label} มี {qtyOf(sh.value)} ต้องการ {floatDenoms![sh.value]} — ขาดอีก <b>{sh.need}</b>
+                    {sh.label} มี {qtyOf(sh.value)} ต้องการ {floatDenoms![sh.value]} — ขาดอีก <b>{sh.need}</b> (฿{money(sh.missing)})
                   </p>
                 ))}
               </div>

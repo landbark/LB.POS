@@ -6,7 +6,7 @@
  * โจทย์: ปิดกะแล้วต้องแยกแบงค์ไหนออกให้เจ้าของบ้าง ถึงจะเหลือในลิ้นชักเท่าเงินทอนตั้งต้นพอดี
  * และเหรียญ/แบงค์เล็กต้องไม่ถูกหยิบออก เพราะนั่นคือเงินทอนที่ต้องใช้เปิดร้านเช้าวันถัดไป
  */
-import { ownerSide, planByDenom, planOwnerTake, planSwap, SUGGESTED_FLOAT, SUGGESTED_KEEP, type FloatPlan } from '../src/lib/shiftFloat'
+import { buildFloat, coverFloat, ownerSide, planByDenom, planOwnerTake, planSwap, SUGGESTED_FLOAT, SUGGESTED_KEEP, type FloatPlan } from '../src/lib/shiftFloat'
 
 const NOTES = [1000, 500, 100, 50, 20]
 
@@ -189,6 +189,75 @@ check(!(50 in swOdd.put) && swOdd.keep[50] === 4, 'ตั้งเป้าแ�
 // ไม่มีกองไหนเก็บไว้ทั้งหมด = รวบออกหมดเก๊ะจริง ๆ
 const swAll = planSwap(real, set4000, [])
 check(swAll.outTotal === realTotal && swAll.leftover === 4000, 'ไม่ตั้งกองที่เก็บไว้ → รวบออกทั้งเก๊ะ เหลือเท่าชุดใหม่พอดี', `฿${swAll.outTotal} / ฿${swAll.leftover}`)
+
+// ── ใบเล็กแทนใบใหญ่: ห้าร้อยไม่พอ ใช้แบงค์ร้อยแทน ────────────────────────────────────
+// ชุดจริงของร้าน ฿4,000 มีห้าร้อย 2 ใบอยู่ด้วย แต่ห้าร้อยไม่ได้มีทุกคืน
+console.log('')
+const noteSet = { 500: 2, 100: 18, 20: 40, 10: 20, 5: 30, 1: 50 }
+const coins = { 10: 20, 5: 30, 1: 50 }
+
+// ใส่ร้อย 28 ใบแทนห้าร้อย 2 ใบ — ยอดเท่ากัน ทอนได้ละเอียดกว่า ต้องไม่ขึ้นว่าขาด
+const subbed = { 100: 28, 20: 40, ...coins }
+const cs = coverFloat(subbed, noteSet, SUGGESTED_KEEP)
+check(cs.ok && cs.missing === 0, 'ร้อย 28 ใบแทนห้าร้อย 2 ใบ → ครบชุด ไม่ขึ้นว่าขาด', `ขาด ฿${cs.missing}`)
+check(cs.piles[500].substituted === 1000, 'บอกได้ว่ากองห้าร้อยถูกใบเล็กอุดไว้ ฿1,000', `฿${cs.piles[500].substituted}`)
+check(cs.shortages.length === 0, 'ไม่มีกองไหนค้างอยู่ในรายการที่ต้องแลกมาเติม', JSON.stringify(cs.shortages))
+
+// ย้อนทางไม่ได้ — ห้าร้อยเกินมาอุดยี่สิบที่ขาดไม่ได้ เพราะแตกไม่ได้
+const big = { 500: 4, 100: 18, 20: 0, ...coins }
+const cb = coverFloat(big, noteSet, SUGGESTED_KEEP)
+check(cb.piles[20].missing === 800, 'ห้าร้อยเกินมา ฿1,000 ก็อุดยี่สิบที่ขาด ฿800 ไม่ได้', `ขาด ฿${cb.piles[20].missing}`)
+check(cb.shortages.length === 1 && cb.shortages[0].value === 20, 'เตือนแต่กองยี่สิบกองเดียว', JSON.stringify(cb.shortages))
+check(cb.shortages[0].need === 40, 'บอกเป็นจำนวนใบด้วย — ยี่สิบอีก 40 ใบ', `${cb.shortages[0].need} ใบ`)
+
+// แบงค์กับเหรียญไม่ยกข้ามกัน — ทอนร้อยเป็นเหรียญบาทร้อยเหรียญไม่มีใครทำ
+const coinHeavy = { 500: 2, 100: 17, 20: 40, 10: 20, 5: 30, 1: 500 }
+const cc = coverFloat(coinHeavy, noteSet, SUGGESTED_KEEP)
+check(cc.piles[100].missing === 100, 'เหรียญบาทเกิน ฿450 ไม่นับว่าอุดแบงค์ร้อยที่ขาด 1 ใบ', `ขาด ฿${cc.piles[100].missing}`)
+const noteHeavy = { 500: 2, 100: 30, 20: 40, 10: 20, 5: 30, 1: 0 }
+const cn = coverFloat(noteHeavy, noteSet, SUGGESTED_KEEP)
+check(cn.piles[1].missing === 50, 'แบงค์ร้อยเกิน ฿1,200 ก็แตกเป็นเหรียญบาทเองไม่ได้', `ขาด ฿${cn.piles[1].missing}`)
+
+// แบงค์ห้าสิบไม่อยู่ในสมการทั้งขาซัพพลายและขาเป้า
+const withFifties = { 50: 20, 100: 18, 20: 40, ...coins }
+const cf = coverFloat(withFifties, noteSet, SUGGESTED_KEEP)
+check(cf.piles[500].missing === 1000, 'ห้าสิบ 20 ใบที่คาไว้ไม่นับว่าอุดห้าร้อยที่ขาด', `ขาด ฿${cf.piles[500].missing}`)
+check(!(50 in cf.piles), 'กองที่เก็บไว้ทั้งหมดไม่โผล่ในผลเทียบเลย', JSON.stringify(Object.keys(cf.piles)))
+
+// ── จัดชุดใหม่จากเงินที่มีในเก๊ะ (buildFloat) ──────────────────────────────────────────
+console.log('')
+const setValue = (k: Record<number, number>) =>
+  Object.entries(k).reduce((sum, [v, q]) => sum + Number(v) * q, 0) - 50 * (k[50] ?? 0)
+
+// คืนที่ห้าร้อยไม่มีเลย — ต้องจัดชุดให้เองด้วยแบงค์ร้อย ไม่ใช่ขึ้นว่าขาดห้าร้อย
+const drawer = { 1000: 3, 100: 40, 50: 2, 20: 60, 10: 25, 5: 40, 1: 80 }
+const b1 = buildFloat(drawer, noteSet, SUGGESTED_KEEP)
+check(setValue(b1) === 4000, 'จัดชุดได้ครบ ฿4,000 ทั้งที่ไม่มีห้าร้อยสักใบ', `฿${setValue(b1)}`)
+check(!b1[500] && b1[100] === 28, 'ใส่ร้อย 28 ใบแทน (18 ตามเป้า + 10 ใบแทนห้าร้อย 2)', JSON.stringify(b1))
+check(b1[20] === 40 && b1[10] === 20 && b1[5] === 30 && b1[1] === 50, 'กองที่มีพออยู่แล้วเอาตามเป้าเป๊ะ ไม่ขยับ', JSON.stringify(b1))
+check(!b1[1000], 'แบงค์พันไม่ถูกยัดลงเก๊ะ — ไม่อยู่ในชุด เป็นเงินของเจ้าของ', JSON.stringify(b1))
+check(b1[50] === 2, 'ห้าสิบที่มีคาไว้ในเก๊ะตามเดิม', String(b1[50]))
+check(coverFloat(b1, noteSet, SUGGESTED_KEEP).ok, 'ชุดที่จัดให้ผ่านการตรวจว่าครบ', JSON.stringify(coverFloat(b1, noteSet, SUGGESTED_KEEP).shortages))
+
+// มีห้าร้อยพอ → ได้ชุดเดิมเป๊ะ ๆ ไม่มีอะไรเปลี่ยน
+const b2 = buildFloat({ 500: 5, 100: 30, 20: 60, 10: 25, 5: 40, 1: 80 }, noteSet, SUGGESTED_KEEP)
+check(b2[500] === 2 && b2[100] === 18, 'มีห้าร้อยพอ → ชุดเดิมตามที่ตั้งไว้', JSON.stringify(b2))
+
+// เงินในเก๊ะไม่พอจัดครบชุด → ได้เท่าที่มี แล้วให้ coverFloat เตือนว่าขาดอะไร
+const b3 = buildFloat({ 100: 5, 20: 10, 1: 20 }, noteSet, SUGGESTED_KEEP)
+check(setValue(b3) === 500 + 200 + 20, 'เงินไม่พอ → จัดได้เท่าที่มีในเก๊ะ ไม่เสกเงินเพิ่ม', `฿${setValue(b3)}`)
+check(!coverFloat(b3, noteSet, SUGGESTED_KEEP).ok, 'ชุดที่ไม่ครบยังขึ้นเตือนตามปกติ', JSON.stringify(coverFloat(b3, noteSet, SUGGESTED_KEEP).shortages))
+
+// เหรียญไม่พอ → ไม่เอาแบงค์มาถมแทนเหรียญ แต่ยอดรวมยังเติมให้ครบด้วยแบงค์
+const b4 = buildFloat({ 100: 40, 20: 40, 10: 20, 5: 10, 1: 50 }, noteSet, SUGGESTED_KEEP)
+check(b4[5] === 10, 'เหรียญห้ามีแค่ 10 เหรียญก็ใส่ได้แค่ 10 ไม่มีใครเสกเพิ่ม', String(b4[5]))
+check(coverFloat(b4, noteSet, SUGGESTED_KEEP).piles[5].missing === 100, 'กองเหรียญห้าที่ขาดยังขึ้นเตือน ฿100', `฿${coverFloat(b4, noteSet, SUGGESTED_KEEP).piles[5].missing}`)
+
+// ชุดที่จัดให้ เอาไปโยกได้เลย เงินสุทธิยังคิดจากส่วนต่างเหมือนเดิม
+const swSub = planSwap(drawer, buildFloat(drawer, noteSet, SUGGESTED_KEEP), SUGGESTED_KEEP)
+check(swSub.putTotal === 4000, 'ชุดที่จัดให้วางลงเก๊ะได้ ฿4,000 เท่าเป้า', `฿${swSub.putTotal}`)
+check(swSub.net === ownerSide(drawer, swSub.keep).net, 'สุทธิที่เจ้าของได้ตรงกับส่วนต่างใบนับ', `฿${swSub.net}`)
+check(swSub.leftover === 4100, 'เหลือในเก๊ะ = ชุด ฿4,000 + ห้าสิบ 2 ใบที่คาไว้', `฿${swSub.leftover}`)
 
 console.log(`\nผ่าน ${passed} · ไม่ผ่าน ${failed}`)
 if (failed) process.exit(1)
