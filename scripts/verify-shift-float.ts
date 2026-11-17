@@ -6,7 +6,7 @@
  * โจทย์: ปิดกะแล้วต้องแยกแบงค์ไหนออกให้เจ้าของบ้าง ถึงจะเหลือในลิ้นชักเท่าเงินทอนตั้งต้นพอดี
  * และเหรียญ/แบงค์เล็กต้องไม่ถูกหยิบออก เพราะนั่นคือเงินทอนที่ต้องใช้เปิดร้านเช้าวันถัดไป
  */
-import { ownerSide, planByDenom, planOwnerTake, SUGGESTED_FLOAT, SUGGESTED_KEEP, type FloatPlan } from '../src/lib/shiftFloat'
+import { ownerSide, planByDenom, planOwnerTake, planSwap, SUGGESTED_FLOAT, SUGGESTED_KEEP, type FloatPlan } from '../src/lib/shiftFloat'
 
 const NOTES = [1000, 500, 100, 50, 20]
 
@@ -145,6 +145,50 @@ check(!(1 in o3.signed), 'กองที่ไม่ขยับไม่ต้
 // เหลือไว้เท่าที่นับได้ = วันที่ไม่ได้ให้เจ้าของเลย (ค่าตั้งต้นของร้านที่ไม่ได้ตั้งชุดเงินทอน)
 const o4 = ownerSide(real, real)
 check(o4.net === 0 && !Object.keys(o4.signed).length, 'เหลือไว้ทั้งเก๊ะ → ให้เจ้าของ ฿0', `฿${o4.net}`)
+
+// ── โยกทั้งชุด: รวบของเก่าออกทั้งกอง วางชุดใหม่ลงไป ────────────────────────────────────
+// ของจริงที่ร้านใช้: ชุด ฿4,000 (ห้าร้อย 2 · ร้อย 18 · ยี่สิบ 40 · สิบ 20 · ห้า 30 · บาท 50)
+// แบงค์ห้าสิบเก็บไว้ทั้งหมด เตรียมใส่ชุดใหม่ไม่ได้ (แลกจากธนาคารมาไม่ได้)
+console.log('')
+const set4000 = { 500: 2, 100: 18, 20: 40, 10: 20, 5: 30, 1: 50 }
+const sw = planSwap(real, set4000, SUGGESTED_KEEP)
+
+check(sw.putTotal === 4000, 'ชุดใหม่ที่วางลงเก๊ะ ฿4,000 เท่าที่ตั้งไว้', `฿${sw.putTotal}`)
+check(sw.outTotal === realTotal - 50, 'รวบออกทุกกองยกเว้นแบงค์ห้าสิบ', `฿${sw.outTotal} (นับได้ ฿${realTotal} − ห้าสิบ ฿50)`)
+check(!(50 in sw.out) && sw.stay[50] === 1, 'แบงค์ห้าสิบคาอยู่ในเก๊ะ ไม่ถูกรวบออก', JSON.stringify(sw.stay))
+check(sw.leftover === 4050, 'เช้ามาเปิดด้วยชุดใหม่ + ห้าสิบที่คาไว้ ฿4,050', `฿${sw.leftover}`)
+check(sw.net === sw.outTotal - sw.putTotal, 'สุทธิที่เจ้าของได้ = รวบออก − วางใหม่', `฿${sw.net}`)
+
+// ข้อสำคัญที่สุด — โยกทั้งชุดกับคืนส่วนเกินต้องได้เงินสุทธิเท่ากัน ไม่ใช่วิธีใหม่แล้วเงินหาย/เกิน
+const byDenom = planByDenom(real, set4000, NOTES, SUGGESTED_KEEP)
+check(
+  sw.net === ownerSide(real, sw.keep).net,
+  'สุทธิตรงกับที่หน้าปิดกะคิดจากส่วนต่าง (ที่นับได้ − ที่เหลือไว้)',
+  `฿${sw.net}`,
+)
+check(
+  sw.leftover !== byDenom.leftover || sw.net === byDenom.taken,
+  'เหลือในเก๊ะเท่ากันเมื่อไหร่ เงินที่ออกไปก็เท่ากันเมื่อนั้น',
+  `โยกชุด เหลือ ฿${sw.leftover} ออก ฿${sw.net} · ส่วนเกิน เหลือ ฿${byDenom.leftover} ออก ฿${byDenom.taken}`,
+)
+check(
+  sw.leftover === 4000 + 50 * (real[50] ?? 0),
+  'เหลือในเก๊ะไม่ลอยตามที่นับได้ — ชุดใหม่คงที่ + ห้าสิบที่รับมาจากลูกค้า',
+  `฿${sw.leftover}`,
+)
+
+// วันที่เงินในเก๊ะน้อยกว่าชุดใหม่ — เจ้าของวางเพิ่มเข้าไป ไม่ใช่ติดลบแล้วพัง
+const swThin = planSwap({ 100: 2, 20: 5, 10: 4, 5: 6, 1: 20 }, set4000, SUGGESTED_KEEP)
+check(swThin.net === 390 - 4000, 'รวบออกได้น้อยกว่าชุดใหม่ → สุทธิติดลบ = เจ้าของวางเพิ่ม', `฿${swThin.net}`)
+check(swThin.leftover === 4000, 'ยังเปิดร้านด้วยเงินทอนครบชุด ไม่มีกองไหนขาด', `฿${swThin.leftover}`)
+
+// กองที่เก็บไว้ทั้งหมดต้องไม่โผล่ในชุดใหม่ แม้คนตั้งค่าจะใส่เลขไว้
+const swOdd = planSwap({ 50: 4 }, { ...set4000, 50: 10 }, [50])
+check(!(50 in swOdd.put) && swOdd.keep[50] === 4, 'ตั้งเป้าแบงค์ห้าสิบไว้ก็ไม่เตรียมใส่ชุดใหม่ ใช้ที่มีในเก๊ะ', JSON.stringify(swOdd.keep))
+
+// ไม่มีกองไหนเก็บไว้ทั้งหมด = รวบออกหมดเก๊ะจริง ๆ
+const swAll = planSwap(real, set4000, [])
+check(swAll.outTotal === realTotal && swAll.leftover === 4000, 'ไม่ตั้งกองที่เก็บไว้ → รวบออกทั้งเก๊ะ เหลือเท่าชุดใหม่พอดี', `฿${swAll.outTotal} / ฿${swAll.leftover}`)
 
 console.log(`\nผ่าน ${passed} · ไม่ผ่าน ${failed}`)
 if (failed) process.exit(1)

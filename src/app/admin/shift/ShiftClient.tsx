@@ -5,7 +5,7 @@ import { flushSync } from 'react-dom'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { checkChannels, expectedCash as computeExpectedCash, splitShiftBills, type ShiftBill } from '@/lib/shiftCash'
-import { BANKNOTES, COINS, DENOMS, ownerSide, planByDenom, planOwnerTake } from '@/lib/shiftFloat'
+import { BANKNOTES, COINS, DENOMS, ownerSide, planByDenom, planOwnerTake, planSwap } from '@/lib/shiftFloat'
 import { DEFAULT_TRANSFER_ACCOUNTS, PAYMENT_DOT, PAYMENT_LABEL, sumBankMethods } from '@/lib/payments'
 import { CHANNEL_GROUPS } from '@/lib/salesChannel'
 import type { PaymentMethod, SalesChannel } from '@/lib/types'
@@ -103,6 +103,8 @@ export default function ShiftClient({
   // เงินทอนที่จะเหลือไว้ให้กะถัดไป แยกรายชนิด · null = ยังไม่แตะ ใช้ชุดเงินทอนที่ตั้งไว้เป็นค่าตั้งต้น
   // ไม่มีช่อง "แยกให้เจ้าของ" แล้ว — ยอดนั้นคิดจากส่วนต่างกับใบนับ (ดู lib/shiftFloat → ownerSide)
   const [keepEdit, setKeepEdit] = useState<Record<number, string> | null>(null)
+  // กางช่องเงินทอนรายชนิดออกมาแก้เอง — คืนที่โยกทั้งชุดไม่ต้องเห็นเก้าช่องนั้นเลย
+  const [showKeepRows, setShowKeepRows] = useState(false)
   // ไม่ติ๊กไว้ให้ — เคยติ๊กค้างแล้วคนปิดกะไม่ทันสังเกตว่ามีกะใหม่เปิดต่อ เช้ามาเห็นกะค้างอยู่
   // นึกว่าเมื่อวานลืมปิด เลยปิดแล้วเปิดใหม่อีกรอบ กลายเป็นกะเกินมาทุกวัน
   const [reopenNext, setReopenNext] = useState(false)
@@ -310,6 +312,12 @@ export default function ShiftClient({
   )
   const takeable = BANKNOTES.map((d) => d.value)
   const keepAll = floatKeep ?? []
+  // วิธีหลัก — โยกทั้งชุด: รวบของเก่าออกมาทั้งกอง วางชุดที่เจ้าของนับไว้ล่วงหน้าลงไป
+  // เงินสุทธิเท่ากับวิธีคืนส่วนเกินเป๊ะ ๆ แต่ที่เก๊ะไม่ต้องนับทีละกอง (ดู lib/shiftFloat → planSwap)
+  const swapPlan = hasCount && floatTargetDenoms
+    ? planSwap(countedDenoms, floatTargetDenoms, keepAll)
+    : null
+  // วิธีสำรอง — คืนเฉพาะส่วนเกินรายกอง ใช้คืนที่ไม่ได้เตรียมชุดใหม่ไว้
   const floatPlan = !hasCount
     ? null
     : floatTargetDenoms
@@ -320,21 +328,31 @@ export default function ShiftClient({
   const floatTotal = floatTargetDenoms
     ? DENOMS.reduce((s, d) => s + d.value * (floatTargetDenoms[d.value] ?? 0), 0)
     : floatTarget
-  // เหลือไว้เท่าไหร่ถ้าไม่แตะอะไรเลย — ร้านที่ตั้งชุดเงินทอนไว้ใช้ตามชุดนั้น ร้านที่ไม่ได้ตั้งก็เหลือไว้ทั้งหมด
-  const keepDefault: Record<number, number> = floatPlan ? floatPlan.keep : countedDenoms
+  // เหลือไว้เท่าไหร่ถ้าไม่แตะอะไรเลย — ร้านที่ตั้งชุดรายชนิดไว้คือชุดใหม่ที่โยกลงไป + กองที่คาไว้
+  // ร้านที่ตั้งแค่ยอดรวมใช้ค่าที่ไล่หยิบใบใหญ่ลงมา ร้านที่ไม่ได้ตั้งอะไรเลยก็เหลือไว้ทั้งเก๊ะ
+  const keepDefault: Record<number, number> = swapPlan
+    ? swapPlan.keep
+    : floatPlan
+      ? floatPlan.keep
+      : countedDenoms
   const keepCounts: Record<number, number> = keepEdit
     ? Object.fromEntries(DENOMS.map((d) => [d.value, qtyOf(keepEdit, d.value)]))
     : keepDefault
   const keepValue = (v: number) =>
     keepEdit ? (keepEdit[v] ?? '') : keepDefault[v] ? String(keepDefault[v]) : ''
+  // ที่เหลือไว้ยังเท่ากับ "ชุดใหม่ + กองที่คาไว้" อยู่ไหม — แก้มือจนไม่ตรงแล้วคำสั่งโยกชุดใช้ไม่ได้อีก
+  const sameAs = (a: Record<number, number>, b: Record<number, number>) =>
+    DENOMS.every((d) => (a[d.value] ?? 0) === (b[d.value] ?? 0))
+  const swapping = swapPlan != null && sameAs(keepCounts, swapPlan.keep)
+  const keepRowsShown = !swapping || showKeepRows
+
   // แตะช่องแรกแล้วต้องยึดทั้งชุดไว้ ไม่งั้นช่องที่เหลือจะเลื่อนตามค่าตั้งต้นที่ขยับทุกครั้งที่นับเพิ่ม
   const editKeep = (v: number, raw: string) =>
     setKeepEdit((c) => ({
       ...(c ?? Object.fromEntries(DENOMS.map((d) => [d.value, keepValue(d.value)]))),
       [v]: raw,
     }))
-  // กดปุ่มเดียวให้เหลือในเก๊ะ "เท่าชุดที่ตั้งไว้พอดี" — ไม่ใช่ค่าที่ระบบคิดให้ซึ่งขาดก็เหลือไว้ทั้งเก๊ะ
-  // ที่ขาดจะขึ้นเป็น "เจ้าของเติม n" ให้เห็นทันทีว่าต้องเอาอะไรมาเติมกี่ใบ
+  // เหลือในเก๊ะ "เท่าชุดที่ตั้งไว้พอดี" — ค่าตั้งต้นของหน้านี้ และปุ่มกลับมาโยกทั้งชุดหลังแก้มือไปแล้ว
   //
   // ทุกชนิดที่มีเป้าลงเท่าเป้าเป๊ะ ๆ รวมทั้งเหรียญ — เดิมเหรียญสแน็ปขึ้นอย่างเดียว (Math.max)
   // เพราะถือว่าเหรียญที่เกินหยิบออกไม่ได้ กดปุ่ม "ใช้ชุดที่ตั้งไว้ ฿4,000" แล้วเลยได้ ฿4,212
@@ -1254,19 +1272,34 @@ export default function ShiftClient({
           <div className="flex items-center justify-between gap-3 mb-1">
             <label className="block text-xs font-medium text-gray-600">เงินทอนที่เหลือไว้ให้พรุ่งนี้</label>
             <div className="flex items-center gap-3">
-              {floatTargetDenoms && (
+              {floatTargetDenoms && !swapping && (
                 <button
                   type="button"
-                  onClick={applyFloatSet}
+                  onClick={() => { applyFloatSet(); setShowKeepRows(false) }}
                   className="text-xs font-medium text-blue-600 hover:text-blue-700"
                 >
-                  ใช้ชุดที่ตั้งไว้ ฿{money(floatTotal!)}
+                  โยกชุดใหม่ ฿{money(floatTotal!)}
                 </button>
               )}
-              {keepEdit && (
+              {swapping && floatPlan && (
                 <button
                   type="button"
-                  onClick={() => setKeepEdit(null)}
+                  onClick={() => {
+                    setKeepEdit(Object.fromEntries(DENOMS.map((d) => [
+                      d.value, floatPlan.keep[d.value] ? String(floatPlan.keep[d.value]) : '',
+                    ])))
+                    setShowKeepRows(true)
+                  }}
+                  className="text-xs font-medium text-gray-400 hover:text-gray-600"
+                  title="คืนนี้เจ้าของไม่ได้เตรียมชุดใหม่มา — คิดแบบเดิมคือหยิบเฉพาะส่วนที่เกินชุดออก กองที่ขาดก็เหลือไว้เท่าที่มี"
+                >
+                  คืนแค่ส่วนเกิน
+                </button>
+              )}
+              {keepEdit && !swapping && (
+                <button
+                  type="button"
+                  onClick={() => { setKeepEdit(null); setShowKeepRows(false) }}
                   className="text-xs font-medium text-gray-400 hover:text-gray-600"
                 >
                   คืนค่าที่ระบบคิดให้
@@ -1275,8 +1308,10 @@ export default function ShiftClient({
             </div>
           </div>
           <p className="text-xs text-gray-500 mb-2">
-            ใส่ว่าจะเหลือเงินทอนไว้ในเก๊ะชนิดไหนกี่ใบ — ส่วนที่เหลือคือเงินที่ออกไปหาเจ้าของ ไม่ต้องกรอกซ้ำ
-            {floatPlan && (
+            {swapping
+              ? 'รวบของเก่าออกมาทั้งกอง แล้ววางชุดใหม่ที่เตรียมไว้ลงเก๊ะ — ที่เก๊ะไม่มีกองไหนต้องนับเลย'
+              : 'ใส่ว่าจะเหลือเงินทอนไว้ในเก๊ะชนิดไหนกี่ใบ — ส่วนที่เหลือคือเงินที่ออกไปหาเจ้าของ ไม่ต้องกรอกซ้ำ'}
+            {floatPlan && !swapping && (
               <span className="block mt-0.5">
                 {/* ยอดที่ต้องเหลือไว้จริงคือชุดที่ตั้ง + ชนิดที่เก็บทั้งหมดที่มีในเก๊ะ — กางให้เห็นทั้งสองก้อน
                     ไม่งั้นปุ่มขึ้น ฿4,000 แต่บรรทัดล่างเทียบกับ ฿4,150 แล้วไม่มีใครรู้ว่า ฿150 มาจากไหน */}
@@ -1298,9 +1333,57 @@ export default function ShiftClient({
             )}
           </p>
 
+          {/* คำสั่งที่เก๊ะ — สองบรรทัด ไม่มีเลขให้คิด เทียบกับเดิมที่ต้องไล่ส่วนต่างเก้ากอง
+              กางใบนับของชุดใหม่ไว้ด้วย เจ้าของได้เอาไปนับชุดของพรุ่งนี้เตรียมไว้ตอนว่าง */}
+          {swapPlan && swapping && (
+            <div className="rounded-lg border-2 border-[#C4865A] bg-[#FDF8F3] p-3 mb-3">
+              <p className="flex items-center gap-1.5 text-sm font-semibold text-[#7A4E2D] mb-2">
+                <ArrowRightLeft size={15} /> โยกชุดเงินทอนที่เก๊ะ
+              </p>
+              <div className="space-y-2 text-sm">
+                <div>
+                  <p className="font-medium text-gray-900">
+                    1. รวบเงินในเก๊ะออกมาให้เจ้าของทั้งหมด ฿{money(swapPlan.outTotal)}
+                    {keptLabels && <span className="font-normal text-gray-500"> (ยกเว้น{keptLabels})</span>}
+                  </p>
+                  <p className="text-xs text-gray-500">{denomLine(swapPlan.out) || '—'}</p>
+                </div>
+                <div>
+                  <p className="font-medium text-gray-900">
+                    2. วางชุดใหม่ที่เตรียมไว้ลงเก๊ะ ฿{money(swapPlan.putTotal)}
+                  </p>
+                  <p className="text-xs text-gray-500">{denomLine(swapPlan.put) || '—'}</p>
+                </div>
+                {swapPlan.stayTotal > 0 && (
+                  <p className="text-xs text-gray-500">
+                    {DENOMS.filter((d) => swapPlan.stay[d.value]).map((d) => `${d.label} ${swapPlan.stay[d.value]} ใบ`).join(' · ')}
+                    {' '}(฿{money(swapPlan.stayTotal)}) คาอยู่ในเก๊ะเหมือนเดิม — ไม่ต้องรวบออก ไม่ต้องเตรียมใส่ชุดใหม่
+                  </p>
+                )}
+              </div>
+              <p className="mt-2 pt-2 border-t border-[#E8D5C4] text-xs font-medium text-[#7A4E2D]">
+                {swapPlan.net >= 0
+                  ? `เจ้าของได้ไปสุทธิ ฿${money(swapPlan.net)}`
+                  : `เจ้าของวางเพิ่มสุทธิ ฿${money(-swapPlan.net)}`}
+                {' · '}เช้าพรุ่งนี้เปิดร้านด้วย ฿{money(swapPlan.leftover)}
+              </p>
+            </div>
+          )}
+
+          {swapping && !showKeepRows && (
+            <button
+              type="button"
+              onClick={() => setShowKeepRows(true)}
+              className="text-xs font-medium text-gray-400 hover:text-gray-600 mb-3"
+            >
+              แก้เงินทอนที่เหลือไว้เอง
+            </button>
+          )}
+
           {/* แบงค์คอลัมน์ซ้าย เหรียญคอลัมน์ขวา — เรียงให้ตรงกับช่องนับเงินข้างบนเป๊ะ ๆ
               เดิมไล่ DENOMS ลงในกริดตรง ๆ กริดเลยวางทีละแถว ได้ "แบงค์ยี่สิบ | เหรียญสิบ"
               คู่กันอยู่บรรทัดเดียว คนกรอกต้องไล่สายตาข้ามไปมาระหว่างสองกล่องที่ลำดับไม่ตรงกัน */}
+          {keepRowsShown && (
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1.5 mb-3">
             {[BANKNOTES, COINS].map((group, gi) => (
               <div key={gi} className="space-y-1.5">
@@ -1321,10 +1404,22 @@ export default function ShiftClient({
                         }`}
                         placeholder="0"
                       />
+                      {/* โยกทั้งชุดไม่ได้หยิบทีละใบ จะขึ้น "ให้เจ้าของ 7 / เจ้าของเติม 12" ไม่ได้ —
+                          กองนั้นออกไปทั้งกองแล้วชุดใหม่ลงมาแทน บอกเท่าที่คนที่เก๊ะต้องทำจริง */}
                       <span className="text-xs flex-1 tabular-nums">
-                        {diff > 0 && <span className="text-gray-500">ให้เจ้าของ {diff}</span>}
-                        {diff < 0 && <span className="text-blue-600 font-medium">เจ้าของเติม {-diff}</span>}
-                        {lacking && <span className="text-red-500 font-medium">{diff !== 0 ? ' · ' : ''}ต้องการ {want}</span>}
+                        {swapping ? (
+                          keepAll.includes(d.value)
+                            ? <span className="text-gray-400">คาไว้ในเก๊ะ</span>
+                            : (countedDenoms[d.value] ?? 0) > 0
+                              ? <span className="text-gray-500">รวบออก {countedDenoms[d.value]}</span>
+                              : null
+                        ) : (
+                          <>
+                            {diff > 0 && <span className="text-gray-500">ให้เจ้าของ {diff}</span>}
+                            {diff < 0 && <span className="text-blue-600 font-medium">เจ้าของเติม {-diff}</span>}
+                            {lacking && <span className="text-red-500 font-medium">{diff !== 0 ? ' · ' : ''}ต้องการ {want}</span>}
+                          </>
+                        )}
                       </span>
                     </div>
                   )
@@ -1332,7 +1427,8 @@ export default function ShiftClient({
               </div>
             ))}
           </div>
-          {floatPlan && floatPlan.shortages.length > 0 && (
+          )}
+          {floatPlan && !swapping && floatPlan.shortages.length > 0 && (
             <p className="text-xs font-medium text-red-600 mb-3">
               ต้องแลกมาเติมก่อนเปิดร้าน:{' '}
               {floatPlan.shortages.map((sh) => {
@@ -1544,6 +1640,13 @@ export default function ShiftClient({
 
             <p className="mt-2 text-[11px]"><span className="font-medium">นับได้:</span> {denomLine(countedDenoms) || '—'}</p>
             <p className="text-[11px]"><span className="font-medium">เหลือไว้:</span> {denomLine(keepCounts) || '—'}</p>
+            {swapPlan && swapping && (
+              <p className="text-[11px]">
+                <span className="font-medium">โยกชุดเงินทอน:</span> รวบออก ฿{money(swapPlan.outTotal)} ·
+                วางชุดใหม่ ฿{money(swapPlan.putTotal)}
+                {swapPlan.stayTotal > 0 && <> · {keptLabels}คาไว้ ฿{money(swapPlan.stayTotal)}</>}
+              </p>
+            )}
             {notes.trim() && <p className="mt-1 text-[11px]"><span className="font-medium">หมายเหตุ:</span> {notes.trim()}</p>}
 
             <div className="mt-6 flex justify-between text-[11px]">
