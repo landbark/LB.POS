@@ -6,7 +6,7 @@
  * โจทย์: ปิดกะแล้วต้องแยกแบงค์ไหนออกให้เจ้าของบ้าง ถึงจะเหลือในลิ้นชักเท่าเงินทอนตั้งต้นพอดี
  * และเหรียญ/แบงค์เล็กต้องไม่ถูกหยิบออก เพราะนั่นคือเงินทอนที่ต้องใช้เปิดร้านเช้าวันถัดไป
  */
-import { buildFloat, coverFloat, floatSetKeep, ownerSide, planByDenom, planOwnerTake, planSwap, SUGGESTED_FLOAT, SUGGESTED_KEEP, type FloatPlan } from '../src/lib/shiftFloat'
+import { coverFloat, floatSetKeep, ownerSide, planByDenom, planOwnerTake, planSwap, SUGGESTED_FLOAT, SUGGESTED_KEEP, type FloatPlan } from '../src/lib/shiftFloat'
 
 const NOTES = [1000, 500, 100, 50, 20]
 
@@ -224,61 +224,52 @@ const cf = coverFloat(withFifties, noteSet, SUGGESTED_KEEP)
 check(cf.piles[500].missing === 1000, 'ห้าสิบ 20 ใบที่คาไว้ไม่นับว่าอุดห้าร้อยที่ขาด', `ขาด ฿${cf.piles[500].missing}`)
 check(!(50 in cf.piles), 'กองที่เก็บไว้ทั้งหมดไม่โผล่ในผลเทียบเลย', JSON.stringify(Object.keys(cf.piles)))
 
-// ── จัดชุดใหม่จากเงินที่มีในเก๊ะ (buildFloat) ──────────────────────────────────────────
+// ── ค่าตั้งต้นหน้าปิดกะ = ชุดที่เจ้าของเตรียมไว้ (floatSetKeep) ──────────────────────────
+// เงินทอนไม่ได้จัดจากเงินที่มีในเก๊ะอีกแล้ว เจ้าของนับชุด ฿4,000 เตรียมไว้ล่วงหน้าทุกวัน
+// ไม่รวมแบงค์ห้าสิบ (19 พ.ย. 69) ปิดกะจึงต้องเข้าโหมด "โยกทั้งชุด" ทุกคืนไม่ว่าเก๊ะจะมีอะไรอยู่
+// ไม่มีเรื่องขาด/เติม/ต้องแลกมาเติมให้อ่านอีก — นั่นคือหน้าตาของสมัยที่เงินทอนคือ "เหลือไว้เท่าที่มี"
 console.log('')
 const setValue = (k: Record<number, number>) =>
   Object.entries(k).reduce((sum, [v, q]) => sum + Number(v) * q, 0) - 50 * (k[50] ?? 0)
+/** เงื่อนไขที่หน้าปิดกะใช้ตัดสินว่าคืนนี้เป็นการโยกทั้งชุด (ดู ShiftClient → swapping) */
+const swaps = (counts: Record<number, number>, keep: Record<number, number>) =>
+  SUGGESTED_KEEP.every((d) => (keep[d] ?? 0) === (counts[d] ?? 0)) &&
+  setValue(keep) === setValue(noteSet) &&
+  coverFloat(keep, noteSet, SUGGESTED_KEEP).ok
 
-// คืนที่ห้าร้อยไม่มีเลย — ต้องจัดชุดให้เองด้วยแบงค์ร้อย ไม่ใช่ขึ้นว่าขาดห้าร้อย
+// คืนธรรมดา — เก๊ะมีทุกอย่างพอ
 const drawer = { 1000: 3, 100: 40, 50: 2, 20: 60, 10: 25, 5: 40, 1: 80 }
-const b1 = buildFloat(drawer, noteSet, SUGGESTED_KEEP)
-check(setValue(b1) === 4000, 'จัดชุดได้ครบ ฿4,000 ทั้งที่ไม่มีห้าร้อยสักใบ', `฿${setValue(b1)}`)
-check(!b1[500] && b1[100] === 28, 'ใส่ร้อย 28 ใบแทน (18 ตามเป้า + 10 ใบแทนห้าร้อย 2)', JSON.stringify(b1))
-check(b1[20] === 40 && b1[10] === 20 && b1[5] === 30 && b1[1] === 50, 'กองที่มีพออยู่แล้วเอาตามเป้าเป๊ะ ไม่ขยับ', JSON.stringify(b1))
-check(!b1[1000], 'แบงค์พันไม่ถูกยัดลงเก๊ะ — ไม่อยู่ในชุด เป็นเงินของเจ้าของ', JSON.stringify(b1))
-check(b1[50] === 2, 'ห้าสิบที่มีคาไว้ในเก๊ะตามเดิม', String(b1[50]))
-check(coverFloat(b1, noteSet, SUGGESTED_KEEP).ok, 'ชุดที่จัดให้ผ่านการตรวจว่าครบ', JSON.stringify(coverFloat(b1, noteSet, SUGGESTED_KEEP).shortages))
+const k1 = floatSetKeep(drawer, noteSet, SUGGESTED_KEEP)
+check(setValue(k1) === 4000, 'เหลือไว้เท่าชุดที่ตั้งไว้พอดี ฿4,000', `฿${setValue(k1)}`)
+check(k1[500] === 2 && k1[100] === 18 && k1[20] === 40 && k1[10] === 20 && k1[5] === 30 && k1[1] === 50, 'ทุกกองลงเท่าชุดที่ตั้งไว้เป๊ะ', JSON.stringify(k1))
+check(!k1[1000], 'แบงค์พันไม่อยู่ในชุด — ออกไปหาเจ้าของทั้งหมด', String(k1[1000] ?? 0))
+check(k1[50] === 2, 'ห้าสิบคาไว้ในเก๊ะตามที่นับได้', String(k1[50]))
+check(swaps(drawer, k1), 'หน้าปิดกะเข้าโหมดโยกทั้งชุด', '')
 
-// มีห้าร้อยพอ → ได้ชุดเดิมเป๊ะ ๆ ไม่มีอะไรเปลี่ยน
-const b2 = buildFloat({ 500: 5, 100: 30, 20: 60, 10: 25, 5: 40, 1: 80 }, noteSet, SUGGESTED_KEEP)
-check(b2[500] === 2 && b2[100] === 18, 'มีห้าร้อยพอ → ชุดเดิมตามที่ตั้งไว้', JSON.stringify(b2))
-
-// เงินในเก๊ะไม่พอจัดครบชุด → ได้เท่าที่มี แล้วให้ coverFloat เตือนว่าขาดอะไร
-const b3 = buildFloat({ 100: 5, 20: 10, 1: 20 }, noteSet, SUGGESTED_KEEP)
-check(setValue(b3) === 500 + 200 + 20, 'เงินไม่พอ → จัดได้เท่าที่มีในเก๊ะ ไม่เสกเงินเพิ่ม', `฿${setValue(b3)}`)
-check(!coverFloat(b3, noteSet, SUGGESTED_KEEP).ok, 'ชุดที่ไม่ครบยังขึ้นเตือนตามปกติ', JSON.stringify(coverFloat(b3, noteSet, SUGGESTED_KEEP).shortages))
-
-// เหรียญไม่พอ → ไม่เอาแบงค์มาถมแทนเหรียญ แต่ยอดรวมยังเติมให้ครบด้วยแบงค์
-const b4 = buildFloat({ 100: 40, 20: 40, 10: 20, 5: 10, 1: 50 }, noteSet, SUGGESTED_KEEP)
-check(b4[5] === 10, 'เหรียญห้ามีแค่ 10 เหรียญก็ใส่ได้แค่ 10 ไม่มีใครเสกเพิ่ม', String(b4[5]))
-check(coverFloat(b4, noteSet, SUGGESTED_KEEP).piles[5].missing === 100, 'กองเหรียญห้าที่ขาดยังขึ้นเตือน ฿100', `฿${coverFloat(b4, noteSet, SUGGESTED_KEEP).piles[5].missing}`)
-
-// ชุดที่จัดให้ เอาไปโยกได้เลย เงินสุทธิยังคิดจากส่วนต่างเหมือนเดิม
-const swSub = planSwap(drawer, buildFloat(drawer, noteSet, SUGGESTED_KEEP), SUGGESTED_KEEP)
-check(swSub.putTotal === 4000, 'ชุดที่จัดให้วางลงเก๊ะได้ ฿4,000 เท่าเป้า', `฿${swSub.putTotal}`)
-check(swSub.net === ownerSide(drawer, swSub.keep).net, 'สุทธิที่เจ้าของได้ตรงกับส่วนต่างใบนับ', `฿${swSub.net}`)
-check(swSub.leftover === 4100, 'เหลือในเก๊ะ = ชุด ฿4,000 + ห้าสิบ 2 ใบที่คาไว้', `฿${swSub.leftover}`)
-
-// ── ปุ่ม "โยกชุดใหม่ ฿4,000" — ต้องได้ชุดตามหน้าตั้งค่าเป๊ะ ๆ ไม่ใช่เท่าที่จัดได้จากเงินในเก๊ะ ───────
-// 19 พ.ย. 69 ปุ่มชี้ไปที่ buildFloat ซึ่งเป็นค่าตั้งต้นของหน้าปิดกะอยู่แล้ว กดแล้วจึงไม่มีอะไรขยับ
-console.log('\n── ปุ่มใช้ชุดที่ตั้งไว้ ──')
+// คืนที่เก๊ะไม่มีห้าร้อย/ของเล็กไม่พอ — ชุดที่วางลงยังเป็นชุดเดิม เพราะเจ้าของถือมาเอง
 const thinDrawer = { 1000: 4, 100: 5, 20: 10, 50: 2, 1: 20 }
-const preset = floatSetKeep(thinDrawer, noteSet, SUGGESTED_KEEP)
-check(setValue(preset) === 4000, 'กดปุ่มแล้วเหลือไว้เท่าชุดที่ตั้งไว้พอดี ฿4,000', `฿${setValue(preset)}`)
-check(preset[100] === 18 && preset[20] === 40 && preset[1] === 50, 'กองที่ในเก๊ะไม่พอก็ยังลงเท่าเป้า', JSON.stringify(preset))
-check(preset[50] === 2, 'ชนิดที่เก็บไว้ทั้งหมดเหลือตามที่นับได้', String(preset[50]))
-check(!preset[1000], 'แบงค์พันไม่อยู่ในชุด — ออกไปหาเจ้าของ', String(preset[1000] ?? 0))
-const presetOwner = ownerSide(thinDrawer, preset)
-check(presetOwner.add[100] === 13 && presetOwner.add[20] === 30, 'กองที่ขาดขึ้นเป็น "เจ้าของเติม" ให้เห็นว่าต้องเอาอะไรมาใส่', JSON.stringify(presetOwner.add))
-check(coverFloat(preset, noteSet, SUGGESTED_KEEP).ok, 'ชุดที่กดปุ่มได้ผ่านการตรวจว่าครบ ไม่ขึ้นแดง', JSON.stringify(coverFloat(preset, noteSet, SUGGESTED_KEEP).shortages))
-check(
-  JSON.stringify(preset) !== JSON.stringify(buildFloat(thinDrawer, noteSet, SUGGESTED_KEEP)),
-  'ได้คนละชุดกับค่าตั้งต้นที่ระบบคิดให้ — ปุ่มกดแล้วมีอะไรเปลี่ยนจริง',
-  `ปุ่ม ${JSON.stringify(preset)} · ตั้งต้น ${JSON.stringify(buildFloat(thinDrawer, noteSet, SUGGESTED_KEEP))}`,
-)
-// คืนที่เงินในเก๊ะพอจัดครบชุดเองแล้ว ปุ่มถูกซ่อน (swapping) — กดได้ก็ต้องได้ชุดเดิมเป๊ะ
-const presetRich = floatSetKeep({ 500: 5, 100: 30, 20: 60, 10: 25, 5: 40, 1: 80 }, noteSet, SUGGESTED_KEEP)
-check(presetRich[500] === 2 && presetRich[100] === 18, 'เงินพอ → ได้ชุดตามหน้าตั้งค่าเหมือนกัน', JSON.stringify(presetRich))
+const k2 = floatSetKeep(thinDrawer, noteSet, SUGGESTED_KEEP)
+check(setValue(k2) === 4000, 'เก๊ะไม่มีของก็ยังวางชุด ฿4,000 ที่เตรียมมา', `฿${setValue(k2)}`)
+check(k2[500] === 2 && k2[100] === 18, 'ไม่ไปจัดชุดใหม่จากเงินในเก๊ะแทน', JSON.stringify(k2))
+check(swaps(thinDrawer, k2), 'คืนที่เก๊ะบางก็ยังเป็นการโยกทั้งชุด ไม่ขึ้นว่าขาด', '')
+check(coverFloat(k2, noteSet, SUGGESTED_KEEP).shortages.length === 0, 'ไม่มีรายการ "ต้องแลกมาเติมก่อนเปิดร้าน" ให้อ่าน', JSON.stringify(coverFloat(k2, noteSet, SUGGESTED_KEEP).shortages))
+
+// ไม่มีห้าสิบเลยคืนนั้น — กองนั้นว่างไป ไม่ใช่ขึ้นว่าขาด
+const k3 = floatSetKeep({ 500: 5, 100: 30, 20: 60, 10: 25, 5: 40, 1: 80 }, noteSet, SUGGESTED_KEEP)
+check(!k3[50], 'ไม่มีห้าสิบในเก๊ะ → กองห้าสิบว่าง ไม่ต้องไปหามาใส่', String(k3[50] ?? 0))
+
+// คำสั่งที่เก๊ะ + เงินสุทธิที่ออกไปหาเจ้าของ
+const sw1 = planSwap(drawer, k1, SUGGESTED_KEEP)
+check(sw1.putTotal === 4000, 'วางชุดใหม่ลงเก๊ะ ฿4,000', `฿${sw1.putTotal}`)
+check(sw1.outTotal === 3000 + 4000 + 1200 + 250 + 200 + 80, 'รวบออกทั้งเก๊ะยกเว้นห้าสิบ', `฿${sw1.outTotal}`)
+check(sw1.leftover === 4100, 'เช้าพรุ่งนี้เปิดด้วยชุด ฿4,000 + ห้าสิบ 2 ใบ', `฿${sw1.leftover}`)
+check(sw1.net === ownerSide(drawer, k1).net, 'สุทธิที่เจ้าของได้ตรงกับส่วนต่างใบนับ', `฿${sw1.net}`)
+
+// วันที่ขายน้อยจนเงินในเก๊ะไม่ถึงชุด — เจ้าของวางเพิ่ม ไม่ใช่ "พนักงานต้องไปแลกมาเติม"
+const poorDrawer = { 100: 5, 20: 10, 50: 2, 1: 20 }
+const sw2 = planSwap(poorDrawer, floatSetKeep(poorDrawer, noteSet, SUGGESTED_KEEP), SUGGESTED_KEEP)
+check(sw2.net === 720 - 4000, 'เงินในเก๊ะน้อยกว่าชุด → ขึ้นว่าเจ้าของวางเพิ่มสุทธิ ฿3,280', `฿${sw2.net}`)
+check(sw2.leftover === 4100, 'เช้าพรุ่งนี้ยังเปิดด้วย ฿4,100 เท่าเดิม', `฿${sw2.leftover}`)
 
 console.log(`\nผ่าน ${passed} · ไม่ผ่าน ${failed}`)
 if (failed) process.exit(1)

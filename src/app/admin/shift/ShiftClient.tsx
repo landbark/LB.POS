@@ -5,7 +5,7 @@ import { flushSync } from 'react-dom'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { checkChannels, expectedCash as computeExpectedCash, splitShiftBills, type ShiftBill } from '@/lib/shiftCash'
-import { BANKNOTES, COINS, DENOMS, buildFloat, coverFloat, floatSetKeep, ownerSide, planByDenom, planOwnerTake, planSwap } from '@/lib/shiftFloat'
+import { BANKNOTES, COINS, DENOMS, coverFloat, floatSetKeep, ownerSide, planByDenom, planOwnerTake, planSwap } from '@/lib/shiftFloat'
 import { DEFAULT_TRANSFER_ACCOUNTS, PAYMENT_DOT, PAYMENT_LABEL, sumBankMethods } from '@/lib/payments'
 import { CHANNEL_GROUPS } from '@/lib/salesChannel'
 import type { PaymentMethod, SalesChannel } from '@/lib/types'
@@ -312,10 +312,16 @@ export default function ShiftClient({
   )
   const takeable = BANKNOTES.map((d) => d.value)
   const keepAll = floatKeep ?? []
-  // ชุดใหม่ที่จะวางลงเก๊ะคืนนี้ — จัดจากเงินที่มีในเก๊ะจริง ห้าร้อยไม่พอก็ใส่ร้อยแทนให้เอง
-  // ไม่ใช่ชุดตามหน้าตั้งค่าตรง ๆ ไม่งั้นคืนที่ไม่มีห้าร้อยจะขึ้นแดงว่าขาดทั้งที่ยอดครบ
-  const builtSet = hasCount && floatTargetDenoms
-    ? buildFloat(countedDenoms, floatTargetDenoms, keepAll)
+  // ชุดที่จะวางลงเก๊ะคืนนี้ = ชุดตามหน้าตั้งค่าเป๊ะ ๆ — เจ้าของนับชุด ฿4,000 เตรียมไว้ล่วงหน้าทุกวัน
+  //
+  // เคยจัดชุดจากเงินที่มีในเก๊ะ (buildFloat) เพราะสมัยนั้นเงินทอนคือ "เหลือไว้เท่าที่มี แล้วเติมกองที่ขาด"
+  // ตอนนี้ชุดที่ลงเก๊ะไม่ได้มาจากเก๊ะแล้ว จัดจากของในเก๊ะจึงได้แต่ตัวเลขที่ไม่ตรงกับที่ทำจริง
+  // แล้วลากเรื่อง "ขาด/ต้องแลกมาเติม" ขึ้นมาให้อ่านทุกคืนฟรี ๆ
+  // (19 พ.ย. 69 เจ้าของว่า "ตอนนี้เราไม่ได้เติมแล้ว เตรียมเงินทอนไว้ 4000 บาท ทุกวัน ไม่รวมแบงค์ห้าสิบ")
+  //
+  // แบงค์ห้าสิบไม่อยู่ในชุด — คาไว้ในเก๊ะตามที่นับได้ (floatKeep ในหน้าตั้งค่า)
+  const nightSet = hasCount && floatTargetDenoms
+    ? floatSetKeep(countedDenoms, floatTargetDenoms, keepAll)
     : null
   // วิธีสำรอง — คืนเฉพาะส่วนเกินรายกอง ใช้คืนที่ไม่ได้เตรียมชุดใหม่ไว้
   const floatPlan = !hasCount
@@ -330,8 +336,8 @@ export default function ShiftClient({
     : floatTarget
   // เหลือไว้เท่าไหร่ถ้าไม่แตะอะไรเลย — ร้านที่ตั้งชุดรายชนิดไว้คือชุดใหม่ที่โยกลงไป + กองที่คาไว้
   // ร้านที่ตั้งแค่ยอดรวมใช้ค่าที่ไล่หยิบใบใหญ่ลงมา ร้านที่ไม่ได้ตั้งอะไรเลยก็เหลือไว้ทั้งเก๊ะ
-  const keepDefault: Record<number, number> = builtSet
-    ? builtSet
+  const keepDefault: Record<number, number> = nightSet
+    ? nightSet
     : floatPlan
       ? floatPlan.keep
       : countedDenoms
@@ -365,11 +371,7 @@ export default function ShiftClient({
       ...(c ?? Object.fromEntries(DENOMS.map((d) => [d.value, keepValue(d.value)]))),
       [v]: raw,
     }))
-  // เหลือในเก๊ะ "เท่าชุดที่ตั้งไว้พอดี" — ชุดตามหน้าตั้งค่าเป๊ะ ๆ ไม่ใช่ชุดที่จัดได้จากเงินในเก๊ะ
-  //
-  // เคยชี้ไปที่ builtSet ซึ่งเป็นค่าตั้งต้นของหน้านี้อยู่แล้ว กดปุ่มจึงได้ค่าเดิมทุกครั้ง เหมือนปุ่มเสีย
-  // (19 พ.ย. 69 เจ้าของว่า "ปุ่มสีน้ำเงิน ... มันกดแล้วไม่เปลี่ยน เหมือนเดิมตามที่เหลือ")
-  // คืนที่เงินในเก๊ะจัดชุดไม่ครบคือคืนที่ปุ่มนี้มีความหมาย — กดแล้วส่วนที่ขาดขึ้นเป็น "เจ้าของเติม n"
+  // กลับมาใช้ชุดที่ตั้งไว้ — ค่าตั้งต้นของหน้านี้อยู่แล้ว ปุ่มนี้คือทางกลับหลังแก้มือไปแล้ว
   //
   // ทุกชนิดที่มีเป้าลงเท่าเป้าเป๊ะ ๆ รวมทั้งเหรียญ — เดิมเหรียญสแน็ปขึ้นอย่างเดียว (Math.max)
   // เพราะถือว่าเหรียญที่เกินหยิบออกไม่ได้ กดปุ่ม "ใช้ชุดที่ตั้งไว้ ฿4,000" แล้วเลยได้ ฿4,212
