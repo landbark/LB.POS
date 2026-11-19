@@ -5,7 +5,7 @@ import { flushSync } from 'react-dom'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { checkChannels, expectedCash as computeExpectedCash, splitShiftBills, type ShiftBill } from '@/lib/shiftCash'
-import { BANKNOTES, COINS, DENOMS, buildFloat, coverFloat, ownerSide, planByDenom, planOwnerTake, planSwap } from '@/lib/shiftFloat'
+import { BANKNOTES, COINS, DENOMS, buildFloat, coverFloat, floatSetKeep, ownerSide, planByDenom, planOwnerTake, planSwap } from '@/lib/shiftFloat'
 import { DEFAULT_TRANSFER_ACCOUNTS, PAYMENT_DOT, PAYMENT_LABEL, sumBankMethods } from '@/lib/payments'
 import { CHANNEL_GROUPS } from '@/lib/salesChannel'
 import type { PaymentMethod, SalesChannel } from '@/lib/types'
@@ -365,7 +365,11 @@ export default function ShiftClient({
       ...(c ?? Object.fromEntries(DENOMS.map((d) => [d.value, keepValue(d.value)]))),
       [v]: raw,
     }))
-  // เหลือในเก๊ะ "เท่าชุดที่ตั้งไว้พอดี" — ค่าตั้งต้นของหน้านี้ และปุ่มกลับมาโยกทั้งชุดหลังแก้มือไปแล้ว
+  // เหลือในเก๊ะ "เท่าชุดที่ตั้งไว้พอดี" — ชุดตามหน้าตั้งค่าเป๊ะ ๆ ไม่ใช่ชุดที่จัดได้จากเงินในเก๊ะ
+  //
+  // เคยชี้ไปที่ builtSet ซึ่งเป็นค่าตั้งต้นของหน้านี้อยู่แล้ว กดปุ่มจึงได้ค่าเดิมทุกครั้ง เหมือนปุ่มเสีย
+  // (19 พ.ย. 69 เจ้าของว่า "ปุ่มสีน้ำเงิน ... มันกดแล้วไม่เปลี่ยน เหมือนเดิมตามที่เหลือ")
+  // คืนที่เงินในเก๊ะจัดชุดไม่ครบคือคืนที่ปุ่มนี้มีความหมาย — กดแล้วส่วนที่ขาดขึ้นเป็น "เจ้าของเติม n"
   //
   // ทุกชนิดที่มีเป้าลงเท่าเป้าเป๊ะ ๆ รวมทั้งเหรียญ — เดิมเหรียญสแน็ปขึ้นอย่างเดียว (Math.max)
   // เพราะถือว่าเหรียญที่เกินหยิบออกไม่ได้ กดปุ่ม "ใช้ชุดที่ตั้งไว้ ฿4,000" แล้วเลยได้ ฿4,212
@@ -374,8 +378,9 @@ export default function ShiftClient({
   // ขาแล้วให้เจ้าของเติมเหรียญได้ ขาเกินก็ส่งเหรียญออกไปให้เจ้าของได้เหมือนกัน
   // อยากเก็บเหรียญไว้ทั้งกองจริง ๆ ให้ติ๊ก "เก็บไว้ทั้งหมด" ในหน้าตั้งค่า — ชนิดนั้นเหลือตามที่นับได้เสมอ
   const applyFloatSet = () => {
-    if (!builtSet) return
-    setKeepEdit(Object.fromEntries(DENOMS.map((d) => [d.value, builtSet[d.value] ? String(builtSet[d.value]) : ''])))
+    if (!floatTargetDenoms) return
+    const keep = floatSetKeep(countedDenoms, floatTargetDenoms, keepAll)
+    setKeepEdit(Object.fromEntries(DENOMS.map((d) => [d.value, keep[d.value] ? String(keep[d.value]) : ''])))
   }
   // ให้เจ้าของ = ที่นับได้ − ที่เหลือไว้ · ติดลบ = วันที่เงินทอนขาดแล้วเจ้าของเอามาเติม
   const owner = ownerSide(countedDenoms, keepCounts)
@@ -1321,7 +1326,7 @@ export default function ShiftClient({
                   คืนแค่ส่วนเกิน
                 </button>
               )}
-              {keepEdit && !swapping && (
+              {keepEdit && (
                 <button
                   type="button"
                   onClick={() => { setKeepEdit(null); setShowKeepRows(false) }}

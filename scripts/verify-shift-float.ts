@@ -6,7 +6,7 @@
  * โจทย์: ปิดกะแล้วต้องแยกแบงค์ไหนออกให้เจ้าของบ้าง ถึงจะเหลือในลิ้นชักเท่าเงินทอนตั้งต้นพอดี
  * และเหรียญ/แบงค์เล็กต้องไม่ถูกหยิบออก เพราะนั่นคือเงินทอนที่ต้องใช้เปิดร้านเช้าวันถัดไป
  */
-import { buildFloat, coverFloat, ownerSide, planByDenom, planOwnerTake, planSwap, SUGGESTED_FLOAT, SUGGESTED_KEEP, type FloatPlan } from '../src/lib/shiftFloat'
+import { buildFloat, coverFloat, floatSetKeep, ownerSide, planByDenom, planOwnerTake, planSwap, SUGGESTED_FLOAT, SUGGESTED_KEEP, type FloatPlan } from '../src/lib/shiftFloat'
 
 const NOTES = [1000, 500, 100, 50, 20]
 
@@ -258,6 +258,27 @@ const swSub = planSwap(drawer, buildFloat(drawer, noteSet, SUGGESTED_KEEP), SUGG
 check(swSub.putTotal === 4000, 'ชุดที่จัดให้วางลงเก๊ะได้ ฿4,000 เท่าเป้า', `฿${swSub.putTotal}`)
 check(swSub.net === ownerSide(drawer, swSub.keep).net, 'สุทธิที่เจ้าของได้ตรงกับส่วนต่างใบนับ', `฿${swSub.net}`)
 check(swSub.leftover === 4100, 'เหลือในเก๊ะ = ชุด ฿4,000 + ห้าสิบ 2 ใบที่คาไว้', `฿${swSub.leftover}`)
+
+// ── ปุ่ม "โยกชุดใหม่ ฿4,000" — ต้องได้ชุดตามหน้าตั้งค่าเป๊ะ ๆ ไม่ใช่เท่าที่จัดได้จากเงินในเก๊ะ ───────
+// 19 พ.ย. 69 ปุ่มชี้ไปที่ buildFloat ซึ่งเป็นค่าตั้งต้นของหน้าปิดกะอยู่แล้ว กดแล้วจึงไม่มีอะไรขยับ
+console.log('\n── ปุ่มใช้ชุดที่ตั้งไว้ ──')
+const thinDrawer = { 1000: 4, 100: 5, 20: 10, 50: 2, 1: 20 }
+const preset = floatSetKeep(thinDrawer, noteSet, SUGGESTED_KEEP)
+check(setValue(preset) === 4000, 'กดปุ่มแล้วเหลือไว้เท่าชุดที่ตั้งไว้พอดี ฿4,000', `฿${setValue(preset)}`)
+check(preset[100] === 18 && preset[20] === 40 && preset[1] === 50, 'กองที่ในเก๊ะไม่พอก็ยังลงเท่าเป้า', JSON.stringify(preset))
+check(preset[50] === 2, 'ชนิดที่เก็บไว้ทั้งหมดเหลือตามที่นับได้', String(preset[50]))
+check(!preset[1000], 'แบงค์พันไม่อยู่ในชุด — ออกไปหาเจ้าของ', String(preset[1000] ?? 0))
+const presetOwner = ownerSide(thinDrawer, preset)
+check(presetOwner.add[100] === 13 && presetOwner.add[20] === 30, 'กองที่ขาดขึ้นเป็น "เจ้าของเติม" ให้เห็นว่าต้องเอาอะไรมาใส่', JSON.stringify(presetOwner.add))
+check(coverFloat(preset, noteSet, SUGGESTED_KEEP).ok, 'ชุดที่กดปุ่มได้ผ่านการตรวจว่าครบ ไม่ขึ้นแดง', JSON.stringify(coverFloat(preset, noteSet, SUGGESTED_KEEP).shortages))
+check(
+  JSON.stringify(preset) !== JSON.stringify(buildFloat(thinDrawer, noteSet, SUGGESTED_KEEP)),
+  'ได้คนละชุดกับค่าตั้งต้นที่ระบบคิดให้ — ปุ่มกดแล้วมีอะไรเปลี่ยนจริง',
+  `ปุ่ม ${JSON.stringify(preset)} · ตั้งต้น ${JSON.stringify(buildFloat(thinDrawer, noteSet, SUGGESTED_KEEP))}`,
+)
+// คืนที่เงินในเก๊ะพอจัดครบชุดเองแล้ว ปุ่มถูกซ่อน (swapping) — กดได้ก็ต้องได้ชุดเดิมเป๊ะ
+const presetRich = floatSetKeep({ 500: 5, 100: 30, 20: 60, 10: 25, 5: 40, 1: 80 }, noteSet, SUGGESTED_KEEP)
+check(presetRich[500] === 2 && presetRich[100] === 18, 'เงินพอ → ได้ชุดตามหน้าตั้งค่าเหมือนกัน', JSON.stringify(presetRich))
 
 console.log(`\nผ่าน ${passed} · ไม่ผ่าน ${failed}`)
 if (failed) process.exit(1)
