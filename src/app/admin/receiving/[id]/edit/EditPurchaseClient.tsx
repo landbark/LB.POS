@@ -9,7 +9,7 @@ import toast from 'react-hot-toast'
 import type { Supplier } from '@/lib/types'
 import {
   ProductPicker, MultiPicker, StockBadge, UnitSelect, newItem, inputClass, qtyInputClass,
-  findUnitChoice, factorOfRow, useUnitAdder,
+  findUnitChoice, factorOfRow, qtyAfterUnitChange, useUnitAdder,
   type ProductOption, type ItemRow,
 } from '../../pickers'
 
@@ -54,12 +54,18 @@ export default function EditPurchaseClient({
     : products
 
   function setItem(index: number, key: keyof ItemRow, value: string) {
+    const prev = items[index]
     const next = [...items]
-    next[index] = { ...next[index], [key]: value }
+    next[index] = { ...prev, [key]: value }
     if (key === 'product_id') {
       next[index].product_unit_id = ''
       const p = products.find((x) => x.id === value)
       if (p?.cost != null && !next[index].unit_cost) next[index].unit_cost = p.cost.toString()
+    }
+    if (key === 'product_unit_id') {
+      // สลับหน่วยแล้วแปลงจำนวนตาม ของที่จะได้จริงเท่าเดิม
+      const p = products.find((x) => x.id === next[index].product_id)
+      next[index].quantity = qtyAfterUnitChange(p, prev.product_unit_id, value, prev.quantity)
     }
     if (key === 'product_id' || key === 'product_unit_id') {
       const p = products.find((x) => x.id === next[index].product_id)

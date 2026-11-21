@@ -8,7 +8,7 @@ import { Plus, Trash2, PackagePlus, Printer, PackageCheck, ListPlus, Pencil } fr
 import { confirmDialog } from '@/lib/confirm'
 import toast from 'react-hot-toast'
 import type { PurchaseStatus, Supplier } from '@/lib/types'
-import { ProductPicker, MultiPicker, StockBadge, UnitSelect, newItem, inputClass, qtyInputClass, findUnitChoice, factorOfRow, useUnitAdder, type ProductOption, type ItemRow } from './pickers'
+import { ProductPicker, MultiPicker, StockBadge, UnitSelect, newItem, inputClass, qtyInputClass, findUnitChoice, factorOfRow, qtyAfterUnitChange, useUnitAdder, type ProductOption, type ItemRow } from './pickers'
 
 // เลขที่ใบรับของอิงเวลาที่กดบันทึก — อยู่นอกคอมโพเนนต์ให้ชัดว่าไม่ใช่ค่าที่คิดตอน render
 const newPurchaseNumber = () => `PO${Date.now()}`
@@ -53,8 +53,9 @@ export default function ReceivingClient({ suppliers, products, purchases }: Prop
     : products
 
   function setItem(index: number, key: keyof ItemRow, value: string) {
+    const prev = items[index]
     const next = [...items]
-    next[index] = { ...next[index], [key]: value }
+    next[index] = { ...prev, [key]: value }
     if (key === 'product_id') {
       // เปลี่ยนสินค้า = หน่วยเดิมใช้ไม่ได้แล้ว กลับไปเป็นหน่วยฐานก่อน
       next[index].product_unit_id = ''
@@ -62,6 +63,11 @@ export default function ReceivingClient({ suppliers, products, purchases }: Prop
       if (p?.cost != null && !next[index].unit_cost) {
         next[index].unit_cost = p.cost.toString()
       }
+    }
+    if (key === 'product_unit_id') {
+      // สลับหน่วยแล้วแปลงจำนวนตาม ของที่จะได้จริงเท่าเดิม ไม่ใช่ปล่อยเลขค้างจนสั่งเกิน
+      const p = products.find((x) => x.id === next[index].product_id)
+      next[index].quantity = qtyAfterUnitChange(p, prev.product_unit_id, value, prev.quantity)
     }
     if (key === 'product_id' || key === 'product_unit_id') {
       // ทุนต่อหน่วยที่สั่ง — สั่งเป็นลังต้องเป็นทุนต่อลัง ไม่ใช่ต่อซอง

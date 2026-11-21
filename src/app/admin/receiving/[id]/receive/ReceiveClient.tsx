@@ -7,7 +7,7 @@ import { createClient } from '@/lib/supabase/client'
 import { PackageCheck, ArrowLeft, Plus, Trash2 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import DateField from '@/components/DateField'
-import { ProductPicker, UnitSelect, findUnitChoice, qtyInputClass, useUnitAdder, type ProductOption } from '../../pickers'
+import { ProductPicker, UnitSelect, findUnitChoice, qtyAfterUnitChange, qtyInputClass, useUnitAdder, type ProductOption } from '../../pickers'
 
 interface ReceiveItem {
   id: string
@@ -186,6 +186,8 @@ export default function ReceiveClient({
       factor: choice?.factor ?? 1,
       unitLabel: choice?.name ?? row.unit,
       unitCost: choice?.cost != null ? String(choice.cost) : row.unitCost,
+      // จำนวนต้องแปลงตามหน่วยใหม่ ไม่งั้น 48 ซอง กลายเป็น 48 ลัง
+      receivedQty: qtyAfterUnitChange(p, row.unitId, unitId, row.receivedQty),
     }
     setRows(next)
   }

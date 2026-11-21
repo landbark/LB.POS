@@ -6,7 +6,7 @@ import { X, Search, Check, Plus } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { createClient } from '@/lib/supabase/client'
 import type { ProductUnit } from '@/lib/types'
-import { purchaseUnitChoices } from '@/lib/productUnits'
+import { convertQty, purchaseUnitChoices } from '@/lib/productUnits'
 import BarcodeField from '@/components/BarcodeField'
 
 export interface ProductOption {
@@ -36,6 +36,14 @@ export const findUnitChoice = (p: ProductOption | undefined, unitId: string) =>
 /** จำนวนหน่วยฐานที่จะเข้าสต็อคจริงจากแถวสั่งซื้อหนึ่งแถว */
 export const factorOfRow = (p: ProductOption | undefined, unitId: string) =>
   findUnitChoice(p, unitId)?.factor ?? 1
+
+/** สลับหน่วยแล้วแปลงจำนวนให้ของที่จะได้จริงเท่าเดิม — ตรรกะอยู่ที่ convertQty() ใน lib/productUnits */
+export const qtyAfterUnitChange = (
+  p: ProductOption | undefined,
+  prevUnitId: string,
+  nextUnitId: string,
+  quantity: string
+) => convertQty(unitChoicesOf(p), prevUnitId, nextUnitId, quantity)
 
 export function matchProduct(p: ProductOption, q: string) {
   if (!q) return true

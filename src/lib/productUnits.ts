@@ -71,6 +71,25 @@ export function posUnitChoices(product: Product): UnitChoice[] {
   return [base, ...packs]
 }
 
+/** หาตัวคูณของหน่วยที่เลือกจากรายการตัวเลือก ('' = หน่วยฐาน) */
+export const factorOfChoice = (choices: UnitChoice[], unitId: string) =>
+  choices.find((c) => (c.unit?.id ?? '') === unitId)?.factor ?? 1
+
+/**
+ * สลับหน่วยแล้วให้ "ของที่จะได้จริง" เท่าเดิม — พิมพ์ 48 ซอง แล้วเปลี่ยนเป็นลัง ต้องได้ 1 ลัง ไม่ใช่ 48 ลัง
+ * (เดิมจำนวนค้างไว้เท่าเดิม เลยสั่งเกินโดยไม่รู้ตัว ต้องไล่แก้ทีละแถว)
+ * ปัดเข้าหาจำนวนที่ใกล้ที่สุด อย่างน้อย 1 — 1 ซอง → ลัง ยังได้ 1 ลัง ตามที่ตั้งใจ
+ * ค่าว่าง/0/ติดลบ ไม่แตะ ปล่อยให้ช่องกรอกจัดการเอง
+ */
+export function convertQty(choices: UnitChoice[], prevUnitId: string, nextUnitId: string, quantity: string): string {
+  const qty = parseInt(quantity)
+  if (!Number.isFinite(qty) || qty <= 0) return quantity
+  const from = factorOfChoice(choices, prevUnitId)
+  const to = factorOfChoice(choices, nextUnitId)
+  if (from === to) return quantity
+  return String(Math.max(1, Math.round((qty * from) / to)))
+}
+
 /** ตัวเลือกหน่วยตอนทำใบสั่งซื้อ/รับเข้า — ลังอยู่ตรงนี้แม้จะปิดขายหน้าร้าน */
 export function purchaseUnitChoices(product: {
   unit: string
