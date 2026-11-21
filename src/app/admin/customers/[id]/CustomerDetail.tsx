@@ -4,7 +4,7 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { ArrowLeft, Check, MapPin, Merge, Pencil, PawPrint, Plus, Receipt, Stethoscope, X } from 'lucide-react'
+import { ArrowLeft, Check, MapPin, Merge, Pencil, PawPrint, Plus, QrCode, Receipt, Stethoscope, X } from 'lucide-react'
 import { PetAlertChip } from '@/components/PetAlert'
 import toast from 'react-hot-toast'
 import { SPECIES_LABELS, VISIT_STATUS_LABELS, type Breed, type Customer, type Pet, type PetSpecies, type PointLot, type VisitStatus } from '@/lib/types'
@@ -178,6 +178,16 @@ export default function CustomerDetail({
         </div>
         {!editing && (
           <div className="shrink-0 flex items-center gap-2">
+            {/* บัตรสมาชิกแบบพิมพ์ — ลูกค้าที่ไม่ได้ผูก LINE หรือไม่ถนัดเปิดเว็บก็มีบัตรให้ยิงได้
+                พิมพ์ลงฉลากม้วนเดียวกับฉลากยา (แคชเชียร์พิมพ์ได้ ไม่ต้องรอเจ้าของร้าน) */}
+            <a
+              href={`/print/member-card/${customer.id}`}
+              target="_blank"
+              className="flex items-center gap-1.5 border border-gray-300 text-gray-600 text-sm px-3 py-1.5 rounded-lg hover:bg-gray-50"
+              title="พิมพ์บัตรสมาชิกติด QR ลงฉลาก 80 × 50 มม."
+            >
+              <QrCode size={14} /> บัตรสมาชิก
+            </a>
             {isAdmin && (
               <Link
                 href={`/admin/merge?kind=customer&ids=${customer.id}`}

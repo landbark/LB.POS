@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { Gift, LogIn, LogOut, Package, Sparkles, Wallet } from 'lucide-react'
 import { getSessionCustomer } from '@/lib/customer-session'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { getStorefront } from '@/lib/shop-data'
 import type { AppointmentType, CustomerAddress, PetSpecies } from '@/lib/types'
 import AddressBook from './AddressBook'
 import MemberQr from './MemberQr'
@@ -231,6 +232,10 @@ export default async function AccountPage({
 
   const tg = telegram as Record<string, unknown> | null
 
+  // ชื่อร้านไปอยู่บนรูปบัตรที่ลูกค้ากดบันทึกลงเครื่อง — getStorefront() ถูก cache ต่อ request
+  // (layout ชั้นนอกเรียกไปแล้ว) บรรทัดนี้จึงไม่ได้ยิง query เพิ่ม
+  const store = await getStorefront()
+
   // ของแลกที่โชว์ให้ลูกค้าเห็น — สินค้าต้องยังเปิดขายและมีของเหลือ
   // (ของหมดแล้วยังโชว์ จะกลายเป็นลูกค้าเก็บแต้มมารอแลกของที่ไม่มี)
   type RewardRow = {
@@ -285,7 +290,12 @@ export default async function AccountPage({
         )}
       </div>
 
-      <MemberQr customerId={customer.id} name={customer.name} phone={customer.phone} />
+      <MemberQr
+        customerId={customer.id}
+        name={customer.name}
+        phone={customer.phone}
+        storeName={store?.name ?? 'LANDBARK'}
+      />
 
       <div className="flex gap-3">
         <Link
