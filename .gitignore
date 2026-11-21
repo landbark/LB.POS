@@ -51,3 +51,7 @@ next-env.d.ts
 .wrangler
 .dev.vars
 .dev.vars.*
+
+# ไฟล์สินค้าที่ทิ้งไว้ให้ Claude อ่าน — ใบราคามีราคาทุน/เงื่อนไขตัวแทน ห้ามขึ้น git
+/product-files/*
+!/product-files/README.md
