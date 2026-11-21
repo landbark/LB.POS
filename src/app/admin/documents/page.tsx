@@ -23,7 +23,7 @@ export default async function DocumentsPage({
     supabase.from('profiles').select('role').eq('id', user?.id ?? '').maybeSingle(),
     supabase
       .from('transactions')
-      .select('id, transaction_number, created_at, recorded_at, backdate_reason, total, status, customer_id, payment_method, payment_method_original, sales_channel, external_order_no, profiles!transactions_cashier_id_fkey(name), transaction_payments(method, amount)')
+      .select('id, transaction_number, created_at, recorded_at, backdate_reason, total, status, customer_id, payment_method, payment_method_original, refund_method, refund_method_original, sales_channel, external_order_no, profiles!transactions_cashier_id_fkey(name), transaction_payments(method, amount)')
       .order('created_at', { ascending: false })
       .limit(100),
     supabase
@@ -79,6 +79,8 @@ export default async function DocumentsPage({
     })),
   }))
 
+  // แก้ช่องทางคืนเงินของบิลที่ยกเลิกแล้วเปิดให้เจ้าของร้านเท่านั้น — มันขยับทั้งเงินที่สรุปกะคาดว่าจะมี
+  // ในเก๊ะและเครดิตในกระเป๋าลูกค้า แคชเชียร์กดผิดแล้วให้มาบอกเจ้าของแก้ ไม่ใช่แก้วนกันเอง
   return (
     <DocumentsClient
       receipts={(receipts as never[]) ?? []}
@@ -87,6 +89,7 @@ export default async function DocumentsPage({
       returns={(returns as never[]) ?? []}
       currentUserId={user?.id ?? ''}
       canEdit={!isVet(profile?.role)}
+      isAdmin={profile?.role === 'admin'}
       initialTab={tab === 'stock' || tab === 'purchase' || tab === 'return' ? tab : 'receipt'}
     />
   )

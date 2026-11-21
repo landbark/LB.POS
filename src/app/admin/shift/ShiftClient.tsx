@@ -238,7 +238,9 @@ export default function ShiftClient({
         // ขายผ่านแพลตฟอร์ม (Shopee/TikTok/Lazada) ก็ไม่ใช่เงินที่รับหน้าร้าน แพลตฟอร์มหักค่าธรรมเนียมแล้วโอนทีหลัง
         // ไม่กรอง status — บิลที่ยกเลิกทีหลังก็เคยรับเงินสดเข้าเก๊ะตอนขาย ต้องเอามาคิดด้วย
         supabase.from('transactions').select('status, total, payment_method, sales_channel, transaction_payments(method, amount)').gte('created_at', shift.opened_at),
-        supabase.from('transactions').select('total').eq('status', 'cancelled').eq('refund_method', 'cash').gte('cancelled_at', shift.opened_at),
+        // คืนเงินสดจากบิลที่ยกเลิก — เฉพาะบิลหน้าร้าน เงินที่คืนบิลบูธ/แพลตฟอร์มไม่ได้ออกจากเก๊ะนี้
+        // (lib/shiftOpen กรองช่องทางไว้แล้ว ตรงนี้เคยลืม ทำให้สองหน้าคิดยอดไม่เท่ากัน)
+        supabase.from('transactions').select('total').eq('status', 'cancelled').eq('refund_method', 'cash').eq('sales_channel', 'store').gte('cancelled_at', shift.opened_at),
         supabase.from('cash_movements').select('*, profiles(name)').eq('shift_id', shift.id).order('created_at'),
         // ใบคืนที่จ่ายเงินสดคืนลูกค้าในกะนี้ — เงินออกจากเก๊ะจริง ต้องหักออกเหมือนคืนเงินบิลยกเลิก
         // (ส่วนที่หักกับบิลใหม่ไม่ใช่เงินสด และยอดที่เก็บเพิ่มเข้าทาง cashSales ของบิลใหม่เอง)

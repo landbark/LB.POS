@@ -3,15 +3,17 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { Receipt, ShoppingBag, Printer, Ban, Wallet, PackageMinus, RotateCcw } from 'lucide-react'
+import { Receipt, ShoppingBag, Printer, Ban, Wallet, Banknote, PackageMinus, RotateCcw } from 'lucide-react'
 import CancelReceiptModal from './CancelReceiptModal'
 import ReturnModal from '@/components/ReturnModal'
 import EditPaymentModal from './EditPaymentModal'
+import EditRefundModal from './EditRefundModal'
 import DocumentDetailModal, { type DetailTarget, type StockDocItem } from './DocumentDetailModal'
 import type { PaymentMethod, RefundMethod, SalesChannel, StockMovementType } from '@/lib/types'
 import { MOVEMENT_LABEL } from '@/lib/stockMovements'
 import { CHANNEL_LABEL, CHANNEL_BADGE, channelGroup, isPlatformChannel, platformPaymentLabel } from '@/lib/salesChannel'
-import { PAYMENT_BADGE, PAYMENT_LABEL } from '@/lib/payments'
+import { PAYMENT_BADGE, PAYMENT_LABEL, isSplitPayment } from '@/lib/payments'
+import { REFUND_LABEL } from '@/lib/refunds'
 
 interface ReceiptRow {
   id: string
@@ -26,6 +28,9 @@ interface ReceiptRow {
   customer_id: string | null
   payment_method: PaymentMethod
   payment_method_original: PaymentMethod | null
+  /** ช่องทางที่คืนเงินให้ลูกค้า — มีค่าเฉพาะบิลที่ยกเลิกแล้ว */
+  refund_method: RefundMethod | null
+  refund_method_original: RefundMethod | null
   transaction_payments?: { method: PaymentMethod; amount: number }[] | null
   sales_channel: SalesChannel
   external_order_no: string | null
@@ -94,12 +99,6 @@ const PaymentTag = ({ method, amount }: { method: PaymentMethod; amount?: number
   </span>
 )
 
-const REFUND_LABEL: Record<RefundMethod, string> = {
-  cash: 'คืนเงินสด',
-  transfer: 'คืนโดยโอน',
-  credit: 'เก็บเป็นเครดิต',
-}
-
 /** ของที่รับคืน 2 ตัวแรกไว้อ่านในตารางโดยไม่ต้องเปิดใบ */
 const returnPreview = (r: { return_items: { quantity: number; unit_name: string | null; products: { name: string; unit: string } | null }[] }) => {
   const names = r.return_items.map((i) => `${i.products?.name ?? '—'} × ${i.quantity}`)
@@ -130,6 +129,7 @@ export default function DocumentsClient({
   returns,
   currentUserId,
   canEdit,
+  isAdmin,
   initialTab = 'receipt',
 }: {
   receipts: ReceiptRow[]
@@ -138,6 +138,8 @@ export default function DocumentsClient({
   returns: ReturnRow[]
   currentUserId: string
   canEdit: boolean
+  /** เจ้าของร้าน — คนเดียวที่แก้ช่องทางคืนเงินของบิลที่ยกเลิกแล้วได้ */
+  isAdmin: boolean
   /** ?tab=stock — ให้ลิงก์จากหน้ารายงานเปิดมาที่แท็บใบตัดสต็อกได้ตรง ๆ */
   initialTab?: Tab
 }) {
@@ -147,6 +149,7 @@ export default function DocumentsClient({
   const [cancelling, setCancelling] = useState<ReceiptRow | null>(null)
   const [returning, setReturning] = useState<ReceiptRow | null>(null)
   const [editingPayment, setEditingPayment] = useState<ReceiptRow | null>(null)
+  const [editingRefund, setEditingRefund] = useState<ReceiptRow | null>(null)
   const [detail, setDetail] = useState<DetailTarget | null>(null)
 
   const q = query.trim().toLowerCase()
@@ -226,6 +229,20 @@ export default function DocumentsClient({
           (แก้แล้ว)
         </span>
       )}
+      {/* บิลที่ยกเลิกแล้ว — เงินกลับไปทางไหนต้องอ่านได้จากตาราง ไม่ต้องเปิดใบดูทีละใบ */}
+      {r.status === 'cancelled' && r.refund_method && (
+        <span className="block text-xs text-gray-500 mt-0.5">
+          → {REFUND_LABEL[r.refund_method]}
+          {r.refund_method_original && (
+            <span
+              className="ml-1 text-amber-600"
+              title={`เดิมกดไว้ว่า${REFUND_LABEL[r.refund_method_original] ?? r.refund_method_original}`}
+            >
+              (แก้แล้ว)
+            </span>
+          )}
+        </span>
+      )}
     </>
   )
 
@@ -259,6 +276,16 @@ export default function DocumentsClient({
           className="p-2 text-gray-400 hover:text-red-600 hover:bg-gray-100 rounded-lg"
         >
           <Ban size={15} />
+        </button>
+      )}
+      {/* กดคืนผิดช่องแล้วแก้ย้อนหลัง — เจ้าของร้านเท่านั้น เพราะขยับเงินในเก๊ะที่สรุปกะคาดไว้ + เครดิตลูกค้า */}
+      {isAdmin && r.status === 'cancelled' && !isPlatformChannel(r.sales_channel) && (
+        <button
+          onClick={() => setEditingRefund(r)}
+          title="แก้ช่องทางคืนเงิน"
+          className="p-2 text-gray-400 hover:text-blue-600 hover:bg-gray-100 rounded-lg"
+        >
+          <Banknote size={15} />
         </button>
       )}
     </div>
@@ -706,11 +733,32 @@ export default function DocumentsClient({
         <CancelReceiptModal
           transactionId={cancelling.id}
           transactionNumber={cancelling.transaction_number}
+          total={cancelling.total}
+          paymentMethod={cancelling.payment_method}
+          splitPayment={isSplitPayment(cancelling)}
           hasCustomer={!!cancelling.customer_id}
           currentUserId={currentUserId}
           onClose={() => setCancelling(null)}
           onCancelled={() => {
             setCancelling(null)
+            router.refresh()
+          }}
+        />
+      )}
+
+      {editingRefund && (
+        <EditRefundModal
+          transactionId={editingRefund.id}
+          transactionNumber={editingRefund.transaction_number}
+          total={editingRefund.total}
+          paymentMethod={editingRefund.payment_method}
+          splitPayment={isSplitPayment(editingRefund)}
+          currentMethod={editingRefund.refund_method}
+          hasCustomer={!!editingRefund.customer_id}
+          currentUserId={currentUserId}
+          onClose={() => setEditingRefund(null)}
+          onSaved={() => {
+            setEditingRefund(null)
             router.refresh()
           }}
         />

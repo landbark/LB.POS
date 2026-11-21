@@ -4,10 +4,11 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { X, Printer, Receipt, ShoppingBag, PackageMinus } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
-import type { PaymentMethod, SalesChannel, StockMovementType } from '@/lib/types'
+import type { PaymentMethod, RefundMethod, SalesChannel, StockMovementType } from '@/lib/types'
 import { MOVEMENT_LABEL } from '@/lib/stockMovements'
 import { CHANNEL_LABEL, CHANNEL_BADGE, platformPaymentLabel } from '@/lib/salesChannel'
 import { PAYMENT_LABEL } from '@/lib/payments'
+import { REFUND_LABEL } from '@/lib/refunds'
 
 /** ใบตัดสต็อกไม่มีตารางเอกสารใน DB — ฝั่ง server จับกลุ่มมาให้แล้ว เลยส่งรายการมาพร้อมแถว ไม่ต้องยิงใหม่ */
 export interface StockDocItem {
@@ -63,7 +64,10 @@ interface ReceiptDetail {
   return_credit: number | null
   cancelled_at: string | null
   cancel_reason: string | null
-  refund_method: string | null
+  refund_method: RefundMethod | null
+  refund_method_original: RefundMethod | null
+  refund_edited_at: string | null
+  refund_edited_by_profile: { name: string } | null
   customers: { name: string; phone: string | null; hn: string | null } | null
   profiles: { name: string } | null
   transaction_items: ReceiptItem[]
@@ -97,8 +101,6 @@ const money = (n: number) => n.toLocaleString('th-TH', { minimumFractionDigits: 
 const fmtDate = (d: string) =>
   new Date(d).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit', hour: '2-digit', minute: '2-digit' })
 const fmtDay = (d: string) => new Date(d).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' })
-
-const REFUND_LABEL: Record<string, string> = { cash: 'เงินสด', transfer: 'โอนคืน', credit: 'เครดิตร้าน' }
 
 const Row = ({ label, value }: { label: string; value: React.ReactNode }) => (
   <div className="flex justify-between gap-4 text-sm">
@@ -137,8 +139,10 @@ export default function DocumentDetailModal({ target, onClose }: { target: Detai
           .select(`
             transaction_number, created_at, recorded_at, backdate_reason, subtotal, discount, total, status,
             rounding, payment_method, sales_channel, external_order_no, cash_received, change_given,
-            points_earned, points_used, credit_used, return_credit, cancelled_at, cancel_reason, refund_method,
+            points_earned, points_used, credit_used, return_credit, cancelled_at, cancel_reason,
+            refund_method, refund_method_original, refund_edited_at,
             customers(name, phone, hn),
+            refund_edited_by_profile:profiles!transactions_refund_edited_by_fkey(name),
             profiles!transactions_cashier_id_fkey(name),
             transaction_items(quantity, unit_price, discount, subtotal, unit_name, unit_factor, base_quantity, products(name, unit, sku)),
             transaction_payments(method, amount)
@@ -220,7 +224,15 @@ function ReceiptBody({ tx }: { tx: ReceiptDetail }) {
         <div className="rounded-lg bg-red-50 border border-red-100 px-3 py-2 text-sm text-red-700">
           ยกเลิกแล้ว{tx.cancelled_at && ` · ${fmtDate(tx.cancelled_at)}`}
           {tx.cancel_reason && ` · ${tx.cancel_reason}`}
-          {tx.refund_method && ` · คืนเป็น${REFUND_LABEL[tx.refund_method] ?? tx.refund_method}`}
+          {tx.refund_method && ` · ${REFUND_LABEL[tx.refund_method] ?? tx.refund_method}`}
+          {/* กดคืนผิดช่องแล้วเจ้าของมาแก้ทีหลัง — ต้องเห็นว่าของเดิมกดอะไรไว้ ไม่ใช่เขียนทับเงียบ ๆ */}
+          {tx.refund_method_original && (
+            <div className="text-xs text-red-600/80 mt-0.5">
+              เดิมกดไว้ว่า{REFUND_LABEL[tx.refund_method_original] ?? tx.refund_method_original}
+              {tx.refund_edited_at && ` · แก้ ${fmtDate(tx.refund_edited_at)}`}
+              {tx.refund_edited_by_profile?.name && ` โดย ${tx.refund_edited_by_profile.name}`}
+            </div>
+          )}
         </div>
       )}
 

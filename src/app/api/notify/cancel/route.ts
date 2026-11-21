@@ -5,13 +5,8 @@ import { buildCancelMessage, notifyEvent } from '@/lib/notify'
 import { pushAppNotification } from '@/lib/appNotify'
 import { thaiToday } from '@/lib/thaiDate'
 import { fmtThai } from '@/lib/backdate'
+import { REFUND_LABEL } from '@/lib/refunds'
 import type { RefundMethod } from '@/lib/types'
-
-const REFUND_LABEL: Record<RefundMethod, string> = {
-  cash: 'เงินสด',
-  transfer: 'โอนเงิน',
-  credit: 'เก็บเป็นเครดิตร้าน',
-}
 
 const baht = (n: number) => `฿${n.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 

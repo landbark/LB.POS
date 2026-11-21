@@ -49,6 +49,10 @@ export interface ReturnableBill {
   /** วันที่ขายจริง */
   created_at: string
   status: TransactionStatus
+  /** วิธีที่ลูกค้าจ่ายบิลนี้มา — ใช้ตั้งช่องทางคืนเงินให้ตรงกันไว้ก่อน */
+  payment_method: PaymentMethod
+  /** บิลแยกจ่ายหลายทาง — เดาช่องทางคืนให้ไม่ได้ */
+  split_payment: boolean
   customer_id: string | null
   customer_name: string | null
   customer_points: number
@@ -100,7 +104,7 @@ export async function loadReturnableBill(
   const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(key)
   const select = `
     id, transaction_number, created_at, status, customer_id, total, credit_used, return_credit,
-    points_earned, points_used, sales_channel,
+    points_earned, points_used, sales_channel, payment_method, transaction_payments(method, amount),
     customers(name, points, credit_balance),
     transaction_items(id, product_id, unit_name, unit_factor, quantity, unit_price, discount, subtotal, is_reward, reward_points, products(name, sku, unit))
   `
@@ -171,6 +175,8 @@ export async function loadReturnableBill(
       transaction_number: tx.transaction_number,
       created_at: tx.created_at,
       status: tx.status as TransactionStatus,
+      payment_method: tx.payment_method as PaymentMethod,
+      split_payment: (tx.transaction_payments?.length ?? 0) > 1,
       customer_id: tx.customer_id,
       customer_name: customer?.name ?? null,
       customer_points: customer?.points ?? 0,

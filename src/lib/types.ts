@@ -715,7 +715,12 @@ export type SalesChannel = 'store' | 'shopee' | 'tiktok' | 'lazada' | 'booth' | 
 /** ปัดเศษสตางค์ท้ายบิล — none = ไม่ปัด, normal = .50 ขึ้นไปปัดขึ้น, up/down = ปัดขึ้น/ลงเสมอ */
 export type RoundingMode = 'none' | 'normal' | 'up' | 'down'
 export type TransactionStatus = 'completed' | 'cancelled'
-export type RefundMethod = 'cash' | 'transfer' | 'credit'
+/**
+ * ช่องทางที่เงินกลับไปหาลูกค้าเวลายกเลิกบิล/รับคืนของ — ตรงกับ PaymentMethod ทุกตัว
+ * เพราะปกติต้องคืนทางเดียวกับที่รับมา (รูดบัตรก็ยกเลิกรายการที่เครื่อง ไม่ได้ควักเงินสด)
+ * บวก 'credit' ที่ไม่มีในฝั่งรับเงิน — เก็บไว้เป็นเครดิตร้านให้ลูกค้าสมาชิกใช้บิลหน้า
+ */
+export type RefundMethod = PaymentMethod | 'credit'
 
 export interface Transaction {
   id: string
@@ -742,7 +747,10 @@ export interface Transaction {
   cancel_reason: string | null
   restocked: boolean | null
   refund_method: RefundMethod | null
-  /** วิธีรับเงินที่บันทึกไว้ตอนขายครั้งแรก — มีค่าเมื่อมีคนแก้วิธีรับเงินภายหลัง */
+  /** ช่องทางคืนเงินที่กดไว้ตอนยกเลิกจริง — มีค่าเมื่อมีคนแก้ช่องทางคืนเงินภายหลัง */
+  refund_method_original: RefundMethod | null
+  refund_edited_at: string | null
+  refund_edited_by: string | null
   /** ส่วนต่างจากการปัดเศษท้ายบิล (+ ปัดขึ้น, − ปัดลง) */
   rounding: number
   sales_channel: SalesChannel
@@ -750,6 +758,7 @@ export interface Transaction {
   external_order_no: string | null
   /** รอบออกบูธที่บิลนี้ขายได้ — มีเฉพาะ sales_channel = 'booth' */
   booth_trip_id: string | null
+  /** วิธีรับเงินที่บันทึกไว้ตอนขายครั้งแรก — มีค่าเมื่อมีคนแก้วิธีรับเงินภายหลัง */
   payment_method_original: PaymentMethod | null
   payment_edited_at: string | null
   payment_edited_by: string | null

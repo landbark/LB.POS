@@ -7,6 +7,7 @@ import { X, Search, Plus, Minus, Trash2, RotateCcw, Printer, CheckCircle2, Alert
 import { createClient } from '@/lib/supabase/client'
 import { POS_PRODUCT_SELECT } from '@/lib/clinicQueue'
 import { PAYMENT_LABEL } from '@/lib/payments'
+import { REFUND_OPTIONS, isRefundMismatch, refundMismatchWarning, suggestedRefundMethod } from '@/lib/refunds'
 import { isClinicOnly } from '@/lib/clinic'
 import {
   createReturn,
@@ -31,11 +32,6 @@ import type { CartItem, PaymentMethod, PointsConfig, Product, RefundMethod } fro
 
 const money = (n: number) => n.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 const METHODS: PaymentMethod[] = ['cash', 'transfer', 'qr', 'card']
-const REFUND_OPTIONS: { value: RefundMethod; label: string }[] = [
-  { value: 'cash', label: 'เงินสด' },
-  { value: 'transfer', label: 'โอนเงิน' },
-  { value: 'credit', label: 'เก็บเป็นเครดิตร้าน' },
-]
 
 export interface ReturnModalProps {
   currentUserId: string
@@ -69,6 +65,17 @@ export default function ReturnModal({ currentUserId, initialBillId, onClose, onD
   const [saving, setSaving] = useState(false)
   const [done, setDone] = useState<CreateReturnResult | null>(null)
 
+  /**
+   * รับบิลที่โหลดมาเข้าจอ — ตั้งช่องทางคืนตามวิธีที่ลูกค้าจ่ายบิลนั้นมาด้วย
+   * ของเดิมค้างที่ "เงินสด" เสมอ บิลที่จ่ายบัตร/QR จึงถูกกดคืนเป็นเงินสดทั้งที่เงินไม่ได้ออกจากเก๊ะ
+   * แล้วไปโป่งที่ยอดเงินสดตอนปิดกะ (บิลแยกจ่ายหลายทางเดาให้ไม่ได้ ปล่อยให้เลือกเอง)
+   */
+  const applyBill = useCallback((found: ReturnableBill) => {
+    setBill(found)
+    setQty({})
+    if (!found.split_payment) setRefundMethod(suggestedRefundMethod(found.payment_method))
+  }, [])
+
   const fetchBill = useCallback(async (key: string) => {
     setLoadingBill(true)
     setBillError(null)
@@ -79,9 +86,8 @@ export default function ReturnModal({ currentUserId, initialBillId, onClose, onD
       setBill(null)
       return
     }
-    setBill(found)
-    setQty({})
-  }, [])
+    applyBill(found)
+  }, [applyBill])
 
   // เปิดมาจากทะเบียนใบเสร็จ — โหลดบิลนั้นให้เลย
   useEffect(() => {
@@ -93,13 +99,12 @@ export default function ReturnModal({ currentUserId, initialBillId, onClose, onD
         setBillError(error ?? 'ไม่พบบิล')
         return
       }
-      setBill(found)
-      setQty({})
+      applyBill(found)
     })
     return () => {
       cancelled = true
     }
-  }, [initialBillId])
+  }, [initialBillId, applyBill])
 
   // ตั้งค่าแต้ม — บิลเปลี่ยนสินค้าให้แต้มตามเงินที่จ่ายเพิ่ม เหมือนขายปกติ
   useEffect(() => {
@@ -578,6 +583,12 @@ export default function ReturnModal({ currentUserId, initialBillId, onClose, onD
                 </button>
               ))}
             </div>
+            {!bill.split_payment && isRefundMismatch(bill.payment_method, refundMethod) && (
+              <p className="flex items-start gap-1.5 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mt-1.5">
+                <AlertTriangle size={14} className="shrink-0 mt-0.5" />
+                {refundMismatchWarning(bill.payment_method, refundMethod)}
+              </p>
+            )}
             {refundMethod === 'credit' && bill.customer_id && (
               <p className="text-xs text-gray-500 mt-1.5">
                 เครดิตคงเหลือตอนนี้ ฿{money(bill.customer_credit)} → จะเป็น ฿
@@ -586,7 +597,7 @@ export default function ReturnModal({ currentUserId, initialBillId, onClose, onD
             )}
             {!bill.customer_id && (
               <p className="text-xs text-gray-400 mt-1.5">
-                บิลนี้ไม่มีลูกค้าสมาชิก — เก็บเป็นเครดิตไม่ได้ ต้องคืนเงินสดหรือโอน
+                บิลนี้ไม่มีลูกค้าสมาชิก — เก็บเป็นเครดิตไม่ได้ ต้องคืนเงินทางใดทางหนึ่ง
               </p>
             )}
           </div>
