@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { X, Wallet, AlertTriangle, ArrowRightLeft } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { createClient } from '@/lib/supabase/client'
-import { BANKNOTES, COINS, DENOMS, coverFloat } from '@/lib/shiftFloat'
+import { BANKNOTES, COINS, DENOMS, coverFloat, materialShortages } from '@/lib/shiftFloat'
 import { denomDiffs, findCarryOver, findOrphanSales, openShift, type CarryOver, type OrphanSales } from '@/lib/shiftOpen'
 
 const money = (n: number) => n.toLocaleString('th-TH', { minimumFractionDigits: 2 })
@@ -98,9 +98,10 @@ export default function OpenShiftModal({
   // กองที่เงินทอนไม่พอตั้งแต่ก่อนเปิดร้าน — ตัวที่เคยทำให้ต้องวิ่งหาเงินทอนตอนบ่าย
   // กองที่มีใบเล็กเกินพออุดให้แล้วไม่นับว่าขาด — คืนที่ห้าร้อยไม่พอแล้วใช้ร้อยแทน เงินทอนครบอยู่
   // (เดิมเทียบทีละกองตรง ๆ เช้าไหนเก๊ะมีร้อย 28 ใบแทนห้าร้อย 2 ใบ ก็ขึ้นกล่องแดงว่าเงินทอนไม่พอ)
+  // กองที่พร่องไปนิดหน่อย (เช่น ทอนบิลหลังปิดกะไปสองใบ) ไม่ขึ้นเตือน — ดู materialShortages
   const cover = byDenom && floatDenoms ? coverFloat(countedDenoms, floatDenoms, floatKeep) : null
   const shortages = cover
-    ? cover.shortages.map((sh) => ({
+    ? materialShortages(cover.shortages, floatDenoms!).map((sh) => ({
         ...sh,
         label: DENOMS.find((d) => d.value === sh.value)?.label ?? String(sh.value),
       }))
