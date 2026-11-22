@@ -1593,14 +1593,49 @@ export default function ShiftClient({
               </p>
             </div>
 
+            {/* ส่งต่อ — คืนที่โยกทั้งชุดต้องเขียนตามที่มือทำจริง: เงินออกจากเก๊ะทั้งก้อน แล้วชุดใหม่
+                ของเจ้าของลงไปแทน · เขียนเป็นยอดสุทธิก้อนเดียว ("ให้เจ้าของ ฿2,351") อ่านแล้วเหมือน
+                หยิบออกไปแค่นั้นแล้วที่เหลือเป็นของเดิมในเก๊ะ ซึ่งไม่ใช่เรื่องที่เกิดขึ้นเลย
+                (22 พ.ย. 69 เจ้าของว่า "ต้องให้เจ้าของทั้งหมด เจ้าของให้ 4000 รวมกับที่มีแบงค์ห้าสิบ")
+                ยอดสุทธิยังอยู่ แต่เป็นผลลัพธ์ท้ายสุด ไม่ใช่พาดหัว */}
             <div className="mt-2 pt-2 border-t border-gray-100 space-y-1">
-              <div className="flex justify-between text-gray-600">
-                <span>{cashToOwner < 0 ? 'เจ้าของเติมเข้าเก๊ะ' : 'ให้เจ้าของ'}</span>
-                <span className="tabular-nums">{cashToOwner === 0 ? '—' : `฿${money(Math.abs(cashToOwner))}`}</span>
-              </div>
-              <div className="flex justify-between font-medium text-gray-900">
-                <span>เหลือเป็นเงินทอนพรุ่งนี้</span><span className="tabular-nums">฿{money(leftover)}</span>
-              </div>
+              {swapPlan && swapping ? (
+                <>
+                  <div className="flex justify-between text-gray-600">
+                    <span>
+                      รวบออกให้เจ้าของ <span className="text-xs text-gray-400">ทั้งเก๊ะ{keptLabels && ` ยกเว้น${keptLabels}`}</span>
+                    </span>
+                    <span className="tabular-nums">฿{money(swapPlan.outTotal)}</span>
+                  </div>
+                  <div className="flex justify-between text-gray-600">
+                    <span>เจ้าของวางชุดใหม่ลงเก๊ะ</span>
+                    <span className="tabular-nums">−฿{money(swapPlan.putTotal)}</span>
+                  </div>
+                  <div className="flex justify-between text-gray-600">
+                    <span className="text-xs">{swapPlan.net < 0 ? 'สุทธิเจ้าของเติมเข้า' : 'สุทธิเจ้าของรับไป'}</span>
+                    <span className="text-xs tabular-nums">{swapPlan.net === 0 ? '—' : `฿${money(Math.abs(swapPlan.net))}`}</span>
+                  </div>
+                  <div className="flex justify-between font-medium text-gray-900">
+                    <span>
+                      เหลือเป็นเงินทอนพรุ่งนี้
+                      {swapPlan.stayTotal > 0 && (
+                        <span className="text-xs font-normal text-gray-400"> ชุดใหม่ + {keptLabels} ฿{money(swapPlan.stayTotal)}</span>
+                      )}
+                    </span>
+                    <span className="tabular-nums">฿{money(leftover)}</span>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="flex justify-between text-gray-600">
+                    <span>{cashToOwner < 0 ? 'เจ้าของเติมเข้าเก๊ะ' : 'ให้เจ้าของ'}</span>
+                    <span className="tabular-nums">{cashToOwner === 0 ? '—' : `฿${money(Math.abs(cashToOwner))}`}</span>
+                  </div>
+                  <div className="flex justify-between font-medium text-gray-900">
+                    <span>เหลือเป็นเงินทอนพรุ่งนี้</span><span className="tabular-nums">฿{money(leftover)}</span>
+                  </div>
+                </>
+              )}
             </div>
           </div>
 
@@ -1669,13 +1704,37 @@ export default function ShiftClient({
                   </td>
                 </tr>
 
+                {/* ใบนี้มีช่อง "ผู้รับเงิน" ให้เซ็น — ตัวเลขที่เซ็นรับต้องเป็นเงินที่ยื่นให้จริง
+                    ไม่ใช่ยอดสุทธิหลังหักชุดที่วางกลับลงไป (ดูบล็อกเดียวกันบนจอ) */}
                 <tr><td className="font-bold pt-2" colSpan={2}>ส่งต่อ</td></tr>
+                {swapPlan && swapping ? (
+                  <>
+                    <tr>
+                      <td className="pl-3">รวบออกให้เจ้าของ (ทั้งเก๊ะ{keptLabels && ` ยกเว้น${keptLabels}`})</td>
+                      <td className="text-right tabular-nums">฿{money(swapPlan.outTotal)}</td>
+                    </tr>
+                    <tr>
+                      <td className="pl-3">เจ้าของวางชุดใหม่ลงเก๊ะ</td>
+                      <td className="text-right tabular-nums">−฿{money(swapPlan.putTotal)}</td>
+                    </tr>
+                    <tr>
+                      <td className="pl-3">{swapPlan.net < 0 ? 'สุทธิเจ้าของเติมเข้า' : 'สุทธิเจ้าของรับไป'}</td>
+                      <td className="text-right tabular-nums">{swapPlan.net === 0 ? '—' : `฿${money(Math.abs(swapPlan.net))}`}</td>
+                    </tr>
+                  </>
+                ) : (
+                  <tr>
+                    <td className="pl-3">{cashToOwner < 0 ? 'เจ้าของเติมเข้าเก๊ะ' : 'ให้เจ้าของ'}</td>
+                    <td className="text-right tabular-nums">{cashToOwner === 0 ? '—' : `฿${money(Math.abs(cashToOwner))}`}</td>
+                  </tr>
+                )}
                 <tr>
-                  <td className="pl-3">{cashToOwner < 0 ? 'เจ้าของเติมเข้าเก๊ะ' : 'ให้เจ้าของ'}</td>
-                  <td className="text-right tabular-nums">{cashToOwner === 0 ? '—' : `฿${money(Math.abs(cashToOwner))}`}</td>
-                </tr>
-                <tr>
-                  <td className="pl-3 font-medium">เหลือเป็นเงินทอนพรุ่งนี้</td>
+                  <td className="pl-3 font-medium">
+                    เหลือเป็นเงินทอนพรุ่งนี้
+                    {swapPlan && swapping && swapPlan.stayTotal > 0 && (
+                      <span className="font-normal"> (ชุดใหม่ + {keptLabels} ฿{money(swapPlan.stayTotal)})</span>
+                    )}
+                  </td>
                   <td className="text-right font-bold tabular-nums">฿{money(leftover)}</td>
                 </tr>
               </tbody>
@@ -1683,13 +1742,6 @@ export default function ShiftClient({
 
             <p className="mt-2 text-[11px]"><span className="font-medium">นับได้:</span> {denomLine(countedDenoms) || '—'}</p>
             <p className="text-[11px]"><span className="font-medium">เหลือไว้:</span> {denomLine(keepCounts) || '—'}</p>
-            {swapPlan && swapping && (
-              <p className="text-[11px]">
-                <span className="font-medium">โยกชุดเงินทอน:</span> รวบออก ฿{money(swapPlan.outTotal)} ·
-                วางชุดใหม่ ฿{money(swapPlan.putTotal)}
-                {swapPlan.stayTotal > 0 && <> · {keptLabels}คาไว้ ฿{money(swapPlan.stayTotal)}</>}
-              </p>
-            )}
             {notes.trim() && <p className="mt-1 text-[11px]"><span className="font-medium">หมายเหตุ:</span> {notes.trim()}</p>}
 
             <div className="mt-6 flex justify-between text-[11px]">
