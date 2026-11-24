@@ -7,6 +7,7 @@ import { createClient } from '@/lib/supabase/client'
 import { ChevronLeft, ChevronRight, Plus, X, Phone, RotateCcw } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { confirmDialog } from '@/lib/confirm'
+import AppointmentSlotPicker from '@/components/AppointmentSlotPicker'
 import PetAlert, { PetAlertChip } from '@/components/PetAlert'
 import {
   APPOINTMENT_STATUS_LABELS, APPOINTMENT_TYPE_LABELS, SPECIES_LABELS,
@@ -64,7 +65,7 @@ const fmtShortDate = (iso: string) =>
 const emptyForm = {
   pet_id: '',
   date: '',
-  time: '09:00',
+  time: '',
   type: 'checkup' as AppointmentType,
   notes: '',
 }
@@ -125,12 +126,13 @@ export default function AppointmentsClient({
   async function save() {
     if (!form.pet_id) { toast.error('กรุณาเลือกสัตว์'); return }
     if (!form.date) { toast.error('กรุณาเลือกวันที่'); return }
+    if (!form.time) { toast.error('กรุณาเลือกเวลานัด'); return }
 
     // ตอนแก้นัดแล้วไม่ได้เปลี่ยนตัวสัตว์ ข้อมูลสัตว์ที่ติดมากับนัดไม่มี customer_id
     // จึงต้องยึด customer_id เดิมของนัดไว้ ไม่งั้นเจ้าของจะถูกล้างเป็นค่าว่าง
     const customerId = selectedPet?.customer_id
       ?? (editing && editing.pet_id === form.pet_id ? editing.customer_id : null)
-    const scheduled_at = new Date(`${form.date}T${form.time || '00:00'}`).toISOString()
+    const scheduled_at = new Date(`${form.date}T${form.time}`).toISOString()
 
     setSaving(true)
     const supabase = createClient()
@@ -442,7 +444,7 @@ export default function AppointmentsClient({
 
       {modal && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={() => setModal(false)}>
-          <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl p-5" onClick={(e) => e.stopPropagation()}>
+          <div className="bg-white rounded-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto shadow-2xl p-5" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-semibold text-gray-900">{editing ? 'แก้ไขนัด' : 'สร้างนัด'}</h2>
               <button onClick={() => setModal(false)} className="p-1.5 text-gray-400 hover:text-gray-600"><X size={18} /></button>
@@ -490,16 +492,25 @@ export default function AppointmentsClient({
                 )}
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className={labelClass}>วันที่ *</label>
-                  <input type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} className={inputClass} />
-                </div>
-                <div>
-                  <label className={labelClass}>เวลา</label>
-                  <input type="time" value={form.time} onChange={(e) => setForm({ ...form, time: e.target.value })} className={inputClass} />
-                </div>
+              <div>
+                <label className={labelClass}>วันที่ *</label>
+                <input type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} className={inputClass} />
               </div>
+
+              {form.date && (
+                <div>
+                  <div className="flex items-center justify-between gap-3">
+                    <span className={labelClass}>เวลา *</span>
+                    <span className="text-[11px] text-gray-400 mb-1">ตัวเลข = นัดไว้แล้วกี่ตัว (นัดซ้ำได้)</span>
+                  </div>
+                  <AppointmentSlotPicker
+                    date={form.date}
+                    value={form.time}
+                    onChange={(time) => setForm({ ...form, time })}
+                    excludeId={editing?.id}
+                  />
+                </div>
+              )}
 
               <div>
                 <label className={labelClass}>ประเภท</label>

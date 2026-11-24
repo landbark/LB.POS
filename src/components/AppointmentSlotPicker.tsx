@@ -23,6 +23,7 @@ export default function AppointmentSlotPicker({
   onChange,
   disabled = false,
   reloadKey = 0,
+  excludeId,
 }: {
   /** 'YYYY-MM-DD' ตามเวลาเครื่อง */
   date: string
@@ -32,6 +33,8 @@ export default function AppointmentSlotPicker({
   disabled?: boolean
   /** เปลี่ยนค่าแล้วโหลดจำนวนนัดใหม่ — ใช้หลังตั้งนัดสำเร็จ */
   reloadKey?: number
+  /** นัดที่กำลังแก้อยู่ — ไม่นับตัวเองเป็นนัดของคนอื่น */
+  excludeId?: string
 }) {
   // เก็บวันที่คู่กับผลลัพธ์ เปลี่ยนวันแล้วจะได้ไม่เห็นจำนวนนัดของวันเก่าค้างระหว่างโหลด
   const [loaded, setLoaded] = useState<{ date: string; rows: BookedRow[]; failed: boolean }>({ date: '', rows: [], failed: false })
@@ -58,14 +61,19 @@ export default function AppointmentSlotPicker({
 
   const ready = loaded.date === date
   const bySlot: Record<string, BookedRow[]> = {}
-  if (ready) for (const r of loaded.rows) (bySlot[slotOf(new Date(r.scheduled_at))] ??= []).push(r)
+  if (ready) for (const r of loaded.rows) if (r.id !== excludeId) (bySlot[slotOf(new Date(r.scheduled_at))] ??= []).push(r)
+
+  // เวลาเดิมของนัดที่กำลังแก้ ถ้าลงช่องพอดีแต่อยู่นอกช่วง (09:00) ให้มีช่องของมัน
+  // ถ้าไม่ลงช่อง (13:40) บอกเป็นข้อความแทน — ไม่ปัดเวลาให้เอง
+  const onGrid = /:(00|30)$/.test(value)
+  const extra = onGrid ? [...Object.keys(bySlot), value] : Object.keys(bySlot)
 
   const inSlot = value ? bySlot[value] ?? [] : []
 
   return (
     <div>
       <div className="space-y-2">
-        {slotGroups(Object.keys(bySlot)).map((g) => (
+        {slotGroups(extra).map((g) => (
           <div key={g.label} className="flex items-start gap-2">
             <span className="w-8 shrink-0 pt-2.5 text-xs font-medium text-gray-400">{g.label}</span>
             <div className="flex-1 grid grid-cols-[repeat(auto-fill,minmax(4.25rem,1fr))] gap-1.5">
@@ -100,6 +108,9 @@ export default function AppointmentSlotPicker({
         ))}
       </div>
 
+      {value && !onGrid && (
+        <p className="mt-2 text-xs text-gray-500">เวลาเดิม {value} น. — กดเลือกช่องถ้าจะเปลี่ยนเวลา</p>
+      )}
       {ready && loaded.failed && (
         <p className="mt-2 text-xs text-red-600">โหลดจำนวนนัดของวันนี้ไม่สำเร็จ — ยังเลือกเวลาได้ตามปกติ</p>
       )}
