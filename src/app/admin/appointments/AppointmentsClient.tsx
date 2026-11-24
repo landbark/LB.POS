@@ -101,6 +101,7 @@ export default function AppointmentsClient({
 
   function openNew(date?: string) {
     setEditing(null)
+    setSelectedPet(null)
     setForm({ ...emptyForm, date: date ?? selectedDate })
     setPetQuery('')
     setModal(true)
