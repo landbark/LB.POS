@@ -16,6 +16,7 @@ import {
   TIME_SLOTS, defaultTimes, parseTimes, dosesPerDay, drugForm, type TimeSlot,
 } from '@/lib/sig'
 import DiagnosisSelect from '@/components/DiagnosisSelect'
+import AppointmentSlotPicker from '@/components/AppointmentSlotPicker'
 import { visitSummaryText, type DiagnosisLink } from '@/lib/diagnoses'
 import VaccineSection from '@/app/admin/pets/[id]/VaccineSection'
 import VisitAttachments from './VisitAttachments'
@@ -108,7 +109,10 @@ export default function VisitDetail({
   const [adding, setAdding] = useState(false)
   const [makingAppt, setMakingAppt] = useState(false)
   // เวลานัดติดตาม — ไม่ได้เก็บลง visit (follow_up_date เป็น DATE) ใช้ตอนสร้าง appointment เท่านั้น
-  const [followUpTime, setFollowUpTime] = useState('09:00')
+  // เริ่มที่ว่าง ไม่มีค่าตั้งต้น — ต้องกดเลือกช่องเองก่อนถึงตั้งนัดได้ กันนัดหลุดไปเวลาที่ไม่ได้ตั้งใจ
+  const [followUpTime, setFollowUpTime] = useState('')
+  // เพิ่มทุกครั้งที่ตั้งนัดสำเร็จ ให้ช่องเวลาโหลดจำนวนนัดใหม่
+  const [apptReload, setApptReload] = useState(0)
   const [form, setForm] = useState({
     weight: visit.weight?.toString() ?? '',
     temperature: visit.temperature?.toString() ?? '',
@@ -416,12 +420,12 @@ export default function VisitDetail({
 
   // สร้างนัดติดตามจากวันที่กรอกไว้ — บันทึกวันติดตามลง visit ด้วยกันเผื่อยังไม่ได้กดบันทึก
   async function createFollowUp() {
-    if (!form.follow_up_date) return
+    if (!form.follow_up_date || !followUpTime) return
     // ใช้ชื่อโรคที่เลือกอยู่บนหน้าจอ (ยังไม่กดบันทึกก็ได้) ไม่ใช่ค่าที่เคยบันทึกไว้
     const followUpNote = [picked.map((d) => d.name).join(', '), form.diagnosis.trim()].filter(Boolean).join(' — ')
     setMakingAppt(true)
     const supabase = createClient()
-    const scheduled_at = new Date(`${form.follow_up_date}T${followUpTime || '09:00'}`).toISOString()
+    const scheduled_at = new Date(`${form.follow_up_date}T${followUpTime}`).toISOString()
     const { data: created, error } = await supabase.from('appointments').insert({
       pet_id: visit.pet_id,
       customer_id: visit.customer_id,
@@ -448,7 +452,10 @@ export default function VisitDetail({
       }).catch(() => {})
     }
 
-    toast.success('สร้างนัดติดตามแล้ว — ดูได้ที่เมนูนัดหมาย')
+    toast.success(`สร้างนัดติดตาม ${followUpTime} น. แล้ว — ดูได้ที่เมนูนัดหมาย`)
+    // ล้างเวลาที่เลือก กันกดซ้ำได้นัดเบิ้ล (ช่องเวลาไม่กันนัดซ้ำให้ เพราะเวลาเดียวนัดได้หลายตัว)
+    setFollowUpTime('')
+    setApptReload((n) => n + 1)
     refresh()
   }
 
@@ -1050,36 +1057,42 @@ export default function VisitDetail({
           </div>
           <div>
             <label className={labelClass}>Follow-up Date</label>
-            <div className="flex flex-wrap items-center gap-2">
-              {/* ช่องวันที่/เวลาของ Chrome มีความกว้างในตัว ถ้าปล่อย w-full มันจะดันล้นออกนอกการ์ด — ให้ย่อได้แล้วตกบรรทัดแทน */}
-              <input
-                type="date"
-                value={form.follow_up_date}
-                onChange={(e) => set('follow_up_date', e.target.value)}
-                className={`${fieldClass} flex-1 min-w-[9rem]`}
-              />
-              <input
-                type="time"
-                value={followUpTime}
-                onChange={(e) => setFollowUpTime(e.target.value)}
-                disabled={!canEdit}
-                title="เวลานัด"
-                className={`${fieldClass} w-28 shrink-0`}
-              />
-              {form.follow_up_date && (
-                <button
-                  type="button"
-                  onClick={createFollowUp}
-                  disabled={makingAppt}
-                  title="สร้างนัดติดตามจากวันนี้"
-                  className="shrink-0 flex items-center gap-1 border border-gray-300 text-gray-600 text-xs px-2.5 py-2 rounded-lg hover:bg-gray-50 disabled:opacity-50"
-                >
-                  <CalendarPlus size={14} /> ตั้งนัด
-                </button>
-              )}
-            </div>
+            <input
+              type="date"
+              value={form.follow_up_date}
+              onChange={(e) => set('follow_up_date', e.target.value)}
+              className={inputClass}
+            />
           </div>
         </div>
+        {form.follow_up_date && (
+          <div className="border border-gray-200 rounded-lg p-3">
+            <div className="flex items-center justify-between gap-3 mb-2">
+              <span className="text-xs font-medium text-gray-600">เวลานัด — เลือกช่องเวลา</span>
+              <span className="text-[11px] text-gray-400">ตัวเลข = นัดไว้แล้วกี่ตัว (นัดซ้ำได้)</span>
+            </div>
+            <AppointmentSlotPicker
+              date={form.follow_up_date}
+              value={followUpTime}
+              onChange={setFollowUpTime}
+              disabled={readOnly}
+              reloadKey={apptReload}
+            />
+            <button
+              type="button"
+              onClick={createFollowUp}
+              disabled={makingAppt || !followUpTime}
+              className="mt-3 w-full sm:w-auto flex items-center justify-center gap-1.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-sm font-medium px-4 py-2 rounded-lg"
+            >
+              <CalendarPlus size={15} />
+              {makingAppt
+                ? 'กำลังตั้งนัด...'
+                : followUpTime
+                  ? `ตั้งนัด ${new Date(`${form.follow_up_date}T00:00`).toLocaleDateString('th-TH', { weekday: 'short', day: 'numeric', month: 'short' })} ${followUpTime} น.`
+                  : 'ตั้งนัด — เลือกเวลาก่อน'}
+            </button>
+          </div>
+        )}
       </div>
       </fieldset>
 
