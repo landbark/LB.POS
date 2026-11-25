@@ -5,7 +5,7 @@ import { flushSync } from 'react-dom'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { checkChannels, expectedCash as computeExpectedCash, splitShiftBills, type ShiftBill } from '@/lib/shiftCash'
-import { BANKNOTES, COINS, DENOMS, coverFloat, floatSetKeep, ownerSide, planByDenom, planOwnerTake, planSwap } from '@/lib/shiftFloat'
+import { BANKNOTES, COINS, DENOMS, planFloat } from '@/lib/shiftFloat'
 import { DEFAULT_TRANSFER_ACCOUNTS, PAYMENT_DOT, PAYMENT_LABEL, sumBankMethods } from '@/lib/payments'
 import { CHANNEL_GROUPS } from '@/lib/salesChannel'
 import type { PaymentMethod, SalesChannel } from '@/lib/types'
@@ -32,19 +32,6 @@ type ShiftRow = Shift & {
   closing_denominations?: Record<string, number> | null
   cash_to_owner?: number | null
   owner_denominations?: Record<string, number> | null
-}
-
-// ใบนับเงินทอนที่กะหนึ่งส่งต่อให้กะถัดไป — เจ้าของจัดทีหลังแล้วใช้ของที่จัด ไม่งั้นใช้ที่เหลือตอนปิด
-const carryDenomsOf = (s: ShiftRow | undefined): Record<number, number> | null => {
-  if (!s) return null
-  if (s.carry_denominations) {
-    const adj = s.carry_denominations
-    return Object.fromEntries(DENOMS.map((d) => [d.value, adj[d.value] ?? 0]))
-  }
-  if (!s.closing_denominations) return null
-  const close = s.closing_denominations
-  const owner = s.owner_denominations ?? {}
-  return Object.fromEntries(DENOMS.map((d) => [d.value, (close[d.value] ?? 0) - (owner[d.value] ?? 0)]))
 }
 
 // เงินที่กะหนึ่งต้องส่งต่อให้กะถัดไป (ปิดโดยไม่นับ = เทียบไม่ได้)
@@ -76,7 +63,6 @@ export default function ShiftClient({
   currentUserName,
   canEditClosed,
   floatTarget,
-  floatDenoms,
   floatKeep,
   transferAccounts,
   storeName,
@@ -88,8 +74,6 @@ export default function ShiftClient({
   canEditClosed: boolean
   /** เงินทอนที่ต้องเหลือไว้ทุกเช้า — null = ร้านยังไม่ได้ตั้ง (ตั้งได้ที่หน้าตั้งค่า) */
   floatTarget: number | null
-  /** เงินทอนแยกรายชนิด — ตั้งไว้แล้วจะคิดให้ว่าต้องหยิบชนิดไหนออกกี่ใบ แทนการคิดจากยอดรวม */
-  floatDenoms: Record<string, number> | null
   /** ชนิดที่เก็บไว้ทั้งหมด — ไม่หยิบออก ไม่เตือนว่าขาด (แบงค์ห้าสิบที่แลกมาไม่ได้) */
   floatKeep: number[] | null
   /** บัญชี/กระเป๋าที่ให้กรอกยอดโอนจริงตอนปิดกะ · null = ยังไม่ได้ตั้ง ใช้ชุดเริ่มต้น */
@@ -100,11 +84,8 @@ export default function ShiftClient({
   const router = useRouter()
   const [showOpenShift, setShowOpenShift] = useState(false)
   const [counts, setCounts] = useState<Record<number, string>>({})
-  // เงินทอนที่จะเหลือไว้ให้กะถัดไป แยกรายชนิด · null = ยังไม่แตะ ใช้ชุดเงินทอนที่ตั้งไว้เป็นค่าตั้งต้น
-  // ไม่มีช่อง "แยกให้เจ้าของ" แล้ว — ยอดนั้นคิดจากส่วนต่างกับใบนับ (ดู lib/shiftFloat → ownerSide)
-  const [keepEdit, setKeepEdit] = useState<Record<number, string> | null>(null)
-  // กางช่องเงินทอนรายชนิดออกมาแก้เอง — คืนที่โยกทั้งชุดไม่ต้องเห็นเก้าช่องนั้นเลย
-  const [showKeepRows, setShowKeepRows] = useState(false)
+  // เงินทอนที่จะเหลือไว้ให้กะถัดไป (ยอดรวม) · null = ยังไม่แตะ ใช้ยอดที่ตั้งไว้ + แบงค์ห้าสิบที่คาเก๊ะ
+  const [keepEdit, setKeepEdit] = useState<string | null>(null)
   // ไม่ติ๊กไว้ให้ — เคยติ๊กค้างแล้วคนปิดกะไม่ทันสังเกตว่ามีกะใหม่เปิดต่อ เช้ามาเห็นกะค้างอยู่
   // นึกว่าเมื่อวานลืมปิด เลยปิดแล้วเปิดใหม่อีกรอบ กลายเป็นกะเกินมาทุกวัน
   const [reopenNext, setReopenNext] = useState(false)
@@ -145,11 +126,6 @@ export default function ShiftClient({
   const [moveAmount, setMoveAmount] = useState('')
   const [moveReason, setMoveReason] = useState('')
   const [moveBusy, setMoveBusy] = useState(false)
-  // จัดเงินทอนหลังปิดกะ — เจ้าของมาแลก/เติมทีหลังตอนพนักงานกลับไปแล้ว (เจ้าของเท่านั้น)
-  const lastClosed = history[0] as ShiftRow | undefined
-  const carryBefore = carryDenomsOf(lastClosed)
-  const [adjust, setAdjust] = useState<Record<number, string> | null>(null)
-  const [adjustNote, setAdjustNote] = useState('')
   // บิลที่ขายไปตอนไม่มีกะเปิด (ลูกค้ามาเพิ่มหลังปิดกะเมื่อคืน) — โชว์ในการ์ด "เปิดกะใหม่"
   // ให้คนที่มาเปิดกะเช้ารู้ก่อนว่าต้องเจออะไร ไม่ต้องกดเข้าโมดอลก่อนถึงจะเห็น
   const [pendingSales, setPendingSales] = useState<OrphanSales | null>(null)
@@ -304,129 +280,21 @@ export default function ShiftClient({
   const bankDiff = bankChecked ? bankActual - bankExpected : 0
   // เงินสดขาดเท่าที่บัญชีเกินพอดี = ไม่มีเงินหาย แค่กดช่องทางผิดตอนรับเงิน (ดู lib/shiftCash)
   const channels = checkChannels(difference, bankDiff)
-  // เงินทอนตั้งต้นคงที่ — กำหนดรายชนิดจะคิดทีละกอง (คุมได้ว่าเหลือเป็นแบงค์อะไร)
-  // ตั้งแค่ยอดรวมก็ยังใช้ได้ แต่ไล่หยิบใบใหญ่ลงมาเฉย ๆ ไม่รู้ว่าเหลือแล้วทอนได้จริงไหม
-  const floatTargetDenoms: Record<number, number> | null = floatDenoms
-    ? Object.fromEntries(Object.entries(floatDenoms).map(([v, q]) => [Number(v), Number(q) || 0]))
-    : null
   const countedDenoms: Record<number, number> = Object.fromEntries(
     DENOMS.map((d) => [d.value, qtyOf(counts, d.value)]),
   )
-  const takeable = BANKNOTES.map((d) => d.value)
+  // เงินทอนคุมด้วยยอดรวมอย่างเดียว — รวบของเก่าออกทั้งเก๊ะ แล้ววางชุด ฿4,000 ที่เจ้าของเตรียมไว้
+  // ชุดแต่ละคืนแบงค์/เหรียญไม่เหมือนกัน จึงไม่บันทึกและไม่เทียบรายชนิด (ดู lib/shiftFloat)
   const keepAll = floatKeep ?? []
-  // ชุดที่จะวางลงเก๊ะคืนนี้ = ชุดตามหน้าตั้งค่าเป๊ะ ๆ — เจ้าของนับชุด ฿4,000 เตรียมไว้ล่วงหน้าทุกวัน
-  //
-  // เคยจัดชุดจากเงินที่มีในเก๊ะ (buildFloat) เพราะสมัยนั้นเงินทอนคือ "เหลือไว้เท่าที่มี แล้วเติมกองที่ขาด"
-  // ตอนนี้ชุดที่ลงเก๊ะไม่ได้มาจากเก๊ะแล้ว จัดจากของในเก๊ะจึงได้แต่ตัวเลขที่ไม่ตรงกับที่ทำจริง
-  // แล้วลากเรื่อง "ขาด/ต้องแลกมาเติม" ขึ้นมาให้อ่านทุกคืนฟรี ๆ
-  // (19 พ.ย. 69 เจ้าของว่า "ตอนนี้เราไม่ได้เติมแล้ว เตรียมเงินทอนไว้ 4000 บาท ทุกวัน ไม่รวมแบงค์ห้าสิบ")
-  //
-  // แบงค์ห้าสิบไม่อยู่ในชุด — คาไว้ในเก๊ะตามที่นับได้ (floatKeep ในหน้าตั้งค่า)
-  const nightSet = hasCount && floatTargetDenoms
-    ? floatSetKeep(countedDenoms, floatTargetDenoms, keepAll)
-    : null
-  // วิธีสำรอง — คืนเฉพาะส่วนเกินรายกอง ใช้คืนที่ไม่ได้เตรียมชุดใหม่ไว้
-  const floatPlan = !hasCount
-    ? null
-    : floatTargetDenoms
-      ? planByDenom(countedDenoms, floatTargetDenoms, takeable, keepAll)
-      : floatTarget != null
-        ? planOwnerTake(countedDenoms, floatTarget, takeable)
-        : null
-  const floatTotal = floatTargetDenoms
-    ? DENOMS.reduce((s, d) => s + d.value * (floatTargetDenoms[d.value] ?? 0), 0)
-    : floatTarget
-  // เหลือไว้เท่าไหร่ถ้าไม่แตะอะไรเลย — ร้านที่ตั้งชุดรายชนิดไว้คือชุดใหม่ที่โยกลงไป + กองที่คาไว้
-  // ร้านที่ตั้งแค่ยอดรวมใช้ค่าที่ไล่หยิบใบใหญ่ลงมา ร้านที่ไม่ได้ตั้งอะไรเลยก็เหลือไว้ทั้งเก๊ะ
-  const keepDefault: Record<number, number> = nightSet
-    ? nightSet
-    : floatPlan
-      ? floatPlan.keep
-      : countedDenoms
-  const keepCounts: Record<number, number> = keepEdit
-    ? Object.fromEntries(DENOMS.map((d) => [d.value, qtyOf(keepEdit, d.value)]))
-    : keepDefault
-  const keepValue = (v: number) =>
-    keepEdit ? (keepEdit[v] ?? '') : keepDefault[v] ? String(keepDefault[v]) : ''
-  // ที่เหลือไว้เข้าข่าย "โยกทั้งชุด" ไหม — ต้องครบสามข้อ ไม่งั้นคำสั่งโยกชุดจะโกหกคนที่เก๊ะ
-  //   1. กองที่เก็บไว้ทั้งหมด (ห้าสิบ) ยังคาอยู่ครบตามที่นับได้ ไม่ได้ถูกรวบออกไปด้วย
-  //   2. ยอดชุดที่วางลงไปเท่าชุดที่ตั้งไว้พอดี — เหลือไว้ทั้งเก๊ะไม่ใช่การโยกชุด
-  //   3. ครบทุกกองเมื่อนับการใช้ใบเล็กแทนใบใหญ่แล้ว (ร้อยแทนห้าร้อยได้ ห้าร้อยแทนยี่สิบไม่ได้)
-  const keepCover = floatTargetDenoms ? coverFloat(keepCounts, floatTargetDenoms, keepAll) : null
-  const putValue = DENOMS.filter((d) => !keepAll.includes(d.value))
-    .reduce((sum, d) => sum + d.value * (keepCounts[d.value] ?? 0), 0)
-  const setValue = floatTargetDenoms
-    ? DENOMS.filter((d) => !keepAll.includes(d.value))
-        .reduce((sum, d) => sum + d.value * (floatTargetDenoms[d.value] ?? 0), 0)
-    : null
-  const swapping =
-    hasCount && floatTargetDenoms != null && keepCover != null &&
-    keepAll.every((d) => (keepCounts[d] ?? 0) === (countedDenoms[d] ?? 0)) &&
-    putValue === setValue && keepCover.ok
-  const keepRowsShown = !swapping || showKeepRows
-  // คำสั่งที่เก๊ะคิดจากชุดที่จะวางลงไปจริง (ที่กรอกค้างอยู่) ไม่ใช่ชุดตามหน้าตั้งค่า
-  const swapPlan = swapping ? planSwap(countedDenoms, keepCounts, keepAll) : null
-
-  // แตะช่องแรกแล้วต้องยึดทั้งชุดไว้ ไม่งั้นช่องที่เหลือจะเลื่อนตามค่าตั้งต้นที่ขยับทุกครั้งที่นับเพิ่ม
-  const editKeep = (v: number, raw: string) =>
-    setKeepEdit((c) => ({
-      ...(c ?? Object.fromEntries(DENOMS.map((d) => [d.value, keepValue(d.value)]))),
-      [v]: raw,
-    }))
-  // กลับมาใช้ชุดที่ตั้งไว้ — ค่าตั้งต้นของหน้านี้อยู่แล้ว ปุ่มนี้คือทางกลับหลังแก้มือไปแล้ว
-  //
-  // ทุกชนิดที่มีเป้าลงเท่าเป้าเป๊ะ ๆ รวมทั้งเหรียญ — เดิมเหรียญสแน็ปขึ้นอย่างเดียว (Math.max)
-  // เพราะถือว่าเหรียญที่เกินหยิบออกไม่ได้ กดปุ่ม "ใช้ชุดที่ตั้งไว้ ฿4,000" แล้วเลยได้ ฿4,212
-  // ขึ้นเตือนสีส้มว่า "เกินเงินทอนตั้งต้นอยู่ ฿12" ทั้งที่เพิ่งกดปุ่มที่บอกว่าจะเท่าชุดที่ตั้งไว้
-  // (เหรียญห้ามี 31 เป้า 30 · เหรียญบาทมี 57 เป้า 50 — 5 พ.ย. 69)
-  // ขาแล้วให้เจ้าของเติมเหรียญได้ ขาเกินก็ส่งเหรียญออกไปให้เจ้าของได้เหมือนกัน
-  // อยากเก็บเหรียญไว้ทั้งกองจริง ๆ ให้ติ๊ก "เก็บไว้ทั้งหมด" ในหน้าตั้งค่า — ชนิดนั้นเหลือตามที่นับได้เสมอ
-  const applyFloatSet = () => {
-    if (!floatTargetDenoms) return
-    const keep = floatSetKeep(countedDenoms, floatTargetDenoms, keepAll)
-    setKeepEdit(Object.fromEntries(DENOMS.map((d) => [d.value, keep[d.value] ? String(keep[d.value]) : ''])))
-  }
-  // ให้เจ้าของ = ที่นับได้ − ที่เหลือไว้ · ติดลบ = วันที่เงินทอนขาดแล้วเจ้าของเอามาเติม
-  const owner = ownerSide(countedDenoms, keepCounts)
-  const cashToOwner = owner.net
-  const leftover = DENOMS.reduce((s, d) => s + d.value * keepCounts[d.value], 0)
-  // ชนิดที่เก็บไว้ทั้งหมดลอยไปตามที่รับมาจากลูกค้า — รวมเข้าเป้าตามที่นับได้ ไม่งั้นขึ้นว่าเกินทุกวัน
-  const floatExpected = floatTotal == null
-    ? null
-    : floatTotal + keepAll.reduce((s, d) => s + d * qtyOf(counts, d), 0)
-  const floatGap = floatExpected == null ? null : leftover - floatExpected
-  // การ์ดจัดเงินทอนหลังปิดกะ
-  const adjustQty = (v: number) => parseInt(adjust?.[v] || '0', 10) || 0
-  const adjustTotal = DENOMS.reduce((sum, d) => sum + d.value * adjustQty(d.value), 0)
-  const adjustDiff = adjustTotal - (carryOf(lastClosed) ?? 0)
   const keptLabels = DENOMS.filter((d) => keepAll.includes(d.value)).map((d) => d.label).join('/')
-  // กองที่ชุดคืนนี้ไม่พอแล้วใช้ใบเล็กแทน — บอกไว้ในการ์ด ไม่งั้นเจ้าของนับชุดแล้วสงสัยว่าทำไมไม่ตรงที่ตั้งไว้
-  const subbedLabels = DENOMS
-    .filter((d) => (keepCover?.piles[d.value]?.substituted ?? 0) > 0)
-    .map((d) => d.label)
-    .join('/')
-  // "พัน 3 · ร้อย 34 · ยี่สิบ 26" — ใบพิมพ์ไม่มีที่พอให้กางเป็นตาราง เอาเฉพาะกองที่มีของ
+  const floatPlan = hasCount && floatTarget != null ? planFloat(countedDenoms, floatTarget, keepAll) : null
+  const keepDefault = floatPlan ? floatPlan.leftover : counted
+  const leftover = keepEdit == null ? keepDefault : parseFloat(keepEdit || '0') || 0
+  const swapPlan = floatPlan && leftover === floatPlan.leftover ? floatPlan : null
+  // ให้เจ้าของ = ที่นับได้ − ที่เหลือไว้ · ติดลบ = เจ้าของวางลงมากกว่าที่รวบออกได้
+  const cashToOwner = counted - leftover
   const denomLine = (c: Record<number, number>) =>
     DENOMS.filter((d) => c[d.value]).map((d) => `${d.label.replace(/^(แบงค์|เหรียญ)/, '')} ${c[d.value]}`).join(' · ')
-  // เงินตั้งต้นของกะที่เปิดอยู่ ห่างจากชุดเงินทอนที่ตั้งไว้เท่าไหร่ — ชนิดที่เก็บทั้งหมดคิดตามที่นับได้เช้านั้น
-  // ไม่ได้นับแยกตอนเปิดกะและมีชนิดที่เก็บทั้งหมดอยู่ = เทียบไม่ได้ ไม่ต้องเตือน
-  const openingDenoms = openShift?.opening_denominations ?? null
-  const openingVsFloat =
-    floatTotal == null || (keepAll.length > 0 && !openingDenoms) || !openShift
-      ? null
-      : openShift.opening_cash - (floatTotal + keepAll.reduce((s, d) => s + d * (openingDenoms?.[d] ?? 0), 0))
-  // กองที่เงินทอนในเก๊ะยังไม่ครบชุด — ตัวที่เจ้าของต้องไปแลกมาเติม
-  // กองที่มีใบเล็กเกินพออุดให้แล้วไม่นับว่าขาด (ร้อย 28 ใบแทนห้าร้อย 2 ใบ = ครบ)
-  const carryCover = floatTargetDenoms && carryBefore
-    ? coverFloat(carryBefore, floatTargetDenoms, keepAll)
-    : null
-  const carryShortages = carryCover
-    ? carryCover.shortages.map((sh) => ({ ...sh, label: DENOMS.find((d) => d.value === sh.value)?.label ?? String(sh.value) }))
-    : []
-  // ใบนับที่กำลังแก้ในการ์ดนั้น — เทียบแบบเดียวกัน ไม่งั้นแก้เป็นร้อยแทนห้าร้อยแล้วยังขึ้นแดง
-  const adjustCover = adjust && floatTargetDenoms
-    ? coverFloat(Object.fromEntries(DENOMS.map((d) => [d.value, adjustQty(d.value)])), floatTargetDenoms, keepAll)
-    : null
 
   /**
    * บันทึกเงินเข้า-ออกเก๊ะ — ลงได้ทั้งตอนมีกะเปิดและตอนไม่มี
@@ -480,68 +348,6 @@ export default function ShiftClient({
       return
     }
     setMovements((prev) => prev.filter((x) => x.id !== m.id))
-  }
-
-  /**
-   * บันทึกใบนับเงินทอนหลังเจ้าของมาจัด — ไม่แตะใบนับของพนักงานตอนปิดกะ เก็บแยกคนละช่อง
-   * ยอดยกมาของกะถัดไปจะอ่านจากตรงนี้แทน เช้ามาเทียบกับของจริงถึงจะไม่ขึ้นว่ากองไม่ตรงฟรี ๆ
-   */
-  async function saveCarry() {
-    if (!lastClosed || !adjust) return
-    const qty = (v: number) => parseInt(adjust[v] || '0', 10) || 0
-    const after = DENOMS.reduce((sum, d) => sum + d.value * qty(d.value), 0)
-    const before = carryOf(lastClosed) ?? 0
-    const diff = after - before
-    const changed = DENOMS.filter((d) => qty(d.value) !== (carryBefore?.[d.value] ?? 0))
-    if (!changed.length) {
-      toast.error('ยังไม่ได้เปลี่ยนอะไรเลย')
-      return
-    }
-    const stamp = new Date().toLocaleString('th-TH', {
-      timeZone: 'Asia/Bangkok', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit',
-    })
-    const auditLine =
-      `[จัดเงินทอนหลังปิดกะ ${stamp} โดย ${currentUserName || 'เจ้าของ'}] ` +
-      `฿${money(before)} → ฿${money(after)} · ` +
-      `${diff === 0 ? 'แลกเฉย ๆ ยอดเท่าเดิม' : diff > 0 ? `เติมเข้า ฿${money(diff)}` : `หยิบออก ฿${money(-diff)}`} · ` +
-      `${changed.map((d) => `${d.label} ${carryBefore?.[d.value] ?? 0}→${qty(d.value)}`).join(' · ')}` +
-      `${adjustNote.trim() ? ` · ${adjustNote.trim()}` : ''}`
-
-    // ส่วนต่างต้องเข้ายอด "ให้เจ้าของ" ด้วย ไม่ใช่ลงแต่หมายเหตุ — ไม่งั้นเจ้าของหยิบเพิ่ม/เติมเข้าตอนมาจัด
-    // เงินทอนแล้วคอลัมน์นี้ต่ำ/สูงไปเท่านั้น รวมทั้งเดือนก็เพี้ยนตามไปหมด (ยอดในแท็บประวัติ + ที่ส่งเข้า Telegram)
-    const closing = lastClosed.closing_denominations
-    const toOwner = lastClosed.closing_cash_counted != null
-      ? Number(lastClosed.closing_cash_counted) - after
-      : lastClosed.cash_to_owner ?? null
-    const ownerDenoms = closing
-      ? ownerSide(
-          Object.fromEntries(DENOMS.map((d) => [d.value, closing[d.value] ?? 0])),
-          Object.fromEntries(DENOMS.map((d) => [d.value, qty(d.value)])),
-        ).signed
-      : lastClosed.owner_denominations ?? null
-
-    setLoading(true)
-    const supabase = createClient()
-    const { error } = await supabase
-      .from('shifts')
-      .update({
-        carry_denominations: Object.fromEntries(DENOMS.filter((d) => qty(d.value) > 0).map((d) => [d.value, qty(d.value)])),
-        carry_adjusted_at: new Date().toISOString(),
-        carry_adjusted_by: currentUserId,
-        cash_to_owner: toOwner,
-        owner_denominations: ownerDenoms,
-        notes: [lastClosed.notes?.trim(), auditLine].filter(Boolean).join('\n'),
-      })
-      .eq('id', lastClosed.id)
-    setLoading(false)
-    if (error) {
-      toast.error('บันทึกไม่สำเร็จ: ' + error.message)
-      return
-    }
-    toast.success(`บันทึกแล้ว — พรุ่งนี้เช้าเปิดกะด้วย ฿${money(after)}`)
-    setAdjust(null)
-    setAdjustNote('')
-    router.refresh()
   }
 
   // แก้เงินตั้งต้นของกะที่เปิดอยู่ — เช้ามานับเงินในเก๊ะแล้วไม่ตรงกับที่ระบบยกมาให้
@@ -664,6 +470,10 @@ export default function ShiftClient({
         `${after.bills} ใบ เงินสด ฿${money(after.cash)} ตั้งแต่ ${fmtTime(after.firstAt)} · ` +
         `ปิดกะที่เวลา ${fmtTime(closedAtISO)} เงินก้อนนี้ยังอยู่ในเก๊ะ รอรวมกับกะถัดไป`
     }
+    if (leftover < 0) {
+      toast.error('เงินทอนที่เหลือไว้ต้องไม่ติดลบ')
+      return
+    }
     // เคลียร์ช่อง "เหลือไว้" จนหมดแล้วกดปิดกะ = ยกเงินทอนออกไปทั้งเก๊ะ เช้ามาทอนไม่ได้สักบาท
     if (counted > 0 && leftover === 0) {
       if (!(await confirmDialog({
@@ -676,14 +486,6 @@ export default function ShiftClient({
       DENOMS.filter((d) => (counts[d.value] ?? '') !== '')
         .map((d) => [String(d.value), parseInt(counts[d.value], 10) || 0])
     )
-    // ส่วนต่างรายชนิดแบบมีเครื่องหมาย — บวกคือหยิบออกให้เจ้าของ ลบคือเจ้าของเติมเข้า
-    const ownerDenominations = Object.fromEntries(
-      Object.entries(owner.signed).map(([v, q]) => [v, q]),
-    )
-    // ใบนับเงินทอนที่ยกไปให้กะถัดไป — กรอกตอนปิดกะไปเลย ไม่ต้องรอเจ้าของมาจัดทีหลัง
-    const carryDenominations = Object.fromEntries(
-      DENOMS.filter((d) => keepCounts[d.value] > 0).map((d) => [String(d.value), keepCounts[d.value]]),
-    )
     const closeFields = {
         closed_at: closedAtISO,
         closed_by: currentUserId,
@@ -692,7 +494,6 @@ export default function ShiftClient({
         cash_difference: difference,
         closing_denominations: denominations,
         cash_to_owner: cashToOwner,
-        owner_denominations: ownerDenominations,
         // สรุปเงินเข้า-ออกลงหมายเหตุด้วย เปิดดูประวัติกะย้อนหลังจะได้รู้ว่าทำไมยอดที่ควรมีไม่เท่ากับขายเงินสด
         notes: [
           // audit line ที่เขียนไว้ตอนเปิดกะ/แก้เงินตั้งต้น ต้องไม่หายไปตอนปิดกะ
@@ -706,9 +507,7 @@ export default function ShiftClient({
             ? `บิลที่ยกเลิก: เงินสดที่รับไว้ ฿${money(cashFromCancelled)} · คืนเงินสด ฿${money(cashRefunds)}`
             : '',
           // เงินทอนขาดแล้วเจ้าของเอามาเติมตอนปิดกะ — เดิมไม่มีที่ลง ได้แต่ขึ้นเตือนแล้วปล่อยลอยไว้
-          owner.net < 0
-            ? `เจ้าของเติมเงินทอนเข้าเก๊ะ ฿${money(-owner.net)} (${DENOMS.filter((d) => owner.add[d.value]).map((d) => `${d.label} ${owner.add[d.value]}`).join(' · ')})`
-            : '',
+          cashToOwner < 0 ? `เจ้าของเติมเงินทอนเข้าเก๊ะ ฿${money(-cashToOwner)}` : '',
           // เช็คยอดบัญชีแล้วต้องจดไว้ ไม่งั้นพรุ่งนี้ไม่มีใครรู้ว่าวันนั้นเงินครบหรือหายจริง
           bankChecked
             ? `เข้าบัญชีจริง ฿${money(bankActual)} (${accounts.map((a) => `${a} ฿${money(parseFloat(transfers[a] || '0') || 0)}`).join(' · ')}) · ในระบบกดว่าโอน/QR ฿${money(bankExpected)}`
@@ -718,25 +517,14 @@ export default function ShiftClient({
             : '',
         ].filter(Boolean).join('\n') || null,
     }
-    const carryFields = {
-      carry_denominations: carryDenominations,
-      // ยังไม่มีใครมาจัดทีหลัง — ใบนับนี้มาจากตอนปิดกะตรง ๆ
-      carry_adjusted_at: null,
-      carry_adjusted_by: null,
-    }
     const save = (extra: Record<string, unknown>) =>
       supabase.from('shifts').update({ ...closeFields, ...extra }).eq('id', openShift.id)
     let { error } = await save({
-      ...carryFields,
       closing_transfers: bankChecked
         ? Object.fromEntries(accounts.map((a) => [a, parseFloat(transfers[a] || '0') || 0]))
         : null,
     })
     // ยังไม่ได้รัน supabase-migration-shift-transfer-check.sql — ยอดที่เช็คได้ยังอยู่ในหมายเหตุอยู่ดี
-    if (error) ({ error } = await save(carryFields))
-    // ปิดกะต้องไม่พังเพราะเขียน carry ไม่ได้ — ยอดยกไปยังคิดจาก (นับได้ − ให้เจ้าของ) ได้ผลเท่ากัน
-    // เขียนไม่ได้ได้สองเหตุ: ยังไม่ได้รัน migration จัดเงินทอนหลังปิดกะ (ไม่มีคอลัมน์)
-    // หรือร้านยังไม่ได้รัน supabase-migration-shift-close-carry.sql แล้ว trigger กันพนักงานไว้
     if (error) ({ error } = await save({}))
     if (error) {
       setLoading(false)
@@ -994,113 +782,6 @@ export default function ShiftClient({
             </p>
             {cashMovementsBox}
           </div>
-
-          {canEditClosed && lastClosed && carryBefore && (
-            <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 w-full max-w-sm">
-              <div className="flex items-center gap-2 mb-1">
-                <ArrowRightLeft size={18} className="text-[#C4865A]" />
-                <h2 className="font-semibold text-gray-900">จัดเงินทอนหลังปิดกะ</h2>
-              </div>
-              <p className="text-xs text-gray-500 mb-3">
-                ปิดกะไปแล้วแต่เพิ่งมาแลกแบงค์/เติมเหรียญให้ครบชุด — ลงตรงนี้ ใบนับของพนักงานตอนปิดกะไม่ถูกแก้
-                และยอด &quot;ให้เจ้าของ&quot; ของกะนั้นจะขยับตามส่วนต่างให้เอง
-                {lastClosed.carry_adjusted_at && (
-                  <> · <span className="text-[#C4865A] font-medium">จัดไปแล้วเมื่อ {fmtDate(lastClosed.carry_adjusted_at)}</span></>
-                )}
-              </p>
-
-              {adjust === null ? (
-                <>
-                  <div className="bg-gray-50 rounded-lg p-3 mb-3 text-sm space-y-1">
-                    <div className="flex justify-between font-medium text-gray-900">
-                      <span>เงินทอนในเก๊ะตอนนี้</span><span>฿{money(carryOf(lastClosed) ?? 0)}</span>
-                    </div>
-                    {floatTargetDenoms && (
-                      <p className={`text-xs font-medium ${carryShortages.length ? 'text-red-600' : 'text-green-600'}`}>
-                        {carryShortages.length
-                          ? `ยังขาด: ${carryShortages.map((sh) => `${sh.label} อีก ${sh.need} (฿${money(sh.missing)})`).join(' · ')}`
-                          : 'ครบตามชุดเงินทอนที่ตั้งไว้'}
-                      </p>
-                    )}
-                  </div>
-                  <button
-                    onClick={() => setAdjust(Object.fromEntries(
-                      DENOMS.map((d) => [d.value, carryBefore[d.value] ? String(carryBefore[d.value]) : '']),
-                    ))}
-                    className="w-full flex items-center justify-center gap-2 border-2 border-[#C4865A] text-[#7A4E2D] hover:bg-[#C4865A]/10 text-sm font-medium px-4 py-2 rounded-lg"
-                  >
-                    <Pencil size={15} /> แลก / เติมเงินทอน
-                  </button>
-                </>
-              ) : (
-                <>
-                  <div className="space-y-1.5 mb-3">
-                    {DENOMS.map((d) => {
-                      const qty = parseInt(adjust[d.value] || '0', 10) || 0
-                      const was = carryBefore[d.value] ?? 0
-                      const want = floatTargetDenoms?.[d.value] ?? 0
-                      const short = adjustCover?.piles[d.value]?.missing ?? 0
-                      return (
-                        <div key={d.value} className="flex items-center gap-2">
-                          <span className="text-sm text-gray-600 w-[5.5rem] shrink-0">{d.label}</span>
-                          <input
-                            type="number" min={0} step={1} inputMode="numeric"
-                            value={adjust[d.value] ?? ''}
-                            onChange={(e) => setAdjust((c) => ({ ...c!, [d.value]: e.target.value }))}
-                            className={`w-16 border rounded-lg px-2 py-1.5 text-sm text-right focus:outline-none focus:ring-2 ${
-                              short > 0 ? 'border-red-300 focus:ring-red-400' : 'border-gray-300 focus:ring-[#C4865A]'
-                            }`}
-                            placeholder="0"
-                          />
-                          <span className="text-xs text-gray-400 flex-1 tabular-nums">
-                            {qty !== was ? `เดิม ${was}` : ''}
-                            {want > 0 && (
-                              <span className={short > 0 ? ' text-red-500 font-medium' : ''}>
-                                {' · '}ต้องการ {want}{short > 0 ? ` ขาด ฿${money(short)}` : ''}
-                              </span>
-                            )}
-                          </span>
-                        </div>
-                      )
-                    })}
-                  </div>
-                  <div className="bg-gray-50 rounded-lg p-3 mb-3 text-sm space-y-1">
-                    <div className="flex justify-between font-bold text-gray-900">
-                      <span>รวมเงินทอนใหม่</span><span>฿{money(adjustTotal)}</span>
-                    </div>
-                    <p className={`text-xs font-medium ${adjustDiff === 0 ? 'text-gray-500' : adjustDiff > 0 ? 'text-blue-600' : 'text-amber-600'}`}>
-                      {adjustDiff === 0
-                        ? `แลกเฉย ๆ ยอดเท่าเดิม ฿${money(carryOf(lastClosed) ?? 0)}`
-                        : adjustDiff > 0
-                          ? `เติมเงินเข้าเก๊ะ ฿${money(adjustDiff)}`
-                          : `หยิบออกจากเก๊ะ ฿${money(-adjustDiff)}`}
-                    </p>
-                  </div>
-                  <input
-                    value={adjustNote}
-                    onChange={(e) => setAdjustNote(e.target.value)}
-                    placeholder="เหตุผล (ไม่ใส่ก็ได้) เช่น แลกร้อยเป็นยี่สิบ"
-                    className={inputClass + ' mb-3'}
-                  />
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => { setAdjust(null); setAdjustNote('') }}
-                      className="flex-1 py-2 rounded-lg border border-gray-300 text-sm text-gray-600 hover:bg-gray-50"
-                    >
-                      ยกเลิก
-                    </button>
-                    <button
-                      onClick={saveCarry}
-                      disabled={loading}
-                      className="flex-[2] py-2 rounded-lg bg-[#C4865A] hover:bg-[#7A4E2D] disabled:opacity-50 text-white text-sm font-medium"
-                    >
-                      {loading ? 'กำลังบันทึก...' : 'บันทึกเงินทอน'}
-                    </button>
-                  </div>
-                </>
-              )}
-            </div>
-          )}
         </div>
       ) : (
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 max-w-xl mb-8">
@@ -1126,12 +807,6 @@ export default function ShiftClient({
               </button>
             )}
           </p>
-          {openingVsFloat != null && openingVsFloat !== 0 && (
-            <p className="text-xs text-amber-700 font-medium mb-1">
-              เงินทอนตั้งต้นที่ตั้งไว้คือ ฿{money(openShift.opening_cash - openingVsFloat)}
-              {keptLabels && <> (รวม{keptLabels}ที่มีอยู่แล้ว)</>} — กะนี้เริ่มด้วย ฿{money(openShift.opening_cash)}
-            </p>
-          )}
           {openingCarry != null && (
             <p className={`text-xs mb-4 ${openingCarry === openShift.opening_cash ? 'text-gray-400' : 'text-amber-700 font-medium'}`}>
               ยกมาจากกะที่แล้ว ฿{money(openingCarry)}
@@ -1304,182 +979,29 @@ export default function ShiftClient({
           )}
 
           <div className="flex items-center justify-between gap-3 mb-1">
-            <label className="block text-xs font-medium text-gray-600">เงินทอนที่เหลือไว้ให้พรุ่งนี้</label>
-            <div className="flex items-center gap-3">
-              {floatTargetDenoms && !swapping && (
-                <button
-                  type="button"
-                  onClick={() => { applyFloatSet(); setShowKeepRows(false) }}
-                  className="text-xs font-medium text-blue-600 hover:text-blue-700"
-                >
-                  โยกชุดใหม่ ฿{money(floatTotal!)}
-                </button>
-              )}
-              {swapping && floatPlan && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setKeepEdit(Object.fromEntries(DENOMS.map((d) => [
-                      d.value, floatPlan.keep[d.value] ? String(floatPlan.keep[d.value]) : '',
-                    ])))
-                    setShowKeepRows(true)
-                  }}
-                  className="text-xs font-medium text-gray-400 hover:text-gray-600"
-                  title="คืนนี้เจ้าของไม่ได้เตรียมชุดใหม่มา — คิดแบบเดิมคือหยิบเฉพาะส่วนที่เกินชุดออก กองที่ขาดก็เหลือไว้เท่าที่มี"
-                >
-                  คืนแค่ส่วนเกิน
-                </button>
-              )}
-              {keepEdit && (
-                <button
-                  type="button"
-                  onClick={() => { setKeepEdit(null); setShowKeepRows(false) }}
-                  className="text-xs font-medium text-gray-400 hover:text-gray-600"
-                >
-                  คืนค่าที่ระบบคิดให้
-                </button>
-              )}
-            </div>
-          </div>
-          <p className="text-xs text-gray-500 mb-2">
-            {swapping
-              ? 'รวบของเก่าออกมาทั้งกอง แล้ววางชุดใหม่ที่เตรียมไว้ลงเก๊ะ — ที่เก๊ะไม่มีกองไหนต้องนับเลย'
-              : 'ใส่ว่าจะเหลือเงินทอนไว้ในเก๊ะชนิดไหนกี่ใบ — ส่วนที่เหลือคือเงินที่ออกไปหาเจ้าของ ไม่ต้องกรอกซ้ำ'}
-            {floatPlan && !swapping && (
-              <span className="block mt-0.5">
-                {/* ยอดที่ต้องเหลือไว้จริงคือชุดที่ตั้ง + ชนิดที่เก็บทั้งหมดที่มีในเก๊ะ — กางให้เห็นทั้งสองก้อน
-                    ไม่งั้นปุ่มขึ้น ฿4,000 แต่บรรทัดล่างเทียบกับ ฿4,150 แล้วไม่มีใครรู้ว่า ฿150 มาจากไหน */}
-                ชุดเงินทอนที่ตั้งไว้ ฿{money(floatTotal!)}
-                {floatPlan.kept > 0 && <> + {keptLabels}ที่มี ฿{money(floatPlan.kept)} = ต้องเหลือไว้ ฿{money(floatExpected!)}</>}
-                {/* เทียบกับยอดที่กรอกค้างอยู่จริง ไม่ใช่ floatPlan.short ที่คิดจากค่าตั้งต้นอย่างเดียว —
-                    ไม่งั้นกดปุ่มจนเหลือเท่าชุดแล้ว บรรทัดนี้ยังสั่งให้ "กดปุ่มข้างบน" ค้างอยู่เหมือนเดิม */}
-                {floatGap != null && floatGap < 0 && (
-                  <span className="block text-red-600 font-medium">
-                    ที่เหลือไว้ยังน้อยกว่าชุดที่ตั้งไว้อยู่ ฿{money(-floatGap)} — กดปุ่มข้างบนเพื่อเหลือไว้เท่าชุดที่ตั้ง
-                    (ส่วนที่ขาดจะขึ้นเป็น &ldquo;เจ้าของเติม&rdquo; ให้รู้ว่าต้องเอาอะไรมาใส่)
-                    หรือจะเหลือไว้ทั้งเก๊ะตามที่นับได้ก็ได้
-                  </span>
-                )}
-                {!keepEdit && floatPlan.over > 0 && (
-                  <span className="text-amber-600"> · เกินเป้า ฿{money(floatPlan.over)} เพราะค่าที่ระบบคิดให้หยิบออกเฉพาะแบงค์ · กดปุ่มข้างบนให้เท่าชุดที่ตั้งไว้พอดี</span>
-                )}
-              </span>
+            <label className="block text-xs font-medium text-gray-600">เงินทอนที่เหลือไว้ให้พรุ่งนี้ (ยอดรวม)</label>
+            {keepEdit != null && (
+              <button
+                type="button"
+                onClick={() => setKeepEdit(null)}
+                className="text-xs font-medium text-gray-400 hover:text-gray-600"
+              >
+                คืนค่าที่ระบบคิดให้
+              </button>
             )}
-          </p>
-
-          {/* คำสั่งที่เก๊ะ — สองบรรทัด ไม่มีเลขให้คิด เทียบกับเดิมที่ต้องไล่ส่วนต่างเก้ากอง
-              กางใบนับของชุดใหม่ไว้ด้วย เจ้าของได้เอาไปนับชุดของพรุ่งนี้เตรียมไว้ตอนว่าง */}
-          {swapPlan && swapping && (
-            <div className="rounded-lg border-2 border-[#C4865A] bg-[#FDF8F3] p-3 mb-3">
-              <p className="flex items-center gap-1.5 text-sm font-semibold text-[#7A4E2D] mb-2">
-                <ArrowRightLeft size={15} /> โยกชุดเงินทอนที่เก๊ะ
-              </p>
-              <div className="space-y-2 text-sm">
-                <div>
-                  <p className="font-medium text-gray-900">
-                    1. รวบเงินในเก๊ะออกมาให้เจ้าของทั้งหมด ฿{money(swapPlan.outTotal)}
-                    {keptLabels && <span className="font-normal text-gray-500"> (ยกเว้น{keptLabels})</span>}
-                  </p>
-                  <p className="text-xs text-gray-500">{denomLine(swapPlan.out) || '—'}</p>
-                </div>
-                <div>
-                  <p className="font-medium text-gray-900">
-                    2. วางชุดใหม่ที่เตรียมไว้ลงเก๊ะ ฿{money(swapPlan.putTotal)}
-                  </p>
-                  <p className="text-xs text-gray-500">{denomLine(swapPlan.put) || '—'}</p>
-                  {subbedLabels && (
-                    <p className="text-xs text-gray-500">
-                      คืนนี้{subbedLabels}ในเก๊ะไม่พอตามชุดที่ตั้งไว้ — จัดเป็นใบเล็กแทนให้แล้ว ยอดเท่าเดิม
-                    </p>
-                  )}
-                </div>
-                {swapPlan.stayTotal > 0 && (
-                  <p className="text-xs text-gray-500">
-                    {DENOMS.filter((d) => swapPlan.stay[d.value]).map((d) => `${d.label} ${swapPlan.stay[d.value]} ใบ`).join(' · ')}
-                    {' '}(฿{money(swapPlan.stayTotal)}) คาอยู่ในเก๊ะเหมือนเดิม — ไม่ต้องรวบออก ไม่ต้องเตรียมใส่ชุดใหม่
-                  </p>
-                )}
-              </div>
-              <p className="mt-2 pt-2 border-t border-[#E8D5C4] text-xs font-medium text-[#7A4E2D]">
-                {swapPlan.net >= 0
-                  ? `เจ้าของได้ไปสุทธิ ฿${money(swapPlan.net)}`
-                  : `เจ้าของวางเพิ่มสุทธิ ฿${money(-swapPlan.net)}`}
-                {' · '}เช้าพรุ่งนี้เปิดร้านด้วย ฿{money(swapPlan.leftover)}
-              </p>
-            </div>
-          )}
-
-          {swapping && !showKeepRows && (
-            <button
-              type="button"
-              onClick={() => setShowKeepRows(true)}
-              className="text-xs font-medium text-gray-400 hover:text-gray-600 mb-3"
-            >
-              แก้เงินทอนที่เหลือไว้เอง
-            </button>
-          )}
-
-          {/* แบงค์คอลัมน์ซ้าย เหรียญคอลัมน์ขวา — เรียงให้ตรงกับช่องนับเงินข้างบนเป๊ะ ๆ
-              เดิมไล่ DENOMS ลงในกริดตรง ๆ กริดเลยวางทีละแถว ได้ "แบงค์ยี่สิบ | เหรียญสิบ"
-              คู่กันอยู่บรรทัดเดียว คนกรอกต้องไล่สายตาข้ามไปมาระหว่างสองกล่องที่ลำดับไม่ตรงกัน */}
-          {keepRowsShown && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1.5 mb-3">
-            {[BANKNOTES, COINS].map((group, gi) => (
-              <div key={gi} className="space-y-1.5">
-                {group.map((d) => {
-                  const keep = keepCounts[d.value]
-                  const diff = (countedDenoms[d.value] ?? 0) - keep
-                  const want = floatTargetDenoms?.[d.value] ?? 0
-                  // กองนี้ขาดจริงไหม — ใบเล็กที่เกินมาอุดให้ได้ก็ไม่ใช่กองที่ขาด (ดู coverFloat)
-                  const pile = keepCover?.piles[d.value]
-                  const lacking = (pile?.missing ?? 0) > 0
-                  const substituted = (pile?.substituted ?? 0) > 0 && !lacking
-                  return (
-                    <div key={d.value} className="flex items-center gap-2">
-                      <span className="text-sm text-gray-600 w-[5.5rem] shrink-0">{d.label}</span>
-                      <input
-                        type="number" min={0} step={1} inputMode="numeric"
-                        value={keepValue(d.value)}
-                        onChange={(e) => editKeep(d.value, e.target.value)}
-                        className={`w-16 border rounded-lg px-2 py-1.5 text-sm text-right focus:outline-none focus:ring-2 ${
-                          lacking ? 'border-red-300 focus:ring-red-400' : 'border-gray-300 focus:ring-blue-500'
-                        }`}
-                        placeholder="0"
-                      />
-                      {/* โยกทั้งชุดไม่ได้หยิบทีละใบ จะขึ้น "ให้เจ้าของ 7 / เจ้าของเติม 12" ไม่ได้ —
-                          กองนั้นออกไปทั้งกองแล้วชุดใหม่ลงมาแทน บอกเท่าที่คนที่เก๊ะต้องทำจริง */}
-                      <span className="text-xs flex-1 tabular-nums">
-                        {swapping ? (
-                          keepAll.includes(d.value)
-                            ? <span className="text-gray-400">คาไว้ในเก๊ะ</span>
-                            : (countedDenoms[d.value] ?? 0) > 0
-                              ? <span className="text-gray-500">รวบออก {countedDenoms[d.value]}</span>
-                              : null
-                        ) : (
-                          <>
-                            {diff > 0 && <span className="text-gray-500">ให้เจ้าของ {diff}</span>}
-                            {diff < 0 && <span className="text-blue-600 font-medium">เจ้าของเติม {-diff}</span>}
-                            {lacking && <span className="text-red-500 font-medium">{diff !== 0 ? ' · ' : ''}ขาด ฿{money(pile!.missing)}</span>}
-                            {substituted && <span className="text-gray-400">{diff !== 0 ? ' · ' : ''}ใช้ใบเล็กแทน (เป้า {want})</span>}
-                          </>
-                        )}
-                      </span>
-                    </div>
-                  )
-                })}
-              </div>
-            ))}
           </div>
-          )}
-          {keepCover && keepCover.shortages.length > 0 && (
-            <p className="text-xs font-medium text-red-600 mb-3">
-              ต้องแลกมาเติมก่อนเปิดร้าน:{' '}
-              {keepCover.shortages.map((sh) => {
-                const label = DENOMS.find((d) => d.value === sh.value)?.label ?? sh.value
-                return `${label} อีก ${sh.need} (฿${money(sh.missing)})`
-              }).join(' · ')}
-            </p>
-          )}
+          <input
+            type="number" min={0} step="0.01" inputMode="decimal"
+            value={keepEdit ?? (hasCount ? String(keepDefault) : '')}
+            onChange={(e) => setKeepEdit(e.target.value)}
+            className={inputClass}
+            placeholder="0"
+          />
+          <p className="text-xs text-gray-500 mt-1 mb-3">
+            {floatTarget != null
+              ? <>ชุดที่เตรียมไว้ ฿{money(floatTarget)}{keptLabels && <> + {keptLabels}ที่มีในเก๊ะ</>} — ที่เหลือคือเงินให้เจ้าของ</>
+              : 'ส่วนที่ไม่ได้เหลือไว้คือเงินให้เจ้าของ'}
+          </p>
 
           <div className="bg-gray-50 rounded-lg p-3 space-y-1.5 text-sm">
             <div className={`flex justify-between ${cashToOwner < 0 ? 'text-blue-600 font-medium' : 'text-gray-600'}`}>
@@ -1489,13 +1011,6 @@ export default function ShiftClient({
             <div className="flex justify-between font-medium text-gray-900 pt-1 border-t border-gray-200">
               <span>เหลือในลิ้นชัก (เงินตั้งต้นกะถัดไป)</span><span>฿{money(leftover)}</span>
             </div>
-            {floatGap != null && hasCount && (
-              <p className={`text-xs font-medium ${floatGap === 0 ? 'text-green-600' : 'text-amber-600'}`}>
-                {floatGap === 0
-                  ? `ตรงเงินทอนตั้งต้น ฿${money(floatExpected!)} พอดี`
-                  : `${floatGap > 0 ? 'เกิน' : 'ขาด'}เงินทอนตั้งต้น ฿${money(floatExpected!)} อยู่ ฿${money(Math.abs(floatGap))}`}
-              </p>
-            )}
           </div>
 
           <label className="flex items-center gap-2 mt-3 text-sm text-gray-700 cursor-pointer">
@@ -1599,7 +1114,7 @@ export default function ShiftClient({
                 (22 พ.ย. 69 เจ้าของว่า "ต้องให้เจ้าของทั้งหมด เจ้าของให้ 4000 รวมกับที่มีแบงค์ห้าสิบ")
                 ยอดสุทธิยังอยู่ แต่เป็นผลลัพธ์ท้ายสุด ไม่ใช่พาดหัว */}
             <div className="mt-2 pt-2 border-t border-gray-100 space-y-1">
-              {swapPlan && swapping ? (
+              {swapPlan ? (
                 <>
                   <div className="flex justify-between text-gray-600">
                     <span>
@@ -1707,7 +1222,7 @@ export default function ShiftClient({
                 {/* ใบนี้มีช่อง "ผู้รับเงิน" ให้เซ็น — ตัวเลขที่เซ็นรับต้องเป็นเงินที่ยื่นให้จริง
                     ไม่ใช่ยอดสุทธิหลังหักชุดที่วางกลับลงไป (ดูบล็อกเดียวกันบนจอ) */}
                 <tr><td className="font-bold pt-2" colSpan={2}>ส่งต่อ</td></tr>
-                {swapPlan && swapping ? (
+                {swapPlan ? (
                   <>
                     <tr>
                       <td className="pl-3">รวบออกให้เจ้าของ (ทั้งเก๊ะ{keptLabels && ` ยกเว้น${keptLabels}`})</td>
@@ -1731,7 +1246,7 @@ export default function ShiftClient({
                 <tr>
                   <td className="pl-3 font-medium">
                     เหลือเป็นเงินทอนพรุ่งนี้
-                    {swapPlan && swapping && swapPlan.stayTotal > 0 && (
+                    {swapPlan && swapPlan.stayTotal > 0 && (
                       <span className="font-normal"> (ชุดใหม่ + {keptLabels} ฿{money(swapPlan.stayTotal)})</span>
                     )}
                   </td>
@@ -1741,7 +1256,6 @@ export default function ShiftClient({
             </table>
 
             <p className="mt-2 text-[11px]"><span className="font-medium">นับได้:</span> {denomLine(countedDenoms) || '—'}</p>
-            <p className="text-[11px]"><span className="font-medium">เหลือไว้:</span> {denomLine(keepCounts) || '—'}</p>
             {notes.trim() && <p className="mt-1 text-[11px]"><span className="font-medium">หมายเหตุ:</span> {notes.trim()}</p>}
 
             <div className="mt-6 flex justify-between text-[11px]">

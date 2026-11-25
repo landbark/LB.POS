@@ -59,7 +59,6 @@ export async function POST(request: NextRequest) {
       expected: mismatch.expected,
       counted: mismatch.counted,
       diff: mismatch.diff,
-      denomDiffs: mismatch.denomDiffs ?? [],
       reason: mismatch.reason ?? '',
     }),
     { dedupeKey: `shiftopen:${shift.id}` }

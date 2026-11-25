@@ -42,14 +42,13 @@ export default async function ShiftPage() {
       .is('closed_at', null)
       .maybeSingle(),
     historyQuery(', carry_denominations, carry_adjusted_at'),
-    storeQuery('name, float_target, float_denoms, float_keep, transfer_accounts'),
+    storeQuery('name, float_target, float_keep, transfer_accounts'),
   ])
   const store = (storeRes.error
-    ? (await storeQuery('name, float_target, float_denoms, float_keep')).data
+    ? (await storeQuery('name, float_target, float_keep')).data
     : storeRes.data) as {
       name: string | null
       float_target: number | null
-      float_denoms: Record<string, number> | null
       float_keep: number[] | null
       transfer_accounts?: string[] | null
     } | null
@@ -64,7 +63,6 @@ export default async function ShiftPage() {
       currentUserName={profile?.name ?? ''}
       canEditClosed={profile?.role === 'admin'}
       floatTarget={store?.float_target != null ? Number(store.float_target) : null}
-      floatDenoms={(store?.float_denoms as Record<string, number> | null) ?? null}
       floatKeep={(store?.float_keep as number[] | null) ?? null}
       transferAccounts={store?.transfer_accounts ?? null}
       storeName={store?.name ?? ''}

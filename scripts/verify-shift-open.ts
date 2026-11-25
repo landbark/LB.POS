@@ -11,7 +11,7 @@ import { readFileSync } from 'node:fs'
 import { resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
-  carryNote, denomDiffs, findCarryOver, findOrphanSales, openShift, orphanNote, type OrphanSales,
+  carryNote, findCarryOver, findOrphanSales, openShift, orphanNote, type OrphanSales,
 } from '../src/lib/shiftOpen'
 import { sumByMethod, type PaidTransaction } from '../src/lib/payments'
 import { thaiDayRange } from '../src/lib/thaiDate'
@@ -299,11 +299,6 @@ async function main() {
     const carry = await findCarryOver(db)
     check(carry?.amount === 700, 'ยอดยกมา = นับได้ ฿1,000 − แยกให้เจ้าของ ฿300 = ฿700', `฿${carry?.amount}`)
     check(carry?.counted === 1000 && carry?.toOwner === 300, 'คืนที่มาของยอดมาด้วย (ไว้โชว์ให้คนเปิดกะเห็น)')
-    check(
-      carry?.denoms?.[500] === 1 && carry?.denoms?.[100] === 0 && carry?.denoms?.[10] === 8,
-      'ใบนับที่ยกมา = ที่นับตอนปิด − ที่แยกให้เจ้าของ (แบงค์ร้อย 3−3 = 0)',
-      JSON.stringify(carry?.denoms),
-    )
 
     // นับได้เท่ายอดยกมา → ไม่ต้องจดอะไร
     const same = await openShift({ openingCash: 700, openedBy: userId, openedByName: 'สคริปต์ทดสอบ', carry }, db)
@@ -318,12 +313,6 @@ async function main() {
     // นับได้เกินยอดยกมา 15 (เคสจริง 2026-10-28) → ต้องเขียนไว้ ไม่ให้หายเงียบ
     // เช้านี้นับแยกใบได้ เหรียญสิบ 9 (เมื่อคืน 8) · เหรียญห้า 5 (เมื่อคืน 4) = เกิน ฿15
     const morning = { 1000: 0, 500: 1, 100: 0, 50: 0, 20: 5, 10: 9, 5: 5, 2: 0, 1: 0 }
-    const d = denomDiffs(carry!, morning)
-    check(
-      d.length === 2 && d[0].value === 10 && d[0].was === 8 && d[0].now === 9 && d[1].value === 5,
-      'ชี้ได้ว่ากองไหนไม่ตรง — เหรียญสิบ 8→9 · เหรียญห้า 4→5 (ไม่ใช่รู้แค่ว่าต่าง ฿15)',
-      d.map((x) => `${x.label} ${x.was}→${x.now}`).join(' · '),
-    )
     const off = await openShift(
       {
         openingCash: 715, openedBy: userId, openedByName: 'สคริปต์ทดสอบ', carry,
@@ -339,7 +328,7 @@ async function main() {
     check((sameRow?.notes ?? '').includes('เกิน ฿15.00'), 'audit line บอกว่าเกินเท่าไหร่')
     check((sameRow?.notes ?? '').includes('เมื่อคืนนับเหรียญขาด'), 'audit line เก็บเหตุผลที่คนเปิดกะกรอก')
     check(
-      sameRow?.notes === carryNote(carry!, 715, 'สคริปต์ทดสอบ', 'เมื่อคืนนับเหรียญขาด', hasOpenDenoms ? morning : null),
+      sameRow?.notes === carryNote(carry!, 715, 'สคริปต์ทดสอบ', 'เมื่อคืนนับเหรียญขาด'),
       'audit line ตรงกับ carryNote()',
     )
     check(
@@ -353,14 +342,6 @@ async function main() {
       JSON.stringify(off.mismatch),
     )
     if (hasOpenDenoms) {
-      check(
-        !!off.mismatch?.denomDiffs.some((x) => x.label === 'เหรียญสิบ' && x.was === 8 && x.now === 9),
-        'mismatch บอกกองที่ไม่ตรงไปด้วย — ข้อความใน Telegram จะชี้ได้ว่าขาดกองไหน',
-        JSON.stringify(off.mismatch?.denomDiffs),
-      )
-    }
-    if (hasOpenDenoms) {
-      check((sameRow?.notes ?? '').includes('เหรียญสิบ 8→9'), 'audit line บอกกองที่ไม่ตรงไว้ด้วย', sameRow?.notes ?? '')
       check(
         (sameRow?.opening_denominations as Record<string, number> | null)?.['10'] === 9,
         'เก็บใบนับตอนเปิดกะไว้ในฐานข้อมูล',
@@ -508,13 +489,8 @@ async function main() {
         .eq('id', closedShift!.id)
       const after = await findCarryOver(db)
       check(after?.amount === 850, 'ยอดยกมาคิดจากใบนับหลังเจ้าของจัด ไม่ใช่ที่เหลือตอนปิดกะ (฿700 → ฿850)', `฿${after?.amount}`)
-      check(after?.denoms?.[20] === 10 && after?.denoms?.[5] === 14, 'ใบนับที่ยกมาเป็นของหลังจัด', JSON.stringify(after?.denoms))
       check(after?.counted === 1000 && after?.toOwner === 300, 'ใบนับของพนักงานตอนปิดกะไม่ถูกแก้', `นับได้ ฿${after?.counted}`)
       check(after?.adjustedAt != null, 'รู้ว่าจัดเมื่อไหร่ (ไว้บอกคนเปิดกะว่าทำไมยอดยกมาไม่เท่าตอนปิด)')
-
-      // เช้ามานับได้ตรงกับที่เจ้าของจัดไว้ → ต้องไม่ขึ้นว่ากองไหนไม่ตรง
-      const asLeft = { 1000: 0, 500: 1, 100: 0, 50: 0, 20: 10, 10: 8, 5: 14, 2: 0, 1: 0 }
-      check(denomDiffs(after!, asLeft).length === 0, 'นับเช้าได้ตรงกับที่เจ้าของจัดไว้ → ไม่ขึ้นว่ากองไม่ตรง')
     }
 
     // คอลัมน์ยังไม่มี (deploy ขึ้นก่อนรัน SQL) ก็ต้องเปิดกะได้ ไม่งั้นเช้ามาขายไม่ได้ทั้งวัน

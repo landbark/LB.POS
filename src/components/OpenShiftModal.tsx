@@ -3,9 +3,8 @@
 import { useEffect, useState } from 'react'
 import { X, Wallet, AlertTriangle, ArrowRightLeft } from 'lucide-react'
 import toast from 'react-hot-toast'
-import { createClient } from '@/lib/supabase/client'
-import { BANKNOTES, COINS, DENOMS, coverFloat, materialShortages } from '@/lib/shiftFloat'
-import { denomDiffs, findCarryOver, findOrphanSales, openShift, type CarryOver, type OrphanSales } from '@/lib/shiftOpen'
+import { BANKNOTES, COINS, DENOMS } from '@/lib/shiftFloat'
+import { findCarryOver, findOrphanSales, openShift, type CarryOver, type OrphanSales } from '@/lib/shiftOpen'
 
 const money = (n: number) => n.toLocaleString('th-TH', { minimumFractionDigits: 2 })
 const fmtTime = (iso: string) =>
@@ -22,8 +21,8 @@ const fmtWhen = (iso: string) => {
  * เปิดกะได้จากทุกหน้า — หน้าขายเรียกจากแถบเตือน "ยังไม่ได้เปิดกะ" (ไม่ต้องทิ้งตะกร้าไปหน้าอื่น)
  * ถ้าวันนี้ขายไปแล้วตอนไม่มีกะเปิด จะเสนอรวมบิลพวกนั้นเข้ากะนี้ให้ด้วย
  *
- * ช่องนับเงินเติมใบนับที่กะที่แล้วเหลือไว้มาให้ก่อน คนเปิดกะแก้เฉพาะกองที่ไม่ตรง — ได้ทั้ง
- * ยอดตั้งต้นที่ถูกและคำตอบว่า "กองไหนไม่ตรง" ซึ่งบอกได้ว่าคืนก่อนนับผิดหรือเงินหายจริง
+ * เทียบกับกะที่แล้วด้วยยอดรวมอย่างเดียว ไม่เทียบรายกอง — ชุดเงินทอนที่วางลงเก๊ะแต่ละคืน
+ * แบงค์/เหรียญไม่เหมือนกัน ยอดรวมเท่านั้นที่ต้องตรง
  */
 export default function OpenShiftModal({
   userId,
@@ -44,13 +43,8 @@ export default function OpenShiftModal({
   // ยอดที่ควรเหลือข้ามคืนจากกะที่แล้ว — เติมใส่ช่องให้ก่อน คนนับได้ไม่ตรงค่อยแก้
   const [carry, setCarry] = useState<CarryOver | null>(null)
   const [carryReason, setCarryReason] = useState('')
-  // เงินทอนตั้งต้นคงที่ที่ร้านตั้งไว้ — null = ไม่ได้ตั้ง (ยอดยกมาลอยไปตามที่เหลือจริง)
-  const [floatTarget, setFloatTarget] = useState<number | null>(null)
-  const [floatDenoms, setFloatDenoms] = useState<Record<number, number> | null>(null)
-  // ชนิดที่เก็บไว้ทั้งหมด (เช่น แบงค์ห้าสิบ) — ไม่เตือนว่าขาด และไม่นับเป็นส่วนเกินของเป้า
-  const [floatKeep, setFloatKeep] = useState<number[]>([])
-  // นับแยกใบ/เหรียญ (ค่าเริ่มต้นถ้ากะที่แล้วนับแยกไว้) หรือใส่ยอดรวมก้อนเดียวแบบเดิม
-  const [byDenom, setByDenom] = useState(false)
+  // นับแยกใบ/เหรียญ (ค่าเริ่มต้น) หรือใส่ยอดรวมก้อนเดียว
+  const [byDenom, setByDenom] = useState(true)
   const [counts, setCounts] = useState<Record<number, string>>({})
   const [busy, setBusy] = useState(false)
 
@@ -59,24 +53,14 @@ export default function OpenShiftModal({
     Promise.all([
       findOrphanSales(),
       findCarryOver(),
-      createClient().from('store_settings').select('float_target, float_denoms, float_keep').limit(1).maybeSingle(),
-    ]).then(([found, over, store]) => {
+    ]).then(([found, over]) => {
       if (cancelled) return
       setOrphan(found)
       // ช่วงที่ค้างมานานกว่าวันครึ่ง = ไม่ใช่ "ลูกค้ามาเพิ่มตอนปิดกะ" แล้ว (ลืมเปิดกะมาหลายวัน/
       // เจ้าของมารับเงินไปแล้วก็ได้) ไม่ติ๊กให้เอง ให้คนเปิดกะอ่านแล้วตัดสินใจ
       if (found && found.hours > 36) setPullIn(false)
       setCarry(over)
-      setFloatTarget(store.data?.float_target != null ? Number(store.data.float_target) : null)
-      const fd = store.data?.float_denoms as Record<string, number> | null | undefined
-      setFloatDenoms(fd ? Object.fromEntries(Object.entries(fd).map(([v, q]) => [Number(v), Number(q) || 0])) : null)
-      setFloatKeep((store.data?.float_keep as number[] | null) ?? [])
       if (over) setCash(String(over.amount))
-      // กะที่แล้วนับแยกไว้ → เติมใบนับนั้นมาให้ แก้เฉพาะกองที่ไม่ตรงก็พอ
-      if (over?.denoms) {
-        setByDenom(true)
-        setCounts(Object.fromEntries(DENOMS.map((d) => [d.value, over.denoms![d.value] ? String(over.denoms![d.value]) : ''])))
-      }
       setLoadingOrphan(false)
     })
     return () => { cancelled = true }
@@ -91,30 +75,17 @@ export default function OpenShiftModal({
   // เงินในเก๊ะเช้านี้ควรมีเท่าไหร่ = ยกมาจากกะที่แล้ว + บิลที่ขายหลังปิดกะ
   const shouldCount = carry ? carry.amount + pending : null
   // ต่างจากที่ควรมีเท่าไหร่ — ค่านี้จะถูกเขียนลง shifts.notes ตอนเปิดกะ
-  const carryDiff = shouldCount != null && !Number.isNaN(typed) ? typed - shouldCount : 0
+  // ยังไม่ได้กรอกอะไรเลย = ยังเทียบไม่ได้ ไม่ใช่เงินขาดทั้งก้อน
+  const hasCount = !byDenom || DENOMS.some((d) => (counts[d.value] ?? '') !== '')
+  const carryDiff = hasCount && shouldCount != null && !Number.isNaN(typed) ? typed - shouldCount : 0
   // ยอดตั้งต้นที่จะถูกบันทึกจริง — รวมบิลเข้ากะแล้วต้องหักเงินก้อนนั้นออก ไม่งั้นนับสองรอบ
   const openingStored = pullIn && orphan ? typed - pending : typed
-  const diffs = byDenom && carry ? denomDiffs(carry, countedDenoms) : []
-  // กองที่เงินทอนไม่พอตั้งแต่ก่อนเปิดร้าน — ตัวที่เคยทำให้ต้องวิ่งหาเงินทอนตอนบ่าย
-  // กองที่มีใบเล็กเกินพออุดให้แล้วไม่นับว่าขาด — คืนที่ห้าร้อยไม่พอแล้วใช้ร้อยแทน เงินทอนครบอยู่
-  // (เดิมเทียบทีละกองตรง ๆ เช้าไหนเก๊ะมีร้อย 28 ใบแทนห้าร้อย 2 ใบ ก็ขึ้นกล่องแดงว่าเงินทอนไม่พอ)
-  // กองที่พร่องไปนิดหน่อย (เช่น ทอนบิลหลังปิดกะไปสองใบ) ไม่ขึ้นเตือน — ดู materialShortages
-  const cover = byDenom && floatDenoms ? coverFloat(countedDenoms, floatDenoms, floatKeep) : null
-  const shortages = cover
-    ? materialShortages(cover.shortages, floatDenoms!).map((sh) => ({
-        ...sh,
-        label: DENOMS.find((d) => d.value === sh.value)?.label ?? String(sh.value),
-      }))
-    : []
-
-  // ชนิดที่เก็บไว้ทั้งหมดลอยไปตามที่รับมาจากลูกค้า — บวกตามที่กะที่แล้วเหลือไว้ ไม่งั้นขึ้นว่าไม่ตรงทุกวัน
-  const keptLabels = DENOMS.filter((d) => floatKeep.includes(d.value)).map((d) => d.label).join('/')
-  const floatExpected =
-    floatTarget == null || (floatKeep.length > 0 && !carry?.denoms)
-      ? null
-      : floatTarget + floatKeep.reduce((s, d) => s + d * (carry?.denoms?.[d] ?? 0), 0)
 
   async function submit() {
+    if (!hasCount) {
+      toast.error('นับเงินในเก๊ะก่อน (ไม่มีเงินให้ใส่ 0)')
+      return
+    }
     const amount = byDenom ? denomTotal : parseFloat(cash || '0')
     if (Number.isNaN(amount) || amount < 0) {
       toast.error('กรุณาใส่เงินสดตั้งต้น')
@@ -172,7 +143,7 @@ export default function OpenShiftModal({
               <button
                 type="button"
                 onClick={() => {
-                  if (byDenom) setCash(String(denomTotal))
+                  if (byDenom && hasCount) setCash(String(denomTotal))
                   setByDenom((v) => !v)
                 }}
                 className="text-xs font-medium text-blue-600 hover:text-blue-700"
@@ -195,11 +166,7 @@ export default function OpenShiftModal({
                               type="number" min={0} step={1} inputMode="numeric"
                               value={counts[d.value] ?? ''}
                               onChange={(e) => setCounts((c) => ({ ...c, [d.value]: e.target.value }))}
-                              className={`w-16 border rounded-lg px-2 py-1.5 text-sm text-right focus:outline-none focus:ring-2 ${
-                                (cover?.piles[d.value]?.missing ?? 0) > 0
-                                  ? 'border-red-300 focus:ring-red-400'
-                                  : 'border-gray-300 focus:ring-[#C4865A]'
-                              }`}
+                              className="w-16 border border-gray-300 rounded-lg px-2 py-1.5 text-sm text-right focus:outline-none focus:ring-2 focus:ring-[#C4865A]"
                               placeholder="0"
                             />
                             <span className={`text-sm text-right flex-1 tabular-nums ${qty > 0 ? 'text-gray-900 font-medium' : 'text-gray-300'}`}>
@@ -230,22 +197,6 @@ export default function OpenShiftModal({
             )}
           </div>
 
-          {shortages.length > 0 && (
-            <div className="rounded-lg border-2 border-red-300 bg-red-50 p-3">
-              <p className="text-sm font-medium text-red-800">เงินทอนไม่พอตั้งแต่เปิดร้าน</p>
-              <div className="mt-1 space-y-0.5">
-                {shortages.map((sh) => (
-                  <p key={sh.value} className="text-xs text-red-700">
-                    {sh.label} มี {qtyOf(sh.value)} ต้องการ {floatDenoms![sh.value]} — ขาดอีก <b>{sh.need}</b> (฿{money(sh.missing)})
-                  </p>
-                ))}
-              </div>
-              <p className="mt-1.5 text-xs text-red-600">
-                แลกมาเติมก่อนเริ่มขาย ไม่งั้นต้องมาวิ่งหาเงินทอนกลางวัน · เติมแล้วแก้ตัวเลขข้างบนให้ตรงด้วย
-              </p>
-            </div>
-          )}
-
           {carry && (
             <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 space-y-1.5">
               <p className="flex items-center gap-1.5 text-sm text-gray-700">
@@ -262,47 +213,21 @@ export default function OpenShiftModal({
                   เจ้าของจัดเงินทอนหลังปิดกะแล้วเมื่อ {fmtTime(carry.adjustedAt)} — ยอดยกมาข้างบนคิดจากใบนับหลังจัด
                 </p>
               )}
-              {floatExpected != null && (
-                <p className={`text-xs ${carry.amount === floatExpected ? 'text-gray-500' : 'text-amber-700 font-medium'}`}>
-                  เงินทอนตั้งต้นคงที่ ฿{money(floatExpected)}
-                  {keptLabels && <> (รวม{keptLabels}ที่มีอยู่)</>}
-                  {carry.amount !== floatExpected && <> — กะที่แล้วเหลือไว้ไม่ตรงยอดนี้ ฿{money(Math.abs(carry.amount - floatExpected))}</>}
-                </p>
-              )}
               {pending !== 0 && (
                 <p className="text-xs text-[#7A4E2D]">
                   + ขายหลังปิดกะอีก ฿{money(pending)} (เงินอยู่ในเก๊ะแล้ว) ·{' '}
                   <b>เช้านี้ควรนับได้ ฿{money(shouldCount ?? 0)}</b>
                 </p>
               )}
-              {carryDiff === 0 ? (
-                <p className="text-xs text-gray-500">
-                  {pending !== 0
-                    ? 'ใบนับที่เติมให้คือของเมื่อคืน — เงินจากบิลหลังปิดกะยังไม่อยู่ในนั้น นับเก๊ะจริงแล้วแก้กองที่เพิ่มมา'
-                    : byDenom
-                      ? 'เติมใบนับของกะที่แล้วให้แล้ว — นับในเก๊ะแล้วแก้เฉพาะกองที่ไม่ตรง'
-                      : 'เติมยอดนี้ให้แล้ว — นับเงินในเก๊ะดูก่อน ถ้าไม่เท่ากันให้แก้ตามที่นับได้จริง'}
-                </p>
+              {!hasCount ? (
+                <p className="text-xs text-gray-500">นับเงินในเก๊ะแล้วใส่จำนวน — ยอดรวมตรงก็พอ แบงค์/เหรียญชนิดไหนกี่ใบก็ได้</p>
+              ) : carryDiff === 0 ? (
+                <p className="text-xs font-medium text-green-600">ยอดรวมตรงกับที่ควรมี</p>
               ) : (
                 <p className="text-xs font-medium text-amber-800">
                   นับได้{carryDiff > 0 ? 'เกิน' : 'ขาด'}ไป ฿{money(Math.abs(carryDiff))} จาก
                   {pending !== 0 ? 'ยอดที่ควรมี' : 'ยอดยกมา'}
                 </p>
-              )}
-              {diffs.length > 0 && (
-                <div className="pt-1.5 border-t border-gray-200 space-y-0.5">
-                  <p className="text-xs font-medium text-gray-600">
-                    {pending !== 0 ? 'กองที่ต่างจากเมื่อคืน (รวมแบงค์ที่รับจากบิลหลังปิดกะ)' : 'กองที่ไม่ตรงกับใบนับเมื่อคืน'}
-                  </p>
-                  {diffs.map((x) => (
-                    <p key={x.value} className="text-xs text-gray-600 tabular-nums">
-                      {x.label} <span className="text-gray-400">เมื่อคืน {x.was} → เช้านี้ {x.now}</span>{' '}
-                      <b className={x.now > x.was ? 'text-blue-600' : 'text-red-600'}>
-                        {x.now > x.was ? '+' : '−'}฿{money(Math.abs((x.now - x.was) * x.value))}
-                      </b>
-                    </p>
-                  ))}
-                </div>
               )}
             </div>
           )}
@@ -312,8 +237,7 @@ export default function OpenShiftModal({
               <p className="text-xs text-amber-900">
                 เปิดกะได้เลย ระบบจะใช้ยอดที่นับได้จริงเป็นตั้งต้น
                 {pullIn && orphan && <> (หักบิลที่ยกมารวม ฿{money(pending)} ออกแล้วเหลือ ฿{money(openingStored)})</>}
-                {' '}และ<b>บันทึกส่วนต่าง ฿{money(Math.abs(carryDiff))} ไว้ในกะนี้</b>
-                {diffs.length > 0 && <> พร้อมกองที่ไม่ตรง</>} เพื่อให้ย้อนดูได้ว่าคืนก่อนนับผิดหรือเงินหายระหว่างคืน
+                {' '}และ<b>บันทึกส่วนต่าง ฿{money(Math.abs(carryDiff))} ไว้ในกะนี้</b> เพื่อให้ย้อนดูได้ว่าคืนก่อนนับผิดหรือเงินหายระหว่างคืน
               </p>
               <input
                 value={carryReason}

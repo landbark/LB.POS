@@ -208,8 +208,6 @@ export interface CarryOver {
   /** ยอดที่แยกออกให้เจ้าของตอนปิด (วันไหนเจ้าของไม่อยู่ = 0) */
   toOwner: number
   closedAt: string
-  /** จำนวนใบ/เหรียญที่ควรเหลือข้ามคืน · null = กะที่แล้วไม่ได้นับแยก */
-  denoms: Record<number, number> | null
   /** เจ้าของมาจัดเงินทอนหลังปิดกะเมื่อไหร่ · null = ยังไม่ได้จัด (ยกใบนับตอนปิดมาตรง ๆ) */
   adjustedAt: string | null
 }
@@ -228,46 +226,28 @@ export async function findCarryOver(supabase: Db = createClient()): Promise<Carr
       .limit(1)
       .maybeSingle()
 
-  const full = 'closed_at, closing_cash_counted, cash_to_owner, closing_denominations, owner_denominations, carry_denominations, carry_adjusted_at'
+  const full = 'closed_at, closing_cash_counted, cash_to_owner, carry_denominations, carry_adjusted_at'
   const first = await lastClosed(full)
   let data = first.data
   // ยังไม่ได้รัน migration จัดเงินทอนหลังปิดกะ — ยอดยกมาต้องยังทำงาน แค่ไม่มีส่วนที่เจ้าของจัด
   if (first.error && first.error.message.includes('carry_')) {
-    ;({ data } = await lastClosed('closed_at, closing_cash_counted, cash_to_owner, closing_denominations, owner_denominations'))
+    ;({ data } = await lastClosed('closed_at, closing_cash_counted, cash_to_owner'))
   }
   const row = data as Record<string, unknown> | null
   if (!row || row.closing_cash_counted == null) return null
   const counted = Number(row.closing_cash_counted)
   // ติดลบได้ตั้งแต่ที่หน้าปิดกะเปลี่ยนมาคิด "ให้เจ้าของ" จากส่วนต่าง — ลบคือเจ้าของเติมเงินทอนเข้าเก๊ะ
   const toOwner = Number(row.cash_to_owner ?? 0)
-  const closing = row.closing_denominations as Record<string, number> | null
-  const owner = (row.owner_denominations ?? {}) as Record<string, number>
   // เจ้าของมาจัดเงินทอนหลังปิดกะแล้ว → ใบนับหลังจัดคือของจริงที่รอเช้าวันรุ่งขึ้นอยู่
   const adjusted = (row.carry_denominations ?? null) as Record<string, number> | null
-  const denoms = adjusted
-    ? Object.fromEntries(DENOMS.map((d) => [d.value, adjusted[d.value] ?? 0]))
-    : closing
-      ? Object.fromEntries(DENOMS.map((d) => [d.value, (closing[d.value] ?? 0) - (owner[d.value] ?? 0)]))
-      : null
   const amount = adjusted
     ? DENOMS.reduce((sum, d) => sum + d.value * (adjusted[d.value] ?? 0), 0)
     : counted - toOwner
   return {
-    amount, counted, toOwner, denoms,
+    amount, counted, toOwner,
     closedAt: row.closed_at as string,
     adjustedAt: (row.carry_adjusted_at as string | null) ?? null,
   }
-}
-
-/** กองที่นับได้เช้านี้ไม่ตรงกับที่กะที่แล้วเหลือไว้ — ตัวที่บอกว่าคืนก่อนนับผิดกองไหน */
-export function denomDiffs(carry: CarryOver, counted: Record<number, number> | null) {
-  if (!carry.denoms || !counted) return []
-  return DENOMS.filter((d) => (counted[d.value] ?? 0) !== (carry.denoms![d.value] ?? 0)).map((d) => ({
-    value: d.value,
-    label: d.label,
-    was: carry.denoms![d.value] ?? 0,
-    now: counted[d.value] ?? 0,
-  }))
 }
 
 /**
@@ -282,13 +262,10 @@ export function carryNote(
   openingCash: number,
   byName: string,
   reason = '',
-  counted: Record<number, number> | null = null,
   pending = 0,
 ) {
   const expected = carry.amount + pending
   const diff = openingCash - expected
-  // มีบิลหลังปิดกะ = กองแบงค์ย่อมไม่ตรงกับใบนับเมื่อคืนอยู่แล้ว ไล่กองไม่ได้ว่าใบไหนมาจากบิลไหน
-  const diffs = pending !== 0 ? [] : denomDiffs(carry, counted)
   const stamp = new Date().toLocaleString('th-TH', {
     timeZone: 'Asia/Bangkok', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit',
   })
@@ -299,7 +276,6 @@ export function carryNote(
     `${carry.toOwner < 0 ? ` + เจ้าของเติมเข้า ฿${money(-carry.toOwner)}` : ''}) · ` +
     `${pending !== 0 ? `บิลที่ขายหลังปิดกะ ฿${money(pending)} · ควรมี ฿${money(expected)} · ` : ''}` +
     `เช้านี้นับได้ ฿${money(openingCash)} · ${diff > 0 ? 'เกิน' : 'ขาด'} ฿${money(Math.abs(diff))}` +
-    `${diffs.length ? ` · กองที่ไม่ตรง: ${diffs.map((x) => `${x.label} ${x.was}→${x.now}`).join(' · ')}` : ''}` +
     `${reason.trim() ? ` · ${reason.trim()}` : ''}`
   )
 }
@@ -332,8 +308,6 @@ export interface ShiftOpenMismatch {
   counted: number
   /** counted − expected · บวก = เกิน, ลบ = ขาด */
   diff: number
-  /** กองที่ไม่ตรงกับใบนับเมื่อคืน (ว่างถ้าเปิดกะแบบใส่ยอดรวม) */
-  denomDiffs: { label: string; was: number; now: number }[]
   /** เหตุผลที่คนเปิดกะกรอกไว้ */
   reason: string
   openedByName: string
@@ -386,8 +360,7 @@ export async function openShift(
   // เทียบ "ที่นับได้จริง" กับ "ยกมา + บิลหลังปิดกะ" — ไม่ใช่กับยอดตั้งต้นที่หักแล้ว
   if (opts.carry && opts.carry.amount + pending !== opts.openingCash) {
     notes.push(carryNote(
-      opts.carry, opts.openingCash, opts.openedByName ?? '', opts.carryReason,
-      opts.openingDenoms ?? null, pending,
+      opts.carry, opts.openingCash, opts.openedByName ?? '', opts.carryReason, pending,
     ))
   }
   if (notes.length) row.notes = notes.join('\n')
@@ -439,10 +412,6 @@ export async function openShift(
       expected,
       counted: opts.openingCash,
       diff,
-      // มีบิลหลังปิดกะ = กองเงินถูกรื้อไปแล้ว ไล่ทีละกองไม่ได้ว่าใบไหนมาจากบิลไหน แต่ยังเป็น
-      // เบาะแสที่ดีที่สุดว่าขาดกองไหน (฿25 ของ 16 พ.ย. 2026 = แบงค์ยี่สิบ 1 ใบ + เหรียญบาท 5 เหรียญ)
-      // — ข้อความที่ส่งออกไปกำกับไว้แล้วว่าส่วนหนึ่งขยับเพราะบิลพวกนั้น
-      denomDiffs: denomDiffs(opts.carry, opts.openingDenoms ?? null).map(({ label, was, now }) => ({ label, was, now })),
       reason: opts.carryReason?.trim() ?? '',
       openedByName: opts.openedByName ?? '',
     },

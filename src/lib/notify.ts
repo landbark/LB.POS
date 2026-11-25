@@ -617,7 +617,6 @@ export interface ShiftOpenInfo {
   counted: number
   /** counted − expected · บวก = เกิน, ลบ = ขาด */
   diff: number
-  denomDiffs: { label: string; was: number; now: number }[]
   reason: string
 }
 
@@ -653,15 +652,6 @@ export function buildShiftOpenMessage(s: ShiftOpenInfo): string {
     `เงินที่ควรมีเช้านี้: ${baht(s.expected)}`,
     `นับได้จริง: ${baht(s.counted)}`,
     s.diff < 0 ? `🔴 ขาด ${baht(-s.diff)}` : `🔵 เกิน ${baht(s.diff)}`,
-    ...(s.denomDiffs.length
-      ? [
-          '',
-          `กองที่ไม่ตรงกับใบนับเมื่อคืน: ${s.denomDiffs.map((d) => `${d.label} ${d.was}→${d.now}`).join(' · ')}`,
-          ...(s.pending !== 0
-            ? ['  (บางกองขยับเพราะบิลที่ขายหลังปิดกะด้วย ไม่ใช่ขาดทั้งหมด)']
-            : []),
-        ]
-      : []),
     ...(s.reason ? ['', `📝 ${s.reason}`] : []),
   ].join('\n') + adminLink('/admin/shift')
 }
