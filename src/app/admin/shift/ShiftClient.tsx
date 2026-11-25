@@ -14,6 +14,7 @@ import toast from 'react-hot-toast'
 import { confirmDialog } from '@/lib/confirm'
 import OpenShiftModal from '@/components/OpenShiftModal'
 import { findOrphanSales, type OrphanSales } from '@/lib/shiftOpen'
+import { loadShiftDraft, saveShiftDraft } from '@/lib/shiftDraft'
 import type { Shift, CashMovement } from '@/lib/types'
 
 const money = (n: number) => n.toLocaleString('th-TH', { minimumFractionDigits: 2 })
@@ -112,6 +113,12 @@ export default function ShiftClient({
   const [otherChannels, setOtherChannels] = useState<{ label: string; amount: number; count: number }[]>([])
   // ยอดที่เช็คได้จากแอปธนาคารตอนปิดกะ แยกตามบัญชี — ว่างหมด = ยังไม่ได้เช็ค ไม่เตือนอะไร
   const [transfers, setTransfers] = useState<Record<string, string>>({})
+  // ร่างใบนับ (ดู lib/shiftDraft) — draftFor = กะที่อ่านร่างมาแล้ว เขียนทับได้ตั้งแต่ตอนนั้น
+  // เขียนก่อนอ่านจะเอาช่องว่างไปทับร่างที่ค้างไว้
+  const [draftFor, setDraftFor] = useState<string | null>(null)
+  const [restoredAt, setRestoredAt] = useState('')
+  const [baseCash, setBaseCash] = useState<number | null>(null)
+  const [baseBank, setBaseBank] = useState<number | null>(null)
   // เวลาที่พิมพ์ใบสรุป — ตั้งตอนกดพิมพ์เท่านั้น (คิดตอน render จะได้ HTML ฝั่ง server ไม่ตรงกับ client)
   const [printedAt, setPrintedAt] = useState('')
   const [cashRefunds, setCashRefunds] = useState(0)
@@ -256,6 +263,43 @@ export default function ShiftClient({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [openShift?.id, reloadKey])
 
+  const shiftId = openShift?.id ?? null
+  useEffect(() => {
+    if (!shiftId) return
+    let cancelled = false
+    Promise.resolve().then(() => {
+      if (cancelled) return
+      const d = loadShiftDraft(shiftId)
+      if (d) {
+        setCounts(d.counts)
+        setTransfers(d.transfers)
+        setKeepEdit(d.keepEdit)
+        setNotes(d.notes)
+      }
+      setBaseCash(d?.baseCash ?? null)
+      setBaseBank(d?.baseBank ?? null)
+      setRestoredAt(d?.savedAt ?? '')
+      setDraftFor(shiftId)
+    })
+    return () => { cancelled = true }
+  }, [shiftId])
+
+  useEffect(() => {
+    if (!shiftId || draftFor !== shiftId) return
+    saveShiftDraft({ shiftId, counts, transfers, keepEdit, notes, baseCash, baseBank })
+  }, [shiftId, draftFor, counts, transfers, keepEdit, notes, baseCash, baseBank])
+
+  async function clearDraft() {
+    if (!(await confirmDialog({ message: 'ล้างใบนับที่กรอกไว้ทั้งหมดแล้วเริ่มนับใหม่?' })).confirmed) return
+    setCounts({})
+    setTransfers({})
+    setKeepEdit(null)
+    setNotes('')
+    setBaseCash(null)
+    setBaseBank(null)
+    setRestoredAt('')
+  }
+
   const cashSales = breakdown.cash ?? 0
   const cashIn = movements.filter((m) => m.direction === 'in').reduce((s, m) => s + Number(m.amount), 0)
   const cashOut = movements.filter((m) => m.direction === 'out').reduce((s, m) => s + Number(m.amount), 0)
@@ -280,6 +324,12 @@ export default function ShiftClient({
   const bankDiff = bankChecked ? bankActual - bankExpected : 0
   // เงินสดขาดเท่าที่บัญชีเกินพอดี = ไม่มีเงินหาย แค่กดช่องทางผิดตอนรับเงิน (ดู lib/shiftCash)
   const channels = checkChannels(difference, bankDiff)
+  // เงินที่ขยับหลังนับค้างไว้ — นับตรงอยู่แล้ว (รวมก้อนนั้นไปแล้ว) ไม่ต้องเตือน
+  const movedCash = !loadingSummary && hasCount && baseCash != null && Math.abs(difference) >= 0.005
+    ? expectedCash - baseCash : 0
+  const movedBank = !loadingSummary && bankChecked && baseBank != null && Math.abs(bankDiff) >= 0.005
+    ? bankExpected - baseBank : 0
+  const hasMoved = Math.abs(movedCash) >= 0.005 || Math.abs(movedBank) >= 0.005
   const countedDenoms: Record<number, number> = Object.fromEntries(
     DENOMS.map((d) => [d.value, qtyOf(counts, d.value)]),
   )
@@ -553,7 +603,11 @@ export default function ShiftClient({
         toast.error('ปิดกะแล้ว แต่เปิดกะใหม่ไม่สำเร็จ: ' + openError.message)
         setCounts({})
         setKeepEdit(null)
+        setTransfers({})
         setNotes('')
+        setBaseCash(null)
+        setBaseBank(null)
+        setRestoredAt('')
         router.refresh()
         return
       }
@@ -575,6 +629,9 @@ export default function ShiftClient({
     setKeepEdit(null)
     setTransfers({})
     setNotes('')
+    setBaseCash(null)
+    setBaseBank(null)
+    setRestoredAt('')
     router.refresh()
   }
 
@@ -890,7 +947,42 @@ export default function ShiftClient({
 
           {cashMovementsBox}
 
-          <label className="block text-xs font-medium text-gray-600 mb-2">นับเงินสดจริง (ใส่จำนวนใบ/เหรียญ)</label>
+          <div className="flex items-baseline justify-between gap-3 mb-2">
+            <label className="block text-xs font-medium text-gray-600">นับเงินสดจริง (ใส่จำนวนใบ/เหรียญ)</label>
+            {(hasCount || bankChecked) && (
+              <button type="button" onClick={clearDraft} className="shrink-0 text-xs font-medium text-gray-400 hover:text-red-500">
+                ล้างใบนับ
+              </button>
+            )}
+          </div>
+          {(hasCount || bankChecked) && (
+            <p className="text-xs text-gray-500 mb-2">
+              {restoredAt
+                ? `ดึงร่างที่กรอกไว้เมื่อ ${fmtTime(restoredAt)} กลับมาให้แล้ว`
+                : 'บันทึกร่างไว้ในเครื่องนี้อัตโนมัติ ไปหน้าอื่นแล้วกลับมาไม่ต้องนับใหม่'}
+            </p>
+          )}
+          {hasMoved && (
+            <div className="rounded-lg border-2 border-amber-300 bg-amber-50 p-3 mb-3 text-xs text-amber-900 space-y-1">
+              <p className="font-semibold">ยอดในระบบขยับหลังเริ่มนับ</p>
+              {Math.abs(movedCash) >= 0.005 && (
+                <p>เงินสดที่ควรมี{movedCash > 0 ? 'เพิ่ม' : 'ลด'} <b>฿{money(Math.abs(movedCash))}</b> — ถ้ายังไม่ได้นับรวม แก้ช่องนับตามเงินที่{movedCash > 0 ? 'รับเข้าเก๊ะ' : 'ออกจากเก๊ะ'}</p>
+              )}
+              {Math.abs(movedBank) >= 0.005 && (
+                <p>โอน/QR ในระบบ{movedBank > 0 ? 'เพิ่ม' : 'ลด'} <b>฿{money(Math.abs(movedBank))}</b> — เปิดแอปดูยอดเข้าบัญชีอีกครั้ง</p>
+              )}
+              <button
+                type="button"
+                onClick={() => {
+                  setBaseCash(hasCount ? expectedCash : null)
+                  setBaseBank(bankChecked ? bankExpected : null)
+                }}
+                className="font-medium text-amber-800 underline"
+              >
+                แก้แล้ว ไม่ต้องเตือน
+              </button>
+            </div>
+          )}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1.5 mb-3">
             {[BANKNOTES, COINS].map((group, gi) => (
               <div key={gi} className="space-y-1.5">
@@ -902,7 +994,12 @@ export default function ShiftClient({
                       <input
                         type="number" min={0} step={1} inputMode="numeric"
                         value={counts[d.value] ?? ''}
-                        onChange={(e) => setCounts((c) => ({ ...c, [d.value]: e.target.value }))}
+                        onChange={(e) => {
+                          const next = { ...counts, [d.value]: e.target.value }
+                          setCounts(next)
+                          const empty = Object.values(next).every((v) => v === '')
+                          setBaseCash((b) => (empty ? null : b ?? (loadingSummary ? null : expectedCash)))
+                        }}
                         className="w-16 border border-gray-300 rounded-lg px-2 py-1.5 text-sm text-right focus:outline-none focus:ring-2 focus:ring-blue-500"
                         placeholder="0"
                       />
@@ -960,7 +1057,12 @@ export default function ShiftClient({
                     <input
                       type="number" min={0} step="0.01" inputMode="decimal"
                       value={transfers[a] ?? ''}
-                      onChange={(e) => setTransfers((t) => ({ ...t, [a]: e.target.value }))}
+                      onChange={(e) => {
+                        const next = { ...transfers, [a]: e.target.value }
+                        setTransfers(next)
+                        const empty = Object.values(next).every((v) => v.trim() === '')
+                        setBaseBank((b) => (empty ? null : b ?? (loadingSummary ? null : bankExpected)))
+                      }}
                       className="w-28 border border-gray-300 rounded-lg px-2 py-1.5 text-sm text-right focus:outline-none focus:ring-2 focus:ring-blue-500"
                       placeholder="0.00"
                     />
